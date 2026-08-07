@@ -1,0 +1,987 @@
+<title>The Box — Provisioning Console</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+/* ============================ TOKENS ============================ */
+:root {
+  /* warm-steel neutrals biased toward brass — chosen, not defaulted */
+  --bg: #e7e3d8;
+  --panel: #f1ede2;
+  --panel-2: #ece7da;
+  --line: #cbc4b3;
+  --line-strong: #a89f8b;
+  --ink: #1f1b14;
+  --dim: #6c6455;
+  --faint: #918872;
+  --brass: #916d2f;
+  --brass-bright: #a97f34;
+  --brass-wash: rgba(169, 127, 52, 0.12);
+  --critical: #ad3c2b;
+  --critical-wash: rgba(173, 60, 43, 0.10);
+  --ok: #4f7a54;
+  --shadow: rgba(31, 27, 20, 0.10);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14110c;
+    --panel: #1b170f;
+    --panel-2: #201b12;
+    --line: #322b1f;
+    --line-strong: #4a4030;
+    --ink: #ece5d5;
+    --dim: #948a68;
+    --faint: #6e654a;
+    --brass: #c99b4e;
+    --brass-bright: #ddb15c;
+    --brass-wash: rgba(201, 155, 78, 0.14);
+    --critical: #d5543f;
+    --critical-wash: rgba(213, 84, 63, 0.13);
+    --ok: #6fa578;
+    --shadow: rgba(0, 0, 0, 0.4);
+  }
+}
+:root[data-theme="light"] {
+  --bg: #e7e3d8; --panel: #f1ede2; --panel-2: #ece7da; --line: #cbc4b3;
+  --line-strong: #a89f8b; --ink: #1f1b14; --dim: #6c6455; --faint: #918872;
+  --brass: #916d2f; --brass-bright: #a97f34; --brass-wash: rgba(169,127,52,0.12);
+  --critical: #ad3c2b; --critical-wash: rgba(173,60,43,0.10); --ok: #4f7a54;
+  --shadow: rgba(31,27,20,0.10);
+}
+:root[data-theme="dark"] {
+  --bg: #14110c; --panel: #1b170f; --panel-2: #201b12; --line: #322b1f;
+  --line-strong: #4a4030; --ink: #ece5d5; --dim: #948a68; --faint: #6e654a;
+  --brass: #c99b4e; --brass-bright: #ddb15c; --brass-wash: rgba(201,155,78,0.14);
+  --critical: #d5543f; --critical-wash: rgba(213,84,63,0.13); --ok: #6fa578;
+  --shadow: rgba(0,0,0,0.4);
+}
+
+/* ============================ BASE ============================ */
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.55;
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+}
+.mono {
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+}
+a { color: var(--brass); }
+::selection { background: var(--brass-wash); }
+
+/* subtle machined grid on the ground */
+body::before {
+  content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background-image:
+    linear-gradient(var(--line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 44px 44px;
+  opacity: 0.20;
+  mask-image: radial-gradient(ellipse 120% 90% at 50% 0%, #000 30%, transparent 78%);
+  -webkit-mask-image: radial-gradient(ellipse 120% 90% at 50% 0%, #000 30%, transparent 78%);
+}
+
+/* ============================ FRAME ============================ */
+.wrap { position: relative; z-index: 1; max-width: 1180px; margin: 0 auto; padding: 0 22px 96px; }
+
+header.top {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 18px 0 16px; border-bottom: 1px solid var(--line);
+}
+.brand { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+.brand .mark {
+  font-family: ui-monospace, monospace; font-weight: 700; letter-spacing: .02em;
+  font-size: 17px; color: var(--ink); white-space: nowrap;
+}
+.brand .mark b { color: var(--brass); }
+.brand .sub {
+  font-family: ui-monospace, monospace; font-size: 11px; letter-spacing: .16em;
+  text-transform: uppercase; color: var(--faint); white-space: nowrap;
+}
+.top-right { display: flex; align-items: center; gap: 14px; }
+.stamp {
+  font-family: ui-monospace, monospace; font-size: 11px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--dim); text-align: right; line-height: 1.5;
+}
+.stamp b { color: var(--ink); font-weight: 600; }
+.theme-btn {
+  font-family: ui-monospace, monospace; font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--dim); background: transparent; border: 1px solid var(--line-strong);
+  padding: 7px 10px; cursor: pointer; border-radius: 2px;
+}
+.theme-btn:hover { color: var(--brass); border-color: var(--brass); }
+.theme-btn:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+
+/* masthead */
+.masthead { padding: 30px 0 14px; }
+.eyebrow {
+  font-family: ui-monospace, monospace; font-size: 11.5px; letter-spacing: .28em;
+  text-transform: uppercase; color: var(--brass); margin: 0 0 14px;
+}
+.masthead h1 {
+  font-family: ui-monospace, monospace; font-weight: 700;
+  font-size: clamp(28px, 5vw, 46px); line-height: 1.02; letter-spacing: -.01em;
+  margin: 0 0 16px; text-wrap: balance; max-width: 15ch;
+}
+.masthead p.lede {
+  margin: 0; max-width: 62ch; color: var(--dim); font-size: 16px;
+}
+.masthead p.lede b { color: var(--ink); font-weight: 600; }
+
+/* ============================ CONSOLE GRID ============================ */
+.console {
+  display: grid; grid-template-columns: 320px 1fr; gap: 34px; align-items: start;
+  margin-top: 34px;
+}
+@media (max-width: 860px) { .console { grid-template-columns: 1fr; gap: 20px; } }
+
+/* ---- MANIFEST (left) ---- */
+.manifest-col { position: sticky; top: 18px; }
+@media (max-width: 860px) { .manifest-col { position: static; } }
+
+.manifest {
+  background: var(--panel); border: 1px solid var(--line-strong);
+  border-radius: 3px; box-shadow: 0 1px 0 var(--shadow);
+  overflow: hidden;
+}
+.manifest .m-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 11px 14px; border-bottom: 1px solid var(--line);
+  background: var(--panel-2);
+}
+.manifest .m-head .t {
+  font-family: ui-monospace, monospace; font-size: 11px; letter-spacing: .2em;
+  text-transform: uppercase; color: var(--dim);
+}
+.manifest .m-head .id {
+  font-family: ui-monospace, monospace; font-size: 11px; color: var(--brass); letter-spacing: .08em;
+}
+.m-body { padding: 6px 14px 12px; }
+.m-row {
+  display: grid; grid-template-columns: 92px 1fr; gap: 10px; align-items: baseline;
+  padding: 7px 0; border-bottom: 1px dashed var(--line);
+  font-family: ui-monospace, monospace; font-size: 12.5px;
+}
+.m-row:last-child { border-bottom: 0; }
+.m-row .k { color: var(--faint); letter-spacing: .1em; text-transform: uppercase; font-size: 10.5px; }
+.m-row .v { color: var(--ink); font-variant-numeric: tabular-nums; word-break: break-word; }
+.m-row .v.muted { color: var(--dim); }
+.m-row .v .tag { color: var(--brass); }
+.flash { animation: flash .5s ease-out; }
+@keyframes flash { from { background: var(--brass-wash); } to { background: transparent; } }
+
+.status-strip {
+  border-top: 1px solid var(--line); padding: 12px 14px;
+  display: flex; align-items: center; gap: 10px; background: var(--panel-2);
+}
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--faint); flex: none; box-shadow: 0 0 0 3px var(--brass-wash); }
+.status-strip.ready .dot { background: var(--ok); box-shadow: 0 0 0 3px rgba(79,122,84,.18); }
+.status-strip.armed-only .dot { background: var(--brass); }
+.status-strip .st {
+  font-family: ui-monospace, monospace; font-size: 11.5px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--ink);
+}
+.uplink {
+  padding: 9px 14px; border-top: 1px solid var(--line);
+  font-family: ui-monospace, monospace; font-size: 10.5px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--dim); display: flex; gap: 8px; align-items: center;
+}
+.uplink .led { width: 6px; height: 6px; border-radius: 50%; background: var(--dim); }
+.uplink b { color: var(--ok); font-weight: 600; }
+
+/* ---- MODULES (right) ---- */
+.modules { display: flex; flex-direction: column; gap: 16px; }
+
+.mod {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 3px; overflow: hidden;
+}
+.mod > .h {
+  display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.mod > .h .num {
+  font-family: ui-monospace, monospace; font-size: 11px; color: var(--brass);
+  letter-spacing: .1em; border: 1px solid var(--line-strong); padding: 2px 6px; border-radius: 2px;
+}
+.mod > .h .ttl {
+  font-family: ui-monospace, monospace; font-size: 13px; letter-spacing: .16em;
+  text-transform: uppercase; color: var(--ink); font-weight: 600;
+}
+.mod > .h .hint { margin-left: auto; font-size: 11px; color: var(--faint); letter-spacing: .04em; }
+.mod > .b { padding: 15px 16px 17px; display: flex; flex-direction: column; gap: 13px; }
+.mod.critical { border-color: var(--critical); }
+.mod.critical > .h { border-bottom-color: color-mix(in srgb, var(--critical) 40%, var(--line)); }
+.mod.critical > .h .num { color: var(--critical); border-color: color-mix(in srgb, var(--critical) 45%, var(--line-strong)); }
+
+.field-note { color: var(--dim); font-size: 13px; margin: -2px 0 2px; }
+.field-note b { color: var(--ink); }
+
+/* segmented radio control */
+.seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 3px; overflow: hidden; }
+.seg label {
+  font-family: ui-monospace, monospace; font-size: 12px; letter-spacing: .08em; text-transform: uppercase;
+  padding: 8px 14px; cursor: pointer; color: var(--dim); background: var(--panel-2);
+  border-right: 1px solid var(--line); user-select: none;
+}
+.seg label:last-child { border-right: 0; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg label:hover { color: var(--ink); }
+.seg input:checked + span { color: var(--bg); }
+.seg label:has(input:checked) { background: var(--brass); color: var(--bg); }
+.seg label:has(input:focus-visible) { outline: 2px solid var(--brass); outline-offset: 2px; }
+
+label.lbl {
+  font-family: ui-monospace, monospace; font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--faint); display: block; margin-bottom: 6px;
+}
+input[type="text"], input[type="password"], textarea {
+  width: 100%; font-family: ui-monospace, monospace; font-size: 13.5px;
+  color: var(--ink); background: var(--bg); border: 1px solid var(--line-strong);
+  border-radius: 2px; padding: 9px 11px; line-height: 1.5;
+}
+textarea { resize: vertical; min-height: 74px; }
+input::placeholder, textarea::placeholder { color: var(--faint); }
+input:focus, textarea:focus { outline: none; border-color: var(--brass); box-shadow: 0 0 0 3px var(--brass-wash); }
+input.invalid, textarea.invalid { border-color: var(--critical); box-shadow: 0 0 0 3px var(--critical-wash); }
+.err { color: var(--critical); font-size: 12px; font-family: ui-monospace, monospace; min-height: 0; }
+
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 560px) { .row2 { grid-template-columns: 1fr; } }
+
+.collapse { display: none; }
+.collapse.open { display: flex; flex-direction: column; gap: 13px; }
+
+.btn {
+  font-family: ui-monospace, monospace; font-size: 12px; letter-spacing: .1em; text-transform: uppercase;
+  padding: 9px 14px; border-radius: 2px; cursor: pointer; border: 1px solid var(--line-strong);
+  background: var(--panel-2); color: var(--ink);
+}
+.btn:hover { border-color: var(--brass); color: var(--brass); }
+.btn:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+.btn.ghost { background: transparent; }
+.btn.small { padding: 6px 10px; font-size: 11px; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn.primary {
+  background: var(--brass); border-color: var(--brass); color: var(--bg); font-weight: 600;
+}
+.btn.primary:hover { background: var(--brass-bright); border-color: var(--brass-bright); color: var(--bg); }
+.btn.primary:disabled { background: var(--panel-2); border-color: var(--line-strong); color: var(--faint); }
+
+/* arm checkbox */
+.arm {
+  display: flex; gap: 12px; align-items: flex-start; padding: 13px;
+  border: 1px solid color-mix(in srgb, var(--critical) 45%, var(--line-strong));
+  background: var(--critical-wash); border-radius: 3px;
+}
+.arm input { margin-top: 3px; width: 17px; height: 17px; accent-color: var(--critical); flex: none; }
+.arm .txt { font-size: 13.5px; }
+.arm .txt b { color: var(--critical); font-family: ui-monospace, monospace; letter-spacing: .04em; }
+.arm .txt .sub { color: var(--dim); font-size: 12.5px; }
+
+/* keys list */
+.keys { display: flex; flex-direction: column; gap: 8px; }
+.keychip {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+  border: 1px solid var(--line); border-radius: 2px; background: var(--bg);
+  font-family: ui-monospace, monospace; font-size: 12px;
+}
+.keychip .fp { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.keychip .src { color: var(--faint); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; flex: none; }
+.keychip button {
+  margin-left: auto; flex: none; background: transparent; border: 0; color: var(--faint);
+  cursor: pointer; font-family: ui-monospace, monospace; font-size: 15px; line-height: 1; padding: 2px 4px;
+}
+.keychip button:hover { color: var(--critical); }
+
+.privkey {
+  margin-top: 6px; border: 1px solid var(--brass); background: var(--brass-wash);
+  border-radius: 3px; padding: 11px;
+}
+.privkey .warn {
+  font-family: ui-monospace, monospace; font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--brass); margin-bottom: 8px;
+}
+.privkey textarea { min-height: 120px; font-size: 11px; }
+
+/* deploy / vectors */
+.vectors { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+@media (max-width: 560px) { .vectors { grid-template-columns: 1fr; } }
+.vec {
+  border: 1px solid var(--line-strong); border-radius: 3px; padding: 12px; cursor: pointer;
+  background: var(--panel-2); display: flex; flex-direction: column; gap: 5px;
+}
+.vec:hover { border-color: var(--brass); }
+.vec.active { border-color: var(--brass); background: var(--brass-wash); }
+.vec .code {
+  font-family: ui-monospace, monospace; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--brass);
+}
+.vec .name { font-family: ui-monospace, monospace; font-size: 13.5px; color: var(--ink); font-weight: 600; }
+.vec .desc { font-size: 12px; color: var(--dim); }
+
+.deploybar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 3px; }
+.deploybar .gate { font-family: ui-monospace, monospace; font-size: 11.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--critical); }
+
+.instructions {
+  border: 1px solid var(--line); border-radius: 3px; background: var(--bg); overflow: hidden;
+}
+.instructions .ihead {
+  padding: 9px 13px; border-bottom: 1px solid var(--line); background: var(--panel-2);
+  font-family: ui-monospace, monospace; font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--dim);
+}
+.instructions ol { margin: 0; padding: 13px 13px 13px 30px; display: flex; flex-direction: column; gap: 9px; }
+.instructions li { font-size: 13.5px; color: var(--ink); }
+.instructions li code, code.inline {
+  font-family: ui-monospace, monospace; font-size: 12px; background: var(--panel-2);
+  border: 1px solid var(--line); padding: 1px 5px; border-radius: 2px; color: var(--ink); word-break: break-all;
+}
+.instructions .cav { padding: 0 13px 13px 30px; font-size: 12px; color: var(--dim); }
+
+.jsonview {
+  border: 1px solid var(--line); border-radius: 3px; background: var(--bg); overflow: hidden; margin-top: 2px;
+}
+.jsonview .jhead {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 9px 13px; border-bottom: 1px solid var(--line); background: var(--panel-2);
+}
+.jsonview .jhead .t { font-family: ui-monospace, monospace; font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--dim); }
+.jsonview pre {
+  margin: 0; padding: 13px; overflow-x: auto; font-family: ui-monospace, monospace;
+  font-size: 12.5px; line-height: 1.65; color: var(--ink);
+}
+.jsonview pre .jk { color: var(--brass); }
+.jsonview pre .js { color: var(--ink); }
+.jsonview pre .jb { color: var(--ok); }
+.jsonview pre .jn { color: var(--critical); }
+
+footer.foot {
+  margin-top: 40px; padding-top: 18px; border-top: 1px solid var(--line);
+  display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center;
+  font-family: ui-monospace, monospace; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint);
+}
+footer.foot b { color: var(--dim); }
+
+.toast {
+  position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(20px);
+  background: var(--ink); color: var(--bg); padding: 11px 18px; border-radius: 3px;
+  font-family: ui-monospace, monospace; font-size: 12px; letter-spacing: .08em; text-transform: uppercase;
+  opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; z-index: 50;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <span class="mark">◧ THE&nbsp;<b>BOX</b></span>
+      <span class="sub">Provisioning&nbsp;Console</span>
+    </div>
+    <div class="top-right">
+      <div class="stamp">
+        <div>FIELD OPERATION: <b>PROVISION</b></div>
+        <div id="clock">--:--:-- • ---</div>
+      </div>
+      <button class="theme-btn" id="theme" type="button" aria-label="Toggle theme">◐&nbsp;Theme</button>
+    </div>
+  </header>
+
+  <div class="masthead">
+    <p class="eyebrow">Unit Configuration // Pre-Deployment</p>
+    <h1>Configure a unit for field deployment.</h1>
+    <p class="lede">
+      Answer a few questions and this console assembles a <b>deployment file</b> —
+      the single set of orders that turns any machine into a Box.
+      Everything runs locally: <b>nothing you enter leaves this browser.</b>
+    </p>
+  </div>
+
+  <div class="console">
+    <!-- ===================== MANIFEST ===================== -->
+    <div class="manifest-col">
+      <div class="manifest" aria-live="polite">
+        <div class="m-head">
+          <span class="t">Unit Manifest</span>
+          <span class="id" id="m-serial">— — — —</span>
+        </div>
+        <div class="m-body">
+          <div class="m-row"><span class="k">Designation</span><span class="v" id="m-name">box-auto</span></div>
+          <div class="m-row"><span class="k">Network</span><span class="v muted" id="m-net">Ethernet · DHCP</span></div>
+          <div class="m-row"><span class="k">Access</span><span class="v muted" id="m-access">0 keys · console only</span></div>
+          <div class="m-row"><span class="k">Exposure</span><span class="v muted" id="m-expose">Private · LAN</span></div>
+          <div class="m-row"><span class="k">Target</span><span class="v muted" id="m-disk">Auto · largest internal</span></div>
+          <div class="m-row"><span class="k">On&nbsp;Done</span><span class="v muted" id="m-finish">Reboot</span></div>
+        </div>
+        <div class="status-strip" id="status">
+          <span class="dot"></span>
+          <span class="st" id="status-text">Awaiting arm</span>
+        </div>
+        <div class="uplink">
+          <span class="led"></span> Uplink: <b>None — local only</b>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== MODULES ===================== -->
+    <form class="modules" id="form" autocomplete="off">
+      <!-- 01 IDENTITY -->
+      <section class="mod">
+        <div class="h"><span class="num">01</span><span class="ttl">Identity</span><span class="hint">what it answers to</span></div>
+        <div class="b">
+          <p class="field-note">The name the Box announces on your network — reach it at <code class="inline">&lt;name&gt;.local</code>.</p>
+          <div class="seg" role="radiogroup" aria-label="Designation mode">
+            <label><input type="radio" name="namemode" value="auto" checked><span>Auto-assign</span></label>
+            <label><input type="radio" name="namemode" value="custom"><span>Custom</span></label>
+          </div>
+          <div id="name-custom" class="collapse">
+            <div>
+              <label class="lbl" for="hostname">Designation</label>
+              <input type="text" id="hostname" placeholder="workshop-box" spellcheck="false" maxlength="32">
+              <div class="err" id="hostname-err"></div>
+            </div>
+          </div>
+          <p class="field-note" id="name-auto-note">Auto derives a stable per-unit name like <code class="inline">box-3f2a1b</code> — so several Boxes never collide on one network.</p>
+        </div>
+      </section>
+
+      <!-- 02 NETWORK -->
+      <section class="mod">
+        <div class="h"><span class="num">02</span><span class="ttl">Network</span><span class="hint">how it gets online</span></div>
+        <div class="b">
+          <div class="seg" role="radiogroup" aria-label="Network mode">
+            <label><input type="radio" name="netmode" value="eth" checked><span>Ethernet</span></label>
+            <label><input type="radio" name="netmode" value="wifi"><span>Wi-Fi</span></label>
+          </div>
+          <p class="field-note" id="net-eth-note">Plug in a cable and it comes up on DHCP. Nothing to configure.</p>
+          <div id="net-wifi" class="collapse">
+            <div class="row2">
+              <div>
+                <label class="lbl" for="ssid">Network name (SSID)</label>
+                <input type="text" id="ssid" placeholder="HomeNet" spellcheck="false">
+              </div>
+              <div>
+                <label class="lbl" for="wpass">Password</label>
+                <input type="password" id="wpass" placeholder="••••••••" spellcheck="false">
+              </div>
+            </div>
+            <p class="field-note">Written to the unit as a saved connection on first boot. WPA/WPA2 personal.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 03 ACCESS -->
+      <section class="mod">
+        <div class="h"><span class="num">03</span><span class="ttl">Access</span><span class="hint">who can operate it remotely</span></div>
+        <div class="b">
+          <p class="field-note">SSH public keys authorized to manage the Box. Password login is disabled — keys only. Leave empty to manage from the local console and web dashboard.</p>
+          <div class="keys" id="keys"></div>
+          <div>
+            <label class="lbl" for="keyin">Paste a public key</label>
+            <textarea id="keyin" placeholder="ssh-ed25519 AAAAC3Nza... you@laptop" spellcheck="false"></textarea>
+            <div class="err" id="key-err"></div>
+          </div>
+          <div class="deploybar">
+            <button type="button" class="btn small" id="key-add">+ Add key</button>
+            <button type="button" class="btn small ghost" id="key-gen">⚙ Generate a keypair</button>
+          </div>
+          <div id="privout"></div>
+        </div>
+      </section>
+
+      <!-- 04 EXPOSURE -->
+      <section class="mod">
+        <div class="h"><span class="num">04</span><span class="ttl">Public Exposure</span><span class="hint">optional</span></div>
+        <div class="b">
+          <div class="seg" role="radiogroup" aria-label="Exposure mode">
+            <label><input type="radio" name="expmode" value="private" checked><span>Private · LAN</span></label>
+            <label><input type="radio" name="expmode" value="cf"><span>Cloudflare Tunnel</span></label>
+          </div>
+          <p class="field-note" id="exp-private-note">The Box and its dashboard stay on your network. Make services public later, from the dashboard, whenever you want.</p>
+          <div id="exp-cf" class="collapse">
+            <div>
+              <label class="lbl" for="cftoken">Cloudflare Tunnel token</label>
+              <input type="text" id="cftoken" placeholder="eyJhIjoi..." spellcheck="false">
+              <div class="err" id="cf-err"></div>
+            </div>
+            <p class="field-note">Bring your own tunnel: paste a token from Cloudflare Zero Trust and the Box comes online already reachable from the internet — no open ports, no traffic through us. Point the tunnel's hostname at <code class="inline">localhost:2693</code>.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 05 TARGET -->
+      <section class="mod">
+        <div class="h"><span class="num">05</span><span class="ttl">Target Disk</span><span class="hint">what gets erased</span></div>
+        <div class="b">
+          <div class="seg" role="radiogroup" aria-label="Disk mode">
+            <label><input type="radio" name="diskmode" value="auto" checked><span>Auto</span></label>
+            <label><input type="radio" name="diskmode" value="custom"><span>Specify device</span></label>
+          </div>
+          <p class="field-note" id="disk-auto-note">Picks the largest internal (non-removable) disk. USB sticks are never touched — so the installer stick itself is safe.</p>
+          <div id="disk-custom" class="collapse">
+            <div>
+              <label class="lbl" for="diskpath">Device path</label>
+              <input type="text" id="diskpath" placeholder="/dev/disk/by-id/nvme-..." spellcheck="false">
+              <div class="err" id="disk-err"></div>
+            </div>
+            <p class="field-note">Use a stable <code class="inline">/dev/disk/by-id/…</code> path — it survives reboots and re-cabling.</p>
+          </div>
+          <div>
+            <button type="button" class="btn small ghost" id="adv-toggle" aria-expanded="false">▸ Advanced options</button>
+          </div>
+          <div id="adv" class="collapse">
+            <div class="row2">
+              <div>
+                <label class="lbl" for="mindisk">Minimum disk size (GB)</label>
+                <input type="text" id="mindisk" placeholder="8" inputmode="numeric">
+              </div>
+              <div>
+                <label class="lbl">On completion</label>
+                <div class="seg" role="radiogroup" aria-label="Finish action">
+                  <label><input type="radio" name="finish" value="reboot" checked><span>Reboot</span></label>
+                  <label><input type="radio" name="finish" value="poweroff"><span>Power off</span></label>
+                </div>
+              </div>
+            </div>
+            <label class="arm" style="border-color:var(--line-strong);background:transparent">
+              <input type="checkbox" id="force" style="accent-color:var(--brass)">
+              <span class="txt"><b style="color:var(--brass)">FORCE REINSTALL</b><br>
+              <span class="sub">Reinstall over an existing Box. Off by default, so leaving an installer stick in place is harmless.</span></span>
+            </label>
+          </div>
+        </div>
+      </section>
+
+      <!-- 06 ARM & DEPLOY -->
+      <section class="mod critical" id="deploymod">
+        <div class="h"><span class="num">06</span><span class="ttl">Arm &amp; Deploy</span><span class="hint">point of no return</span></div>
+        <div class="b">
+          <label class="arm">
+            <input type="checkbox" id="arm">
+            <span class="txt">
+              <b>I understand this ERASES the target disk.</b><br>
+              <span class="sub">Every file on the selected disk is permanently destroyed and replaced with Box OS. The installer does nothing until it sees this consent in the deployment file.</span>
+            </span>
+          </label>
+
+          <div>
+            <label class="lbl" style="margin-bottom:9px">Deployment vector</label>
+            <div class="vectors" role="radiogroup" aria-label="Deployment vector">
+              <div class="vec active" data-vec="usb" tabindex="0" role="radio" aria-checked="true">
+                <span class="code">VEC-01</span><span class="name">USB Stick</span>
+                <span class="desc">Any machine. Flash, boot, confirm.</span>
+              </div>
+              <div class="vec" data-vec="win" tabindex="0" role="radio" aria-checked="false">
+                <span class="code">VEC-02</span><span class="name">From Windows</span>
+                <span class="desc">Convert a running PC in place.</span>
+              </div>
+              <div class="vec" data-vec="pxe" tabindex="0" role="radio" aria-checked="false">
+                <span class="code">VEC-03</span><span class="name">Network / PXE</span>
+                <span class="desc">Fleets. Self-install over the wire.</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="deploybar">
+            <button type="button" class="btn primary" id="download" disabled>⇩ Download deployment file</button>
+            <button type="button" class="btn" id="copy" disabled>Copy JSON</button>
+            <span class="gate" id="gate">Arm the unit to enable</span>
+          </div>
+
+          <div class="instructions" id="instructions"></div>
+
+          <div class="jsonview">
+            <div class="jhead">
+              <span class="t">box-install.json</span>
+              <span class="t" id="bytes" style="color:var(--faint)">— bytes</span>
+            </div>
+            <pre id="json"><span class="jk">{ }</span></pre>
+          </div>
+        </div>
+      </section>
+    </form>
+  </div>
+
+  <footer class="foot">
+    <span>◧ THE BOX</span>
+    <span>·</span>
+    <span>ALL PROCESSING <b>LOCAL</b></span>
+    <span>·</span>
+    <span>NO ACCOUNT REQUIRED</span>
+    <span>·</span>
+    <span id="foot-loc">STATION: THIS BROWSER</span>
+  </footer>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+(function () {
+  const $ = (s, r=document) => r.querySelector(s);
+  const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
+
+  /* ---------- theme ---------- */
+  const root = document.documentElement;
+  $("#theme").addEventListener("click", () => {
+    const cur = root.getAttribute("data-theme")
+      || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    root.setAttribute("data-theme", cur === "dark" ? "light" : "dark");
+  });
+
+  /* ---------- clock ---------- */
+  const clock = $("#clock");
+  function tick() {
+    const d = new Date();
+    const p = n => String(n).padStart(2, "0");
+    const days = ["SUN","MON","TUE","WED","THU","FRI","SAT"];
+    clock.textContent = `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())} • ${days[d.getDay()]}`;
+  }
+  tick(); setInterval(tick, 1000);
+
+  function toast(msg) {
+    const t = $("#toast"); t.textContent = msg; t.classList.add("show");
+    clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), 1900);
+  }
+
+  /* ---------- state ---------- */
+  const keys = []; // {key, src}
+
+  /* ---------- collapse helpers ---------- */
+  function show(el, on) { el.classList.toggle("open", on); }
+
+  // identity
+  $$("input[name=namemode]").forEach(r => r.addEventListener("change", () => {
+    const custom = $("input[name=namemode]:checked").value === "custom";
+    show($("#name-custom"), custom);
+    $("#name-auto-note").style.display = custom ? "none" : "";
+    if (custom) $("#hostname").focus();
+    render();
+  }));
+  // network
+  $$("input[name=netmode]").forEach(r => r.addEventListener("change", () => {
+    const wifi = $("input[name=netmode]:checked").value === "wifi";
+    show($("#net-wifi"), wifi);
+    $("#net-eth-note").style.display = wifi ? "none" : "";
+    if (wifi) $("#ssid").focus();
+    render();
+  }));
+  // exposure
+  $$("input[name=expmode]").forEach(r => r.addEventListener("change", () => {
+    const cf = $("input[name=expmode]:checked").value === "cf";
+    show($("#exp-cf"), cf);
+    $("#exp-private-note").style.display = cf ? "none" : "";
+    if (cf) $("#cftoken").focus();
+    render();
+  }));
+  // disk
+  $$("input[name=diskmode]").forEach(r => r.addEventListener("change", () => {
+    const custom = $("input[name=diskmode]:checked").value === "custom";
+    show($("#disk-custom"), custom);
+    $("#disk-auto-note").style.display = custom ? "none" : "";
+    if (custom) $("#diskpath").focus();
+    render();
+  }));
+  // advanced
+  $("#adv-toggle").addEventListener("click", () => {
+    const open = !$("#adv").classList.contains("open");
+    show($("#adv"), open);
+    $("#adv-toggle").setAttribute("aria-expanded", String(open));
+    $("#adv-toggle").textContent = (open ? "▾" : "▸") + " Advanced options";
+  });
+
+  ["hostname","ssid","wpass","cftoken","diskpath","mindisk"].forEach(id =>
+    $("#"+id).addEventListener("input", render));
+  $$("input[name=finish]").forEach(r => r.addEventListener("change", render));
+  $("#force").addEventListener("change", render);
+  $("#arm").addEventListener("change", render);
+
+  /* ---------- validation ---------- */
+  function validHostname(h) {
+    return /^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$/.test(h) && h.length <= 32;
+  }
+
+  /* ---------- SSH keys ---------- */
+  function keyFingerprintLabel(key) {
+    const parts = key.trim().split(/\s+/);
+    const comment = parts.slice(2).join(" ");
+    const type = parts[0] || "key";
+    const blob = parts[1] || "";
+    const tail = blob.length > 16 ? blob.slice(-12) : blob;
+    return `${type} …${tail}${comment ? "  " + comment : ""}`;
+  }
+  function validPubKey(k) {
+    return /^(ssh-ed25519|ssh-rsa|ecdsa-sha2-\S+|sk-ssh-ed25519@openssh\.com)\s+[A-Za-z0-9+/=]+/.test(k.trim());
+  }
+  function renderKeys() {
+    const box = $("#keys"); box.innerHTML = "";
+    keys.forEach((k, i) => {
+      const el = document.createElement("div");
+      el.className = "keychip";
+      el.innerHTML = `<span class="fp"></span><span class="src">${k.src}</span><button type="button" aria-label="Remove key">✕</button>`;
+      el.querySelector(".fp").textContent = keyFingerprintLabel(k.key);
+      el.querySelector("button").addEventListener("click", () => { keys.splice(i,1); renderKeys(); render(); });
+      box.appendChild(el);
+    });
+  }
+  function addKey(raw, src) {
+    const k = raw.trim();
+    if (!k) return false;
+    if (!validPubKey(k)) { $("#key-err").textContent = "Not a valid SSH public key."; return false; }
+    if (keys.some(x => x.key.split(/\s+/)[1] === k.split(/\s+/)[1])) { $("#key-err").textContent = "Key already added."; return false; }
+    $("#key-err").textContent = "";
+    keys.push({ key: k, src: src || "pasted" });
+    renderKeys(); render(); return true;
+  }
+  $("#key-add").addEventListener("click", () => {
+    if (addKey($("#keyin").value, "pasted")) $("#keyin").value = "";
+  });
+
+  /* ---------- Ed25519 keygen (fully client-side) ---------- */
+  function b64(bytes) { let s=""; bytes.forEach(b => s += String.fromCharCode(b)); return btoa(s); }
+  function u32(n) { return new Uint8Array([(n>>>24)&255,(n>>>16)&255,(n>>>8)&255,n&255]); }
+  function sshStr(bytes) { const b = new Uint8Array(bytes); return concat(u32(b.length), b); }
+  function concat(...arrs) {
+    let len = arrs.reduce((a,x)=>a+x.length,0), out = new Uint8Array(len), o=0;
+    arrs.forEach(a => { out.set(a, o); o += a.length; }); return out;
+  }
+  const enc = new TextEncoder();
+  function opensshPub(pub32) {
+    const blob = concat(sshStr(enc.encode("ssh-ed25519")), sshStr(pub32));
+    return "ssh-ed25519 " + b64(blob) + " box@generated";
+  }
+  function opensshPriv(seed32, pub32, comment) {
+    const pubBlob = concat(sshStr(enc.encode("ssh-ed25519")), sshStr(pub32));
+    const check = crypto.getRandomValues(new Uint8Array(4));
+    let priv = concat(
+      check, check,
+      sshStr(enc.encode("ssh-ed25519")),
+      sshStr(pub32),
+      sshStr(concat(seed32, pub32)),
+      sshStr(enc.encode(comment))
+    );
+    let pad = 1; while (priv.length % 8 !== 0) { priv = concat(priv, new Uint8Array([pad++])); }
+    const body = concat(
+      enc.encode("openssh-key-v1\0"),
+      sshStr(enc.encode("none")), sshStr(enc.encode("none")), sshStr(new Uint8Array(0)),
+      u32(1), sshStr(pubBlob), sshStr(priv)
+    );
+    const b = b64(body).replace(/(.{70})/g, "$1\n");
+    return "-----BEGIN OPENSSH PRIVATE KEY-----\n" + b + "\n-----END OPENSSH PRIVATE KEY-----\n";
+  }
+  async function generateKeypair() {
+    const kp = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign","verify"]);
+    const rawPub = new Uint8Array(await crypto.subtle.exportKey("raw", kp.publicKey));
+    const pkcs8 = new Uint8Array(await crypto.subtle.exportKey("pkcs8", kp.privateKey));
+    const seed = pkcs8.slice(-32); // Ed25519 pkcs8: final 32 bytes are the seed
+    return { pub: opensshPub(rawPub), priv: opensshPriv(seed, rawPub, "box@generated") };
+  }
+  $("#key-gen").addEventListener("click", async () => {
+    const btn = $("#key-gen"); btn.disabled = true; btn.textContent = "⚙ Generating…";
+    try {
+      const { pub, priv } = await generateKeypair();
+      addKey(pub, "generated");
+      const wrap = $("#privout");
+      wrap.innerHTML = `
+        <div class="privkey">
+          <div class="warn">⚠ Private key — save this now, it is shown once and never leaves this browser</div>
+          <textarea class="mono" readonly spellcheck="false"></textarea>
+          <div class="deploybar" style="margin-top:9px">
+            <button type="button" class="btn small" id="dl-priv">⇩ Save id_ed25519</button>
+            <button type="button" class="btn small ghost" id="cp-priv">Copy</button>
+          </div>
+        </div>`;
+      wrap.querySelector("textarea").value = priv;
+      $("#dl-priv").addEventListener("click", () => download("id_ed25519", priv, "text/plain"));
+      $("#cp-priv").addEventListener("click", () => { navigator.clipboard.writeText(priv); toast("Private key copied"); });
+      toast("Keypair generated — locally");
+    } catch (e) {
+      $("#key-err").textContent = "This browser can't generate Ed25519 keys — paste an existing public key instead.";
+    } finally {
+      btn.disabled = false; btn.textContent = "⚙ Generate a keypair";
+    }
+  });
+
+  /* ---------- build config ---------- */
+  function buildConfig() {
+    const nameMode = $("input[name=namemode]:checked").value;
+    const hostname = nameMode === "auto" ? "auto" : $("#hostname").value.trim();
+    const cfg = { erase_disk: true };
+
+    // disk
+    const diskMode = $("input[name=diskmode]:checked").value;
+    cfg.disk = diskMode === "auto" ? "auto" : $("#diskpath").value.trim();
+
+    cfg.hostname = hostname || "auto";
+
+    if ($("input[name=netmode]:checked").value === "wifi") {
+      const ssid = $("#ssid").value.trim();
+      if (ssid) { cfg.wifi = { ssid }; const pw = $("#wpass").value; if (pw) cfg.wifi.password = pw; }
+    }
+    if (keys.length) cfg.ssh_authorized_keys = keys.map(k => k.key);
+    if ($("input[name=expmode]:checked").value === "cf") {
+      const tok = $("#cftoken").value.trim(); if (tok) cfg.cloudflare_tunnel_token = tok;
+    }
+    const md = parseInt($("#mindisk").value, 10);
+    if (!isNaN(md) && md > 0 && md !== 8) cfg.min_disk_gb = md;
+    if ($("#force").checked) cfg.force = true;
+    const finish = $("input[name=finish]:checked").value;
+    if (finish !== "reboot") cfg.finish = finish;
+    return cfg;
+  }
+
+  /* ---------- problems (gates the download) ---------- */
+  function problems() {
+    const p = [];
+    if ($("input[name=namemode]:checked").value === "custom") {
+      const h = $("#hostname").value.trim();
+      if (!h) p.push("designation"); else if (!validHostname(h)) p.push("bad-hostname");
+    }
+    if ($("input[name=netmode]:checked").value === "wifi" && !$("#ssid").value.trim()) p.push("ssid");
+    if ($("input[name=expmode]:checked").value === "cf" && !$("#cftoken").value.trim()) p.push("cf-token");
+    if ($("input[name=diskmode]:checked").value === "custom" && !$("#diskpath").value.trim()) p.push("disk");
+    return p;
+  }
+
+  /* ---------- manifest + json render ---------- */
+  function flash(el, val) {
+    if (el.textContent !== val) {
+      el.textContent = val;
+      el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
+    }
+  }
+  function setV(el, val, muted) {
+    flash(el, val);
+    el.classList.toggle("muted", !!muted);
+  }
+  function serial(name) {
+    // stable-ish visual serial from the current name for the manifest header
+    let s = name === "auto" ? "AUTO" : name;
+    let h = 0; for (const c of s) h = (h*31 + c.charCodeAt(0)) >>> 0;
+    return "U-" + h.toString(16).toUpperCase().padStart(6,"0").slice(0,6);
+  }
+
+  function highlightJSON(obj) {
+    const json = JSON.stringify(obj, null, 2);
+    return json
+      .replace(/&/g,"&amp;").replace(/</g,"&lt;")
+      .replace(/"([^"]+)":/g, '<span class="jk">"$1"</span>:')
+      .replace(/: "([^"]*)"/g, ': <span class="js">"$1"</span>')
+      .replace(/: (true|false)/g, ': <span class="jb">$1</span>')
+      .replace(/: (\d+)/g, ': <span class="jn">$1</span>');
+  }
+
+  let currentJSON = "";
+  function render() {
+    // inline field errors
+    const h = $("#hostname");
+    if ($("input[name=namemode]:checked").value === "custom" && h.value.trim() && !validHostname(h.value.trim())) {
+      h.classList.add("invalid"); $("#hostname-err").textContent = "Use a–z, 0–9 and dashes (not at the ends), max 32.";
+    } else { h.classList.remove("invalid"); $("#hostname-err").textContent = ""; }
+
+    const cfg = buildConfig();
+    currentJSON = JSON.stringify(cfg, null, 2) + "\n";
+
+    // manifest
+    setV($("#m-name"), cfg.hostname === "auto" ? "box-auto (per-unit)" : cfg.hostname, cfg.hostname === "auto");
+    $("#m-serial").textContent = serial(cfg.hostname);
+    setV($("#m-net"), cfg.wifi ? `Wi-Fi · ${cfg.wifi.ssid}` : "Ethernet · DHCP", !cfg.wifi);
+    setV($("#m-access"), keys.length ? `${keys.length} key${keys.length>1?"s":""} · SSH` : "0 keys · console only", !keys.length);
+    setV($("#m-expose"), cfg.cloudflare_tunnel_token ? "Public · Cloudflare Tunnel" : "Private · LAN", !cfg.cloudflare_tunnel_token);
+    setV($("#m-disk"), cfg.disk === "auto" ? "Auto · largest internal" : cfg.disk, cfg.disk === "auto");
+    setV($("#m-finish"), (cfg.finish === "poweroff" ? "Power off" : "Reboot") + (cfg.force ? " · force" : ""), false);
+
+    // json view
+    $("#json").innerHTML = highlightJSON(cfg);
+    $("#bytes").textContent = new Blob([currentJSON]).size + " bytes";
+
+    // status + gating
+    const probs = problems();
+    const armed = $("#arm").checked;
+    const ready = armed && probs.length === 0;
+    const strip = $("#status");
+    strip.classList.toggle("ready", ready);
+    strip.classList.toggle("armed-only", armed && !ready);
+    $("#status-text").textContent = !armed ? "Awaiting arm"
+      : (probs.length ? "Incomplete — check modules" : "Ready to deploy");
+
+    $("#download").disabled = !ready;
+    $("#copy").disabled = !ready;
+    const gate = $("#gate");
+    if (ready) { gate.textContent = "● Ready"; gate.style.color = "var(--ok)"; }
+    else if (!armed) { gate.textContent = "Arm the unit to enable"; gate.style.color = "var(--critical)"; }
+    else { gate.textContent = "Complete required fields above"; gate.style.color = "var(--critical)"; }
+  }
+
+  /* ---------- download / copy ---------- */
+  function download(name, text, type) {
+    const blob = new Blob([text], { type: type || "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  $("#download").addEventListener("click", () => { download("box-install.json", currentJSON); toast("Deployment file saved"); });
+  $("#copy").addEventListener("click", () => { navigator.clipboard.writeText(currentJSON); toast("JSON copied"); });
+
+  /* ---------- vectors + instructions ---------- */
+  let vector = "usb";
+  const VEC = {
+    usb: {
+      head: "VEC-01 · USB Stick — any machine",
+      steps: [
+        'Write the generic <b>Box installer image</b> to a USB stick (8&nbsp;GB+). One image serves every install — it is never personalized.',
+        'Drop <code>box-install.json</code> onto the stick, or onto a second FAT-formatted stick labeled <code>BOX-INSTALL</code>.',
+        'Boot the target machine from USB and confirm the erase prompt once.',
+        'About ten minutes later the Box is online at <code>&lt;name&gt;.local</code>.'
+      ],
+      cav: "Works on any UEFI machine. This is also the recovery path if anything else goes wrong."
+    },
+    win: {
+      head: "VEC-02 · From Windows — convert in place",
+      steps: [
+        'Download the <b>Box for Windows</b> payload folder.',
+        'Put <code>box-install.json</code> in the same folder as <code>stage.ps1</code>.',
+        'Right-click <code>stage.ps1</code> → <b>Run as administrator</b> (it shows the erase warning first).',
+        'It stages the installer, sets a one-shot boot entry, and reboots into the wipe. If anything fails before the wipe, the next boot is Windows, untouched.'
+      ],
+      cav: "UEFI only, and Secure Boot must be off until we ship a signed loader. If Windows has pending updates, let them finish and run stage.ps1 once more."
+    },
+    pxe: {
+      head: "VEC-03 · Network / PXE — fleets",
+      steps: [
+        'Serve the Box <b>netboot</b> kernel and initrd from your PXE / iPXE setup (or a mirror you host).',
+        'Host this <code>box-install.json</code> over HTTP and add <code>box.install-url=http://&lt;server&gt;/box-install.json</code> to the kernel command line.',
+        'For a fleet, serve a per-machine file keyed by MAC — an agent can generate one deployment file per unit.',
+        'Every machine that netboots installs itself and, with an auto designation, self-names <code>box-&lt;id&gt;.local</code>.'
+      ],
+      cav: "No keyboard or screen needed on the targets — the strongest path for racks and for agent-driven provisioning."
+    }
+  };
+  function renderInstructions() {
+    const v = VEC[vector];
+    $("#instructions").innerHTML =
+      `<div class="ihead">${v.head}</div>
+       <ol>${v.steps.map(s => `<li>${s}</li>`).join("")}</ol>
+       <div class="cav">${v.cav}</div>`;
+  }
+  $$(".vec").forEach(el => {
+    const pick = () => {
+      vector = el.dataset.vec;
+      $$(".vec").forEach(x => { const on = x===el; x.classList.toggle("active", on); x.setAttribute("aria-checked", String(on)); });
+      renderInstructions();
+    };
+    el.addEventListener("click", pick);
+    el.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
+  });
+
+  /* ---------- init ---------- */
+  renderInstructions();
+  render();
+})();
+</script>
