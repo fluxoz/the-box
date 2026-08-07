@@ -1,4 +1,5 @@
 pub mod api;
+pub mod mcp;
 pub mod pages;
 pub mod sites;
 
@@ -6,6 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use axum::{
     http::StatusCode,
+    middleware::from_fn_with_state,
     response::{IntoResponse, Response},
     routing::{get, post},
     Router,
@@ -13,13 +15,27 @@ use axum::{
 
 use crate::paths::Paths;
 use crate::store::Builder;
+use crate::tunnel::TunnelManager;
 
 pub struct AppState {
     pub paths: Paths,
     pub builder: Box<dyn Builder>,
+    pub tunnel: Arc<TunnelManager>,
     /// Serializes apply/deploy/rollback so concurrent requests cannot race
     /// on the generation-src directory or profile numbering.
     pub apply_lock: Mutex<()>,
+}
+
+impl AppState {
+    pub fn new(paths: Paths, builder: Box<dyn Builder>) -> SharedState {
+        let tunnel = TunnelManager::new(paths.clone());
+        Arc::new(Self {
+            paths,
+            builder,
+            tunnel,
+            apply_lock: Mutex::new(()),
+        })
+    }
 }
 
 pub type SharedState = Arc<AppState>;
@@ -32,11 +48,24 @@ pub fn router(state: SharedState) -> Router {
         .route("/services/{name}/delete", post(pages::delete_service))
         .route("/generations", get(pages::generations))
         .route("/generations/{number}/rollback", post(pages::rollback))
+        .route("/network", get(pages::network))
+        .route("/network/cloudflare", post(pages::configure_cloudflare))
+        .route(
+            "/network/cloudflare/disable",
+            post(pages::disable_cloudflare),
+        )
         .route("/sites/{name}", get(sites::redirect_to_slash))
         .route("/sites/{name}/", get(sites::serve_index))
         .route("/sites/{name}/{*path}", get(sites::serve_path))
+        .route(
+            "/mcp",
+            post(mcp::handle)
+                .get(mcp::method_not_allowed)
+                .delete(mcp::end_session),
+        )
         .nest("/api/v1", api::router())
-        .with_state(state)
+        .with_state(state.clone())
+        .layer(from_fn_with_state(state, sites::host_dispatch))
 }
 
 /// Errors bubbling out of handlers become a JSON 500; user-facing flows

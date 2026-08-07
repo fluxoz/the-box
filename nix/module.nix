@@ -35,8 +35,9 @@ in
       description = "The Box daemon";
       wantedBy = [ "multi-user.target" ];
       after = [ "network.target" ];
-      # boxd shells out to nix to build generations.
-      path = [ pkgs.nix ];
+      # boxd shells out to nix to build generations and to cloudflared for
+      # BYO tunnel exposure.
+      path = [ pkgs.nix pkgs.cloudflared ];
       serviceConfig = {
         ExecStart = "${lib.getExe cfg.package} --data-dir ${cfg.dataDir} serve --listen ${cfg.listen}";
         User = "boxd";

@@ -24,6 +24,7 @@ pub fn router() -> Router<SharedState> {
         .route("/services/{name}", delete(delete_service))
         .route("/generations", get(list_generations))
         .route("/generations/{number}/rollback", post(rollback))
+        .route("/network", get(network_status).post(configure_network))
 }
 
 #[derive(Serialize)]
@@ -159,6 +160,27 @@ async fn list_generations(
     State(state): State<SharedState>,
 ) -> Result<Json<Vec<GenerationInfo>>, AppError> {
     Ok(Json(store::list(&state.paths)?))
+}
+
+#[derive(Deserialize)]
+struct NetworkBody {
+    #[serde(default)]
+    token: Option<String>,
+    enabled: bool,
+}
+
+async fn network_status(State(state): State<SharedState>) -> Json<crate::tunnel::TunnelStatus> {
+    Json(state.tunnel.status())
+}
+
+async fn configure_network(
+    State(state): State<SharedState>,
+    Json(body): Json<NetworkBody>,
+) -> Result<Json<crate::tunnel::TunnelStatus>, AppError> {
+    let status = state
+        .tunnel
+        .configure(body.token.as_deref(), body.enabled)?;
+    Ok(Json(status))
 }
 
 async fn rollback(

@@ -5,9 +5,10 @@ machine into a reliable host for sites, apps and agent workloads — with atomic
 deploys, true rollbacks, and zero Nix knowledge required.
 
 See [PLAN.md](PLAN.md) for the full product plan. This repository currently
-implements the **deploy pipeline core**: declarative config → Nix generation
-build → atomic switch → one-click rollback, plus the local web dashboard and
-JSON API, with static sites as the first template.
+implements the **deploy pipeline core** (declarative config → Nix generation
+build → atomic switch → one-click rollback), the local web dashboard and JSON
+API, a **local MCP server** for AI agents, and the **BYO Cloudflare Tunnel**
+flow with host-based routing, with static sites as the first template.
 
 ## How it works
 
@@ -81,6 +82,31 @@ curl -X POST localhost:2693/api/v1/services \
 # → {"service":"hello","generation":1,"url":"/sites/hello/"}
 ```
 
+### MCP server (AI agents)
+
+boxd serves MCP (streamable HTTP, protocol `2025-06-18`) at `POST /mcp` on the
+same port. Tools: `get_status`, `list_services`, `deploy_static_site`,
+`delete_service`, `list_generations`, `rollback` — the high-level agent
+interface from PLAN.md, wrapping the same ops as the dashboard. Connect from
+Claude Code:
+
+```sh
+claude mcp add --transport http the-box http://127.0.0.1:2693/mcp
+```
+
+### Public exposure (BYO Cloudflare Tunnel)
+
+The dashboard stays private; services go public through a tunnel you own:
+
+1. Create a tunnel in the Cloudflare Zero Trust dashboard and point its public
+   hostname(s) at `http://localhost:2693`.
+2. Paste the tunnel token in **Networking** (or `POST /api/v1/network` with
+   `{"token":"...","enabled":true}`). boxd stores it 0600 under
+   `<data>/secrets/` and supervises `cloudflared tunnel run` (token passed via
+   environment, auto-restart with backoff).
+3. Set a `domain` on a service. Requests arriving with that Host header are
+   routed to it — the dashboard is never reachable through a service domain.
+
 ## NixOS module
 
 ```nix
@@ -110,10 +136,11 @@ flake.nix            package + devShell + nixosModules.default
 - [x] Atomic Nix apply + one-click rollback
 - [x] Local web dashboard (first pass) + static-site template
 - [x] JSON API groundwork for agents
+- [x] Cloudflare Tunnel one-token flow (BYO public exposure) + host routing
+- [x] Local MCP server wrapping the high-level ops
+- [x] Secrets handling (0600 file store, first consumer: tunnel token)
 - [ ] Installer script (curl-to-Box for existing Linux machines)
 - [ ] More templates (notes API, photo library, …) with binary caches
-- [ ] Cloudflare Tunnel one-token flow (BYO public exposure)
-- [ ] Local MCP server wrapping the high-level ops
-- [ ] Secrets handling, logs/metrics in dashboard
+- [ ] Logs/metrics in dashboard
 - [ ] GC-root registration for generation profiles; systemd-managed
       service templates beyond static sites
