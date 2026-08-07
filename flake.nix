@@ -1,27 +1,109 @@
 {
   description = "The Box — Nix-powered plug-and-play personal server platform";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    disko.url = "github:nix-community/disko";
+    disko.inputs.nixpkgs.follows = "nixpkgs";
+  };
 
-  outputs = { self, nixpkgs }:
+  outputs = { self, nixpkgs, disko }:
     let
       systems = [ "x86_64-linux" "aarch64-linux" ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
+
+      # The appliance system: one generic closure for every machine;
+      # per-machine details arrive via the installer handoff file.
+      boxOs = nixpkgs.lib.nixosSystem {
+        system = "x86_64-linux";
+        modules = [
+          self.nixosModules.default
+          ./nix/box-os.nix
+        ];
+      };
+
+      # RAM-resident automated installer embedding the Box OS closure.
+      # Delivered as an ISO (USB/virtual media), as netboot artifacts (PXE /
+      # batch installs), or staged from a running OS (Windows path).
+      installerWith = profileModule: nixpkgs.lib.nixosSystem {
+        system = "x86_64-linux";
+        specialArgs = {
+          boxSystem = boxOs.config.system.build.toplevel;
+          diskoPkg = disko.packages.x86_64-linux.disko;
+          nixpkgsSrc = nixpkgs;
+        };
+        modules = [
+          profileModule
+          ./nix/installer.nix
+        ];
+      };
     in
     {
-      packages = forAllSystems (pkgs: rec {
-        boxd = pkgs.rustPlatform.buildRustPackage {
-          pname = "boxd";
-          version = "0.1.0";
-          src = ./boxd;
-          cargoLock.lockFile = ./boxd/Cargo.lock;
-          meta = {
-            description = "The Box daemon: declarative service management, dashboard and agent API";
-            mainProgram = "boxd";
+      packages = nixpkgs.lib.recursiveUpdate
+        (forAllSystems (pkgs: rec {
+          boxd = pkgs.rustPlatform.buildRustPackage {
+            pname = "boxd";
+            version = "0.1.0";
+            src = ./boxd;
+            cargoLock.lockFile = ./boxd/Cargo.lock;
+            meta = {
+              description = "The Box daemon: declarative service management, dashboard and agent API";
+              mainProgram = "boxd";
+            };
+          };
+          default = boxd;
+        }))
+        {
+          x86_64-linux = {
+            installer-iso =
+              self.nixosConfigurations.box-installer-iso.config.system.build.isoImage;
+            installer-netboot =
+              let
+                build = self.nixosConfigurations.box-installer-netboot.config.system.build;
+                pkgs = nixpkgs.legacyPackages.x86_64-linux;
+              in
+              pkgs.symlinkJoin {
+                name = "box-installer-netboot";
+                paths = [ build.kernel build.netbootRamdisk build.netbootIpxeScript ];
+              };
+
+            # Payload for the staged-from-Windows hot install: GRUB reads the
+            # kernel/initrd from the NTFS Windows partition (the ESP is far
+            # too small for the initrd), boots the RAM installer with
+            # partition scanning enabled, and the installer takes it from
+            # there. stage.ps1 is the user-facing entry point.
+            installer-windows =
+              let
+                build = self.nixosConfigurations.box-installer-netboot.config.system.build;
+                pkgs = nixpkgs.legacyPackages.x86_64-linux;
+                grubCfg = pkgs.writeText "box-grub-embedded.cfg" ''
+                  set timeout=0
+                  search --no-floppy --file /box-installer/box-marker --set root
+                  linux /box-installer/bzImage box.install-scan=1 console=ttyS0,115200 console=tty0
+                  initrd /box-installer/initrd
+                  boot
+                '';
+              in
+              pkgs.runCommand "box-installer-windows"
+                { nativeBuildInputs = [ pkgs.grub2_efi ]; } ''
+                mkdir -p $out
+                grub-mkstandalone -O x86_64-efi -o $out/grubx64.efi \
+                  "boot/grub/grub.cfg=${grubCfg}"
+                cp ${build.kernel}/bzImage $out/bzImage
+                cp ${build.netbootRamdisk}/initrd $out/initrd
+                touch $out/box-marker
+                cp ${./installers/windows/stage.ps1} $out/stage.ps1
+              '';
           };
         };
-        default = boxd;
-      });
+
+      nixosConfigurations = {
+        box-os = boxOs;
+        box-installer-iso = installerWith
+          "${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix";
+        box-installer-netboot = installerWith
+          "${nixpkgs}/nixos/modules/installer/netboot/netboot-minimal.nix";
+      };
 
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {

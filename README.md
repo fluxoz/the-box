@@ -107,6 +107,21 @@ The dashboard stays private; services go public through a tunnel you own:
 3. Set a `domain` on a service. Requests arriving with that Host header are
    routed to it — the dashboard is never reachable through a service domain.
 
+## Box OS (dedicated appliance)
+
+Blow-away installs that turn any UEFI machine into a Box appliance — the
+whole OS becomes an atomically upgradeable, rollbackable Nix generation. One
+RAM-resident installer image serves every path: USB/ISO, staged from a
+running Windows install (`stage.ps1` + one-shot firmware boot entry), or
+PXE for batch/fleet installs. Everything is driven by a single agent-writable
+`box-install.json` handoff file. See [docs/install.md](docs/install.md).
+
+```sh
+nix build .#installer-iso       # bootable USB/virtual-media image
+nix build .#installer-windows   # stage.ps1 + payload for the Windows takeover
+nix build .#installer-netboot   # kernel/initrd/ipxe for PXE fleets
+```
+
 ## NixOS module
 
 ```nix
@@ -139,7 +154,10 @@ flake.nix            package + devShell + nixosModules.default
 - [x] Cloudflare Tunnel one-token flow (BYO public exposure) + host routing
 - [x] Local MCP server wrapping the high-level ops
 - [x] Secrets handling (0600 file store, first consumer: tunnel token)
-- [ ] Installer script (curl-to-Box for existing Linux machines)
+- [x] Box OS appliance: RAM-resident wipe-and-install image (ISO / PXE /
+      Windows takeover), disko layout, agent-writable handoff file
+- [ ] Installer script (curl-to-Box on top of an existing Linux/macOS)
+- [ ] Secure Boot story for the Windows takeover path (signed shim)
 - [ ] More templates (notes API, photo library, …) with binary caches
 - [ ] Logs/metrics in dashboard
 - [ ] GC-root registration for generation profiles; systemd-managed

@@ -38,6 +38,9 @@ in
       # boxd shells out to nix to build generations and to cloudflared for
       # BYO tunnel exposure.
       path = [ pkgs.nix pkgs.cloudflared ];
+      # nix (invoked by boxd for generation builds) needs a writable cache
+      # under $HOME; the boxd system user's default home is /var/empty.
+      environment.HOME = cfg.dataDir;
       serviceConfig = {
         ExecStart = "${lib.getExe cfg.package} --data-dir ${cfg.dataDir} serve --listen ${cfg.listen}";
         User = "boxd";
