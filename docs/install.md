@@ -105,6 +105,12 @@ the next boot falls back into Windows untouched; Secure Boot must currently
 be disabled in firmware first. UEFI only; legacy-BIOS machines use the USB
 path.
 
+Two edge cases worth knowing: if Windows has **pending updates**, its own
+update-install reboot can win the first reboot ahead of our one-shot entry —
+re-run `stage.ps1` once updates settle. And **Secure Boot** must be off until
+we ship a signed shim (the staged GRUB is unsigned). Both are detected and
+called out by the stager before it does anything destructive.
+
 ### PXE / batch (fleets)
 
 ```sh
