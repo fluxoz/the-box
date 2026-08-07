@@ -1,0 +1,5 @@
+/boxd/target
+/result
+/result-*
+/.dev-data
+.direnv/
