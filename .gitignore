@@ -3,3 +3,4 @@
 /result-*
 /.dev-data
 .direnv/
+*.iso
