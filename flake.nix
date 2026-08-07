@@ -76,18 +76,54 @@
               let
                 build = self.nixosConfigurations.box-installer-netboot.config.system.build;
                 pkgs = nixpkgs.legacyPackages.x86_64-linux;
-                grubCfg = pkgs.writeText "box-grub-embedded.cfg" ''
+                # The payload lives on the NTFS Windows partition; GRUB must
+                # load GPT + NTFS drivers before it can enumerate and read it.
+                # The kernel params (init=/nix/store/.../init, root=fstab, …)
+                # are derived at build time from the netboot iPXE script so the
+                # closure-finder always gets exactly what the image expects;
+                # only box.install-scan=1 is added on top.
+                grubCfg = pkgs.runCommand "box-grub-embedded.cfg" { } ''
+                  params=$(grep '^kernel' ${build.netbootIpxeScript}/netboot.ipxe \
+                    | sed -e 's/^kernel bzImage //' \
+                          -e 's/ initrd=initrd//' \
+                          -e 's/ *''${cmdline}//')
+                  cat > $out <<EOF
+                  insmod part_gpt
+                  insmod part_msdos
+                  insmod ntfs
+                  insmod fat
+                  insmod search_fs_file
                   set timeout=0
                   search --no-floppy --file /box-installer/box-marker --set root
-                  linux /box-installer/bzImage box.install-scan=1 console=ttyS0,115200 console=tty0
+                  linux /box-installer/bzImage $params box.install-scan=1
                   initrd /box-installer/initrd
                   boot
+                  EOF
                 '';
+                # Explicitly embed every module the config needs — the default
+                # standalone set does not reliably include part_gpt/ntfs.
+                grubModules = [
+                  "part_gpt"
+                  "part_msdos"
+                  "ntfs"
+                  "ntfscomp"
+                  "fat"
+                  "search"
+                  "search_fs_file"
+                  "linux"
+                  "normal"
+                  "echo"
+                  "test"
+                  "configfile"
+                  "boot"
+                  "all_video"
+                ];
               in
               pkgs.runCommand "box-installer-windows"
                 { nativeBuildInputs = [ pkgs.grub2_efi ]; } ''
                 mkdir -p $out
                 grub-mkstandalone -O x86_64-efi -o $out/grubx64.efi \
+                  --modules="${nixpkgs.lib.concatStringsSep " " grubModules}" \
                   "boot/grub/grub.cfg=${grubCfg}"
                 cp ${build.kernel}/bzImage $out/bzImage
                 cp ${build.netbootRamdisk}/initrd $out/initrd

@@ -26,9 +26,25 @@ $isAdmin = ([Security.Principal.WindowsPrincipal] `
 ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin) { Fail "Run this script as Administrator." }
 
-$fw = (Get-ItemProperty -Path HKLM:\SYSTEM\CurrentControlSet\Control -Name PEFirmwareType).PEFirmwareType
-if ($fw -ne 2) {
-    Fail "This machine boots in legacy BIOS mode. Use the Box USB installer instead."
+# UEFI detection that works on an installed Windows (not just WinPE).
+# PEFirmwareType exists only during setup, so probe several sources.
+function Test-IsUefi {
+    # 1. bcdedit reports the firmware path for EFI systems.
+    try {
+        if ((bcdedit /enum '{current}' 2>$null) -match '\.efi') { return $true }
+    } catch { }
+    # 2. An EFI System Partition means GPT/UEFI boot.
+    try {
+        $esp = Get-Partition -ErrorAction Stop |
+            Where-Object { $_.GptType -eq '{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}' }
+        if ($esp) { return $true }
+    } catch { }
+    # 3. The system-set firmware_type environment variable, if present.
+    if ($env:firmware_type -eq 'UEFI') { return $true }
+    return $false
+}
+if (-not (Test-IsUefi)) {
+    Fail "This machine appears to boot in legacy BIOS mode. Use the Box USB installer instead."
 }
 
 foreach ($f in @("grubx64.efi", "bzImage", "initrd", "box-marker", "box-install.json")) {
