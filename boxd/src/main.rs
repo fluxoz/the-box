@@ -1,6 +1,5 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
@@ -135,11 +134,8 @@ fn make_builder(choice: BackendArg, paths: &Paths) -> Box<dyn Builder> {
 }
 
 fn run_server(paths: Paths, builder: Box<dyn Builder>, listen: SocketAddr) -> Result<()> {
-    let state = Arc::new(AppState {
-        paths,
-        builder,
-        apply_lock: Mutex::new(()),
-    });
+    let state = AppState::new(paths, builder);
+    state.tunnel.startup();
     let runtime = tokio::runtime::Runtime::new()?;
     runtime.block_on(async move {
         let app = web::router(state);

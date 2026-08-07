@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use anyhow::{bail, Context, Result};
 use chrono::Utc;
 
-use crate::config::{validate_service_name, BoxConfig, ServiceConfig, Template};
+use crate::config::{validate_domain, validate_service_name, BoxConfig, ServiceConfig, Template};
 use crate::manifest;
 use crate::nixgen;
 use crate::paths::Paths;
@@ -52,8 +52,28 @@ pub fn apply(paths: &Paths, builder: &dyn Builder) -> Result<GenerationInfo> {
 }
 
 /// Create or update a static-site service, then apply.
-pub fn deploy(paths: &Paths, builder: &dyn Builder, req: DeployRequest) -> Result<GenerationInfo> {
+pub fn deploy(
+    paths: &Paths,
+    builder: &dyn Builder,
+    mut req: DeployRequest,
+) -> Result<GenerationInfo> {
     validate_service_name(&req.name)?;
+    if let Some(domain) = req.domain.take() {
+        let domain = domain.trim().to_ascii_lowercase();
+        validate_domain(&domain)?;
+        let config = BoxConfig::load(paths)?;
+        if let Some(other) = config
+            .services
+            .iter()
+            .find(|s| s.name != req.name && s.domain.as_deref() == Some(domain.as_str()))
+        {
+            bail!(
+                "domain {domain:?} is already used by service {:?}",
+                other.name
+            );
+        }
+        req.domain = Some(domain);
+    }
 
     let source_dir = paths.source_dir(&req.name);
     if let Some(from) = &req.source_path {

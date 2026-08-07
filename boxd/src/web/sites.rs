@@ -1,14 +1,62 @@
 use std::path::{Path as FsPath, PathBuf};
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Request, State},
     http::{header, StatusCode},
+    middleware::Next,
     response::{IntoResponse, Redirect, Response},
 };
 
+use crate::manifest;
 use crate::store;
 
 use super::SharedState;
+
+/// Host-based routing for tunnel traffic, applied BEFORE the router: when a
+/// request's Host matches a service's domain in the current generation, serve
+/// that service's site and never fall through to the dashboard. Domains are
+/// validated to be real hostnames (never localhost or an IP), so local
+/// dashboard access is unaffected.
+pub async fn host_dispatch(
+    State(state): State<SharedState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let host = request
+        .headers()
+        .get(header::HOST)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| {
+            value
+                .split(':')
+                .next()
+                .unwrap_or("")
+                .trim_end_matches('.')
+                .to_ascii_lowercase()
+        })
+        .unwrap_or_default();
+
+    if host.contains('.') {
+        if let Some(service) = service_for_host(&state, &host) {
+            let raw_path = request.uri().path();
+            let rel = urlencoding::decode(raw_path)
+                .map(|decoded| decoded.into_owned())
+                .unwrap_or_else(|_| raw_path.to_string());
+            return serve(state, &service, rel.trim_start_matches('/')).await;
+        }
+    }
+    next.run(request).await
+}
+
+fn service_for_host(state: &SharedState, host: &str) -> Option<String> {
+    let root = store::current_store_path(&state.paths)?;
+    let manifest = manifest::read_manifest(&root).ok()?;
+    manifest
+        .services
+        .iter()
+        .find(|s| s.domain.as_deref() == Some(host))
+        .map(|s| s.name.clone())
+}
 
 pub async fn redirect_to_slash(Path(name): Path<String>) -> Redirect {
     Redirect::permanent(&format!("/sites/{name}/"))

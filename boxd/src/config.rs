@@ -87,9 +87,50 @@ pub fn validate_service_name(name: &str) -> Result<()> {
     Ok(())
 }
 
+/// Domains are matched against incoming Host headers for tunnel traffic, so
+/// they must be real lowercase hostnames — and must never shadow localhost
+/// or a bare IP, which would expose the dashboard's address space.
+pub fn validate_domain(domain: &str) -> Result<()> {
+    let ok = !domain.is_empty()
+        && domain.len() <= 253
+        && domain.contains('.')
+        && domain
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' || c == '-')
+        && !domain
+            .split('.')
+            .any(|label| label.is_empty() || label.starts_with('-') || label.ends_with('-'))
+        && !domain.chars().all(|c| c.is_ascii_digit() || c == '.');
+    if !ok {
+        bail!("invalid domain {domain:?}: use a lowercase hostname like site.example.com");
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn domain_validation() {
+        for good in ["example.com", "my-site.example.co.uk", "a.b"] {
+            assert!(validate_domain(good).is_ok(), "{good} should be valid");
+        }
+        for bad in [
+            "",
+            "localhost",
+            "no-dots",
+            "127.0.0.1",
+            "Example.com",
+            "-a.com",
+            "a-.com",
+            "a..com",
+            ".a.com",
+            "a b.com",
+        ] {
+            assert!(validate_domain(bad).is_err(), "{bad:?} should be invalid");
+        }
+    }
 
     #[test]
     fn name_validation() {

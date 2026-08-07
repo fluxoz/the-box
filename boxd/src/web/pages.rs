@@ -40,6 +40,7 @@ fn layout(title: &str, flash: &Flash, body: Markup) -> Html<String> {
                     div.links {
                         a href="/" { "Services" }
                         a href="/generations" { "Generations" }
+                        a href="/network" { "Networking" }
                         a.btn href="/services/new" { "Deploy" }
                     }
                 }
@@ -313,6 +314,94 @@ pub async fn generations(
         }
     };
     Ok(layout("Generations", &flash, body))
+}
+
+pub async fn network(State(state): State<SharedState>, Query(flash): Query<Flash>) -> Html<String> {
+    let status = state.tunnel.status();
+    let body = html! {
+        h2 { "Networking" }
+        p.muted {
+            "The Box is local-first: the dashboard stays private. To make services public without opening ports, "
+            "bring your own tunnel — traffic flows Internet → Cloudflare → tunnel → this Box, which routes "
+            "requests to the service whose domain matches the request's Host header."
+        }
+        section.cards {
+            div.card {
+                h3 { "Cloudflare Tunnel" }
+                p.big {
+                    @if status.state == "running" { span.badge.on { "running" } }
+                    @else if status.enabled { span.badge { (status.state) } }
+                    @else { span.badge { "disabled" } }
+                }
+                p.muted {
+                    @if let Some(pid) = status.pid { "cloudflared pid " (pid) }
+                    @else { "connector process" }
+                }
+            }
+            div.card {
+                h3 { "cloudflared" }
+                p.big { @if status.installed { "installed" } @else { "not found" } }
+                p.muted { "must be on the Box's PATH" }
+            }
+            div.card {
+                h3 { "Tunnel token" }
+                p.big { @if status.token_saved { "saved" } @else { "not set" } }
+                p.muted { "stored with 0600 permissions, never in config" }
+            }
+        }
+        section {
+            h2 { "Set up" }
+            ol {
+                li { "In the Cloudflare Zero Trust dashboard, create a tunnel and copy its token." }
+                li { "Point the tunnel's public hostname(s) at " code { "http://localhost:2693" } " (this daemon)." }
+                li { "Paste the token below and enable the tunnel." }
+                li { "Give each service the matching domain — requests arriving for that Host are routed to it." }
+            }
+            form.stack method="post" action="/network/cloudflare" {
+                label {
+                    "Cloudflare tunnel token"
+                    input type="password" name="token" placeholder=(if status.token_saved { "•••••• (keep current token)" } else { "eyJh..." });
+                }
+                button.btn type="submit" { @if status.enabled { "Update & restart" } @else { "Save & enable" } }
+            }
+            @if status.enabled {
+                form method="post" action="/network/cloudflare/disable" style="margin-top:.75rem" {
+                    button.danger type="submit" { "Disable tunnel" }
+                }
+            }
+        }
+    };
+    layout("Networking", &flash, body)
+}
+
+#[derive(Deserialize)]
+pub struct CloudflareForm {
+    #[serde(default)]
+    token: Option<String>,
+}
+
+fn network_redirect(result: anyhow::Result<()>, ok_msg: &str) -> Redirect {
+    match result {
+        Ok(()) => Redirect::to(&format!("/network?ok={}", urlencoding::encode(ok_msg))),
+        Err(err) => Redirect::to(&format!(
+            "/network?err={}",
+            urlencoding::encode(&format!("{err:#}"))
+        )),
+    }
+}
+
+pub async fn configure_cloudflare(
+    State(state): State<SharedState>,
+    Form(form): Form<CloudflareForm>,
+) -> Redirect {
+    let token = none_if_empty(form.token);
+    let result = state.tunnel.configure(token.as_deref(), true).map(|_| ());
+    network_redirect(result, "Cloudflare tunnel enabled")
+}
+
+pub async fn disable_cloudflare(State(state): State<SharedState>) -> Redirect {
+    let result = state.tunnel.configure(None, false).map(|_| ());
+    network_redirect(result, "Cloudflare tunnel disabled")
 }
 
 pub async fn rollback(State(state): State<SharedState>, Path(number): Path<u64>) -> Redirect {
