@@ -7,6 +7,7 @@ use chrono::Utc;
 use crate::config::BoxConfig;
 use crate::manifest::{Manifest, ManifestService, MANIFEST_FILE};
 use crate::paths::Paths;
+use crate::templates;
 use crate::util;
 
 const FLAKE_TEMPLATE: &str = r#"{
@@ -50,7 +51,8 @@ pub fn write_gensrc(paths: &Paths, config: &BoxConfig) -> Result<PathBuf> {
             .iter()
             .map(|s| ManifestService {
                 name: s.name.clone(),
-                template: s.template.as_str().to_string(),
+                template: s.template.clone(),
+                params: s.params.clone(),
                 domain: s.domain.clone(),
                 public: s.public,
             })
@@ -61,6 +63,25 @@ pub fn write_gensrc(paths: &Paths, config: &BoxConfig) -> Result<PathBuf> {
         gensrc.join(MANIFEST_FILE),
         serde_json::to_string_pretty(&manifest)?,
     )?;
+
+    // Compile each service into a dendritic host module (compile-to-module).
+    // boxd's fast path builds the content directly below; these modules are
+    // the artifact the OS tier and dashboard introspection read.
+    let modules_dir = gensrc.join("modules");
+    fs::create_dir_all(&modules_dir)?;
+    for service in &config.services {
+        if let Some(t) = templates::get(&service.template) {
+            let mut params = service.params.clone();
+            if let (Some(obj), Some(domain)) = (params.as_object_mut(), &service.domain) {
+                obj.entry("domain")
+                    .or_insert_with(|| serde_json::Value::String(domain.clone()));
+            }
+            fs::write(
+                modules_dir.join(format!("{}.nix", service.name)),
+                t.nix_module(&service.name, &params),
+            )?;
+        }
+    }
 
     for service in &config.services {
         let source = paths.source_dir(&service.name);
@@ -96,14 +117,15 @@ fn render_flake(config: &BoxConfig) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{ServiceConfig, Template};
+    use crate::config::ServiceConfig;
 
     #[test]
     fn flake_lists_each_service() {
         let config = BoxConfig {
             services: vec![ServiceConfig {
                 name: "blog".into(),
-                template: Template::StaticSite,
+                template: "static-site".into(),
+                params: serde_json::json!({}),
                 domain: None,
                 public: false,
                 created_at: Utc::now(),

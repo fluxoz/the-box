@@ -11,9 +11,11 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::config::BoxConfig;
+use crate::history::{self, HistoryEntry};
 use crate::manifest;
 use crate::ops;
 use crate::store::{self, GenerationInfo};
+use crate::templates;
 
 use super::{blocking, AppError, SharedState};
 
@@ -24,7 +26,35 @@ pub fn router() -> Router<SharedState> {
         .route("/services/{name}", delete(delete_service))
         .route("/generations", get(list_generations))
         .route("/generations/{number}/rollback", post(rollback))
+        .route("/history", get(list_history))
+        .route("/templates", get(list_templates))
         .route("/network", get(network_status).post(configure_network))
+}
+
+#[derive(Serialize)]
+struct TemplateView {
+    id: &'static str,
+    title: &'static str,
+    description: &'static str,
+}
+
+async fn list_templates() -> Json<Vec<TemplateView>> {
+    Json(
+        templates::all()
+            .iter()
+            .map(|t| TemplateView {
+                id: t.id(),
+                title: t.title(),
+                description: t.description(),
+            })
+            .collect(),
+    )
+}
+
+async fn list_history(
+    State(state): State<SharedState>,
+) -> Result<Json<Vec<HistoryEntry>>, AppError> {
+    Ok(Json(history::log(&state.paths, 100)?))
 }
 
 #[derive(Serialize)]
@@ -51,7 +81,8 @@ async fn status(State(state): State<SharedState>) -> Result<Json<Status>, AppErr
 #[derive(Serialize)]
 struct ServiceView {
     name: String,
-    template: &'static str,
+    template: String,
+    params: serde_json::Value,
     domain: Option<String>,
     public: bool,
     created_at: DateTime<Utc>,
@@ -78,7 +109,8 @@ async fn list_services(
                 "pending"
             },
             name: s.name,
-            template: s.template.as_str(),
+            template: s.template,
+            params: s.params,
             domain: s.domain,
             public: s.public,
             created_at: s.created_at,
@@ -111,13 +143,13 @@ async fn create_service(
     State(state): State<SharedState>,
     Json(body): Json<DeployBody>,
 ) -> Result<Json<DeployResult>, AppError> {
-    let request = ops::DeployRequest {
-        name: body.name.trim().to_string(),
-        domain: body.domain,
-        public: body.public,
-        index_html: body.index_html,
-        source_path: body.source_path,
-    };
+    let request = ops::DeployRequest::static_site(
+        body.name.trim().to_string(),
+        body.index_html,
+        body.source_path,
+        body.domain,
+        body.public,
+    );
     let name = request.name.clone();
     let info = {
         let state = state.clone();

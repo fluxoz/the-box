@@ -23,6 +23,8 @@ pub struct ManifestService {
     pub name: String,
     pub template: String,
     #[serde(default)]
+    pub params: serde_json::Value,
+    #[serde(default)]
     pub domain: Option<String>,
     #[serde(default)]
     pub public: bool,
