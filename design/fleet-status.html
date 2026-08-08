@@ -1,0 +1,350 @@
+<title>The Box — Fleet Status</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root {
+  --bg: #e7e3d8; --panel: #f1ede2; --panel-2: #ece7da; --line: #cbc4b3; --line-strong: #a89f8b;
+  --ink: #1f1b14; --dim: #6c6455; --faint: #918872;
+  --brass: #916d2f; --brass-bright: #a97f34; --brass-wash: rgba(169,127,52,.12);
+  --critical: #ad3c2b; --critical-wash: rgba(173,60,43,.10);
+  --ok: #4f7a54; --ok-wash: rgba(79,122,84,.12);
+  --shadow: rgba(31,27,20,.10);
+  --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14110c; --panel: #1b170f; --panel-2: #201b12; --line: #322b1f; --line-strong: #4a4030;
+    --ink: #ece5d5; --dim: #948a68; --faint: #6e654a;
+    --brass: #c99b4e; --brass-bright: #ddb15c; --brass-wash: rgba(201,155,78,.14);
+    --critical: #d5543f; --critical-wash: rgba(213,84,63,.13);
+    --ok: #6fa578; --ok-wash: rgba(111,165,120,.14);
+    --shadow: rgba(0,0,0,.4);
+  }
+}
+:root[data-theme="light"] { --bg:#e7e3d8;--panel:#f1ede2;--panel-2:#ece7da;--line:#cbc4b3;--line-strong:#a89f8b;--ink:#1f1b14;--dim:#6c6455;--faint:#918872;--brass:#916d2f;--brass-bright:#a97f34;--brass-wash:rgba(169,127,52,.12);--critical:#ad3c2b;--critical-wash:rgba(173,60,43,.10);--ok:#4f7a54;--ok-wash:rgba(79,122,84,.12);--shadow:rgba(31,27,20,.10); }
+:root[data-theme="dark"] { --bg:#14110c;--panel:#1b170f;--panel-2:#201b12;--line:#322b1f;--line-strong:#4a4030;--ink:#ece5d5;--dim:#948a68;--faint:#6e654a;--brass:#c99b4e;--brass-bright:#ddb15c;--brass-wash:rgba(201,155,78,.14);--critical:#d5543f;--critical-wash:rgba(213,84,63,.13);--ok:#6fa578;--ok-wash:rgba(111,165,120,.14);--shadow:rgba(0,0,0,.4); }
+
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--ink); font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; font-size:15px; line-height:1.55; -webkit-font-smoothing:antialiased; }
+body > * { position: relative; z-index: 1; }
+::selection { background: var(--brass-wash); }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 22px 60px; }
+
+header.top { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:18px 0 14px; }
+.brand { display:flex; align-items:baseline; gap:12px; text-decoration:none; }
+.brand .mark { font-family:var(--mono); font-weight:700; font-size:18px; letter-spacing:.02em; color:var(--ink); }
+.brand .mark b { color:var(--brass); }
+.brand .sub { font-family:var(--mono); font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:var(--faint); }
+.top-right { display:flex; align-items:center; gap:14px; }
+.stamp { font-family:var(--mono); font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--dim); text-align:right; line-height:1.5; }
+.stamp b { color:var(--ink); font-weight:600; }
+.theme-btn { font-family:var(--mono); font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--dim); background:transparent; border:1px solid var(--line-strong); padding:7px 10px; border-radius:2px; cursor:pointer; }
+.theme-btn:hover { color:var(--brass); border-color:var(--brass); }
+
+nav.tabs { display:flex; align-items:center; gap:4px; border-bottom:1px solid var(--line); margin-bottom:6px; }
+nav.tabs a { font-family:var(--mono); font-size:12.5px; letter-spacing:.12em; text-transform:uppercase; font-weight:600; color:var(--dim); text-decoration:none; padding:12px 14px; border-bottom:2px solid transparent; margin-bottom:-1px; }
+nav.tabs a:hover { color:var(--ink); }
+nav.tabs a.active { color:var(--brass); border-bottom-color:var(--brass); }
+
+.head-row { display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap; margin:22px 0 8px; }
+.eyebrow { font-family:var(--mono); font-size:11.5px; letter-spacing:.24em; text-transform:uppercase; color:var(--brass); margin:0 0 8px; }
+h1 { font-family:var(--mono); font-weight:700; font-size:clamp(24px,4vw,34px); letter-spacing:-.01em; margin:0; }
+.legend { display:flex; gap:15px; flex-wrap:wrap; font-family:var(--mono); font-size:11px; letter-spacing:.05em; text-transform:uppercase; color:var(--dim); }
+.legend .li { display:flex; align-items:center; gap:6px; }
+.legend .d { width:9px; height:9px; border-radius:50%; }
+.d.ok{background:var(--ok);} .d.work{background:var(--brass);} .d.crit{background:var(--critical);} .d.off{background:transparent;border:1.5px solid var(--faint);}
+.legend .edge { width:22px; height:0; border-top:1.5px solid var(--brass); }
+.legend .edge.loose { border-top:1.5px dashed var(--faint); }
+.legend .g { font-size:13px; line-height:1; }
+
+/* ---- canvas ---- */
+.canvas {
+  position: relative; margin-top: 18px; padding: 34px 26px 30px; overflow-x: auto;
+  background: var(--panel);
+  background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 30px 30px; background-position: -1px -1px;
+  border: 1px solid var(--line-strong); border-radius: 3px;
+}
+.corner { position:absolute; width:15px; height:15px; border:2px solid var(--brass); opacity:.75; }
+.corner.tl{ top:9px; left:9px; border-right:0; border-bottom:0; }
+.corner.tr{ top:9px; right:9px; border-left:0; border-bottom:0; }
+.corner.bl{ bottom:9px; left:9px; border-right:0; border-top:0; }
+.corner.br{ bottom:9px; right:9px; border-left:0; border-top:0; }
+
+.diagram { position: relative; min-width: 980px; margin: 0 auto; }
+svg.wires { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; overflow:visible; }
+
+.top-zone { position:relative; display:flex; justify-content:center; margin-bottom:78px; }
+.fleet-row { display:flex; justify-content:center; gap:22px; }
+
+.node {
+  position: relative; width: 178px; background: var(--panel-2); border: 1px solid var(--line-strong);
+  border-radius: 3px; cursor: pointer; box-shadow: 0 1px 0 var(--shadow); transition: border-color .12s, background .12s;
+}
+.node:hover { border-color: var(--brass); }
+.node .node-h { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 11px; border-bottom:1px solid var(--line); }
+.node .desig { font-family:var(--mono); font-size:12.5px; font-weight:700; color:var(--ink); letter-spacing:.01em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.node .node-b { padding:10px 11px 11px; display:flex; flex-direction:column; gap:6px; }
+.pill { font-family:var(--mono); font-size:9.5px; letter-spacing:.1em; text-transform:uppercase; padding:2px 6px 2px 5px; border-radius:2px; color:var(--bg); white-space:nowrap; display:inline-flex; align-items:center; gap:4px; }
+.pill.ok{ background:var(--ok); } .pill.work{ background:var(--brass); } .pill.crit{ background:var(--critical); }
+.pill.off{ background:transparent; color:var(--faint); border:1px solid var(--faint); }
+
+.stat { display:flex; justify-content:space-between; font-family:var(--mono); font-size:11.5px; }
+.stat span { color:var(--faint); letter-spacing:.1em; text-transform:uppercase; font-size:10px; }
+.stat b { color:var(--ink); font-weight:600; font-variant-numeric:tabular-nums; }
+.node .reach { font-family:var(--mono); font-size:10.5px; color:var(--brass); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.node .note { font-family:var(--mono); font-size:11px; color:var(--dim); }
+.node .note.crit { color:var(--critical); }
+.node .unpair { font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); }
+.node .pairbtn { font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; font-weight:600; color:var(--brass); background:transparent; border:1px solid var(--brass); border-radius:2px; padding:5px 8px; cursor:pointer; align-self:flex-start; }
+.node .pairbtn:hover { background:var(--brass); color:var(--bg); }
+.expo { display:inline-flex; align-items:center; gap:5px; font-family:var(--mono); font-size:9.5px; letter-spacing:.09em; text-transform:uppercase; padding:3px 6px; border-radius:2px; border:1px solid var(--line); background:var(--bg); color:var(--dim); align-self:flex-start; margin-top:1px; }
+.expo.pub { color:var(--brass); border-color:color-mix(in srgb,var(--brass) 45%, var(--line)); }
+.expo.down { color:var(--critical); border-color:color-mix(in srgb,var(--critical) 45%, var(--line)); }
+
+.node.selected { border-color: var(--brass); background: var(--brass-wash); box-shadow: 0 0 0 3px var(--brass-wash); }
+.node.offline { opacity: .6; }
+.node.root { width: 288px; background: var(--panel); border-color: var(--brass); }
+.node.root .node-h { border-bottom-color: color-mix(in srgb, var(--brass) 35%, var(--line)); }
+.node.root .desig { color: var(--brass); }
+.node.root .sub, .node.cloud .sub { font-family:var(--mono); font-size:10px; letter-spacing:.13em; text-transform:uppercase; color:var(--faint); }
+.node.cloud { position:absolute; right:0; top:2px; width:190px; background:var(--panel); border-color:color-mix(in srgb,var(--brass) 55%, var(--line-strong)); cursor:default; }
+.node.cloud:hover { border-color: color-mix(in srgb,var(--brass) 55%, var(--line-strong)); }
+.node.cloud .desig { color:var(--brass); }
+
+/* ---- detail readout ---- */
+.detail { margin-top: 20px; border: 1px solid var(--line-strong); border-radius: 3px; background: var(--panel); overflow: hidden; }
+.detail .dh { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:11px 14px; border-bottom:1px solid var(--line); background:var(--panel-2); }
+.detail .dh .t { font-family:var(--mono); font-size:11px; letter-spacing:.2em; text-transform:uppercase; color:var(--dim); font-weight:600; }
+.detail .dh .id { font-family:var(--mono); font-size:12px; color:var(--brass); }
+.detail .db { padding:6px 14px 12px; display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); }
+.detail .drow { display:flex; flex-direction:column; gap:3px; padding:9px 0; border-bottom:1px dashed var(--line); margin-right:18px; }
+.detail .drow .k { font-family:var(--mono); font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--faint); }
+.detail .drow .v { font-family:var(--mono); font-size:14px; color:var(--ink); font-weight:500; font-variant-numeric:tabular-nums; }
+.detail .drow .v.brass { color:var(--brass); } .detail .drow .v.crit { color:var(--critical); }
+
+footer { margin-top:26px; font-family:var(--mono); font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--faint); }
+footer b { color: var(--dim); }
+
+@media (max-width: 640px) { .stamp { display:none; } }
+@media (prefers-reduced-motion: reduce) { * { animation:none!important; transition:none!important; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="#"><span class="mark">◧ THE <b>BOX</b></span><span class="sub">Configurator</span></a>
+    <div class="top-right">
+      <div class="stamp"><div>FIELD OP: <b>OBSERVE</b></div><div id="clock">--:--:--</div></div>
+      <button class="theme-btn" id="theme" type="button">◐ Theme</button>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <a href="#">Services</a><a href="#">Generations</a><a href="#">Networking</a><a class="active" href="#">Fleet</a>
+  </nav>
+
+  <div class="head-row">
+    <div>
+      <p class="eyebrow">Fleet // Local Segment</p>
+      <h1>Fleet status</h1>
+    </div>
+    <div class="legend">
+      <span class="li"><span class="d ok"></span>Online</span>
+      <span class="li"><span class="d work"></span>Updating</span>
+      <span class="li"><span class="d crit"></span>Degraded</span>
+      <span class="li"><span class="d off"></span>Offline</span>
+      <span class="li"><span class="edge"></span>Paired</span>
+      <span class="li"><span class="edge loose"></span>Unpaired</span>
+      <span class="li"><span class="g" style="color:var(--brass)">☁</span>Public tunnel</span>
+      <span class="li"><span class="g" style="color:var(--faint)">⊟</span>Private · LAN</span>
+    </div>
+  </div>
+
+  <div class="canvas">
+    <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
+    <div class="diagram" id="diagram">
+      <svg class="wires" id="wires" aria-hidden="true"></svg>
+      <div class="top-zone">
+        <div class="node root" id="rootnode">
+          <div class="node-h"><span class="desig">LAN · WORKSHOP</span><span class="pill ok">● SEGMENT</span></div>
+          <div class="node-b">
+            <div class="stat"><span>Subnet</span><b>192.168.1.0/24</b></div>
+            <div class="stat"><span>Discovered</span><b id="count">5 units</b></div>
+            <div class="sub">mDNS · _thebox._tcp · coarse health public</div>
+          </div>
+        </div>
+        <div class="node cloud" id="cloudnode">
+          <div class="node-h"><span class="desig">◈ CLOUDFLARE</span><span class="pill work">● EDGE</span></div>
+          <div class="node-b">
+            <div class="sub">Public ingress</div>
+            <div class="stat"><span>Tunnels</span><b>2</b></div>
+            <div class="note crit">▲ 1 down</div>
+          </div>
+        </div>
+      </div>
+      <div class="fleet-row" id="row"></div>
+    </div>
+  </div>
+
+  <div class="detail" id="detail"></div>
+
+  <footer>◧ THE BOX CONFIGURATOR · <b>FLEET VIEW</b> · PEER-FEDERATED · READ ANY · <b>WRITE REQUIRES PAIRING</b></footer>
+</div>
+
+<script>
+"use strict";
+(function () {
+  var root = document.documentElement;
+  document.getElementById("theme").addEventListener("click", function () {
+    var cur = root.getAttribute("data-theme") || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    root.setAttribute("data-theme", cur === "dark" ? "light" : "dark");
+  });
+  var clk = document.getElementById("clock");
+  function p(n){ return String(n).padStart(2,"0"); }
+  var days=["SUN","MON","TUE","WED","THU","FRI","SAT"];
+  function tick(){ var d=new Date(); clk.textContent=p(d.getHours())+":"+p(d.getMinutes())+":"+p(d.getSeconds())+" • "+days[d.getDay()]; }
+  tick(); setInterval(tick,1000);
+
+  var FLEET = [
+    { id:"box-3f2a1b",  state:"online",   paired:true,  gen:14, svc:3, load:"0.12", up:"6d 04h", reach:"box-3f2a1b.local",  exposure:"cloudflare" },
+    { id:"workshop-box",state:"updating", paired:true,  gen:12, next:13, svc:5,     reach:"workshop-box.local",             exposure:"private" },
+    { id:"attic-pi",    state:"degraded", paired:true,  gen:9,  svc:2,              reach:"attic-pi.local", issue:"Tunnel down", exposure:"cloudflare-down" },
+    { id:"shed-vps",    state:"online",   paired:false,                             reach:"shed-vps.local", exposure:null },
+    { id:"old-laptop",  state:"offline",  paired:true,  gen:11, svc:1,              reach:"old-laptop.local", seen:"4m ago", exposure:"private" }
+  ];
+  var PILL = {
+    online:  { cls:"ok",   txt:"● ONLINE" },
+    updating:{ cls:"work", txt:"● UPDATING" },
+    degraded:{ cls:"crit", txt:"● DEGRADED" },
+    offline: { cls:"off",  txt:"○ OFFLINE" }
+  };
+  function expoChip(b) {
+    if (b.exposure === "cloudflare") return '<span class="expo pub">☁ Cloudflare</span>';
+    if (b.exposure === "cloudflare-down") return '<span class="expo down">☁ Tunnel down</span>';
+    if (b.exposure === "private") return '<span class="expo">⊟ LAN · Private</span>';
+    return "";
+  }
+  function expoLabel(c) {
+    return c === "cloudflare" ? "Cloudflare tunnel · public"
+      : c === "cloudflare-down" ? "Cloudflare tunnel · DOWN"
+      : c === "private" ? "Private · LAN" : "Unknown (unpaired)";
+  }
+
+  var row = document.getElementById("row");
+  document.getElementById("count").textContent = FLEET.length + " units";
+
+  FLEET.forEach(function (b) {
+    var n = document.createElement("div");
+    n.className = "node " + b.state + (b.paired ? " paired" : " loose") + (b.state === "offline" ? " offline" : "");
+    n.dataset.id = b.id;
+    n.dataset.exp = b.exposure || "";
+    var pill = PILL[b.state], body;
+    if (!b.paired) {
+      body = '<div class="unpair">Unpaired</div><button class="pairbtn" type="button">⚿ Pair</button>';
+    } else if (b.state === "offline") {
+      body = '<div class="note">Last seen ' + b.seen + '</div><div class="reach">' + b.reach + '</div>';
+    } else if (b.state === "updating") {
+      body = '<div class="note">Gen ' + b.gen + ' → ' + b.next + '</div>'
+           + '<div class="stat"><span>Services</span><b>' + b.svc + '</b></div>'
+           + '<div class="reach">' + b.reach + '</div>';
+    } else if (b.state === "degraded") {
+      body = '<div class="note crit">▲ ' + b.issue + '</div>'
+           + '<div class="stat"><span>Gen</span><b>' + b.gen + '</b></div>'
+           + '<div class="stat"><span>Services</span><b>' + b.svc + '</b></div>'
+           + '<div class="reach">' + b.reach + '</div>';
+    } else {
+      body = '<div class="stat"><span>Gen</span><b>' + b.gen + '</b></div>'
+           + '<div class="stat"><span>Services</span><b>' + b.svc + '</b></div>'
+           + '<div class="stat"><span>Load</span><b>' + b.load + '</b></div>'
+           + '<div class="reach">' + b.reach + '</div>';
+    }
+    if (b.paired) body += expoChip(b);
+    n.innerHTML =
+      '<div class="node-h"><span class="desig">' + b.id + '</span><span class="pill ' + pill.cls + '">' + pill.txt + '</span></div>'
+      + '<div class="node-b">' + body + '</div>';
+    n.addEventListener("click", function (e) {
+      if (e.target.classList.contains("pairbtn")) return;
+      select(b.id);
+    });
+    row.appendChild(n);
+  });
+
+  function select(id) {
+    document.querySelectorAll(".fleet-row .node").forEach(function (n) { n.classList.toggle("selected", n.dataset.id === id); });
+    renderDetail(FLEET.filter(function (x) { return x.id === id; })[0]);
+  }
+  function drow(k, v, cls) { return '<div class="drow"><span class="k">' + k + '</span><span class="v' + (cls ? " " + cls : "") + '">' + v + '</span></div>'; }
+  function renderDetail(b) {
+    var st = PILL[b.state].txt.replace(/^[●○]\s*/, "");
+    var rows = drow("Status", st, b.state === "online" ? "brass" : b.state === "degraded" ? "crit" : "");
+    rows += drow("Reach", b.reach, "brass");
+    if (!b.paired) {
+      rows += drow("Pairing", "NOT PAIRED", "crit") + drow("Access", "Coarse health only") + drow("Exposure", "Unknown");
+    } else {
+      if (b.gen != null) rows += drow("Generation", b.state === "updating" ? (b.gen + " → " + b.next) : ("#" + b.gen));
+      if (b.svc != null) rows += drow("Services", b.svc);
+      if (b.load != null) rows += drow("Load", b.load);
+      if (b.up != null) rows += drow("Uptime", b.up);
+      rows += drow("Exposure", expoLabel(b.exposure), b.exposure === "cloudflare" ? "brass" : b.exposure === "cloudflare-down" ? "crit" : "");
+      if (b.issue != null) rows += drow("Fault", b.issue, "crit");
+      if (b.seen != null) rows += drow("Last seen", b.seen);
+    }
+    document.getElementById("detail").innerHTML =
+      '<div class="dh"><span class="t">Unit Detail</span><span class="id">' + b.id + (b.paired ? "" : " · unpaired") + '</span></div>'
+      + '<div class="db">' + rows + '</div>';
+  }
+
+  // ---- draw connectors ----
+  var diagram = document.getElementById("diagram"), wires = document.getElementById("wires");
+  function rel(el) {
+    var d = diagram.getBoundingClientRect(), r = el.getBoundingClientRect();
+    return { cx: r.left - d.left + r.width / 2, top: r.top - d.top, bottom: r.top - d.top + r.height };
+  }
+  function line(x1,y1,x2,y2,stroke,dashed,w) {
+    return '<path d="M ' + x1 + ' ' + y1 + ' L ' + x2 + ' ' + y2 + '" fill="none" stroke="' + stroke + '" stroke-width="' + (w||1.5) + '"'
+      + (dashed ? ' stroke-dasharray="4 4"' : '') + '/>';
+  }
+  function poly(pts,stroke,dashed,w) {
+    var d = "M " + pts[0][0] + " " + pts[0][1];
+    for (var i=1;i<pts.length;i++) d += " L " + pts[i][0] + " " + pts[i][1];
+    return '<path d="' + d + '" fill="none" stroke="' + stroke + '" stroke-width="' + (w||1.5) + '"' + (dashed ? ' stroke-dasharray="5 4"' : '') + '/>';
+  }
+  function handle(x,y,color) { return '<rect x="' + (x-3) + '" y="' + (y-3) + '" width="6" height="6" fill="' + color + '"/>'; }
+
+  function draw() {
+    wires.setAttribute("viewBox", "0 0 " + diagram.offsetWidth + " " + diagram.offsetHeight);
+    var rootR = rel(document.getElementById("rootnode"));
+    var cloud = rel(document.getElementById("cloudnode"));
+    var nodes = Array.prototype.map.call(row.children, function (n) {
+      var r = rel(n); return { cx: r.cx, top: r.top, paired: n.classList.contains("paired"), exp: n.dataset.exp };
+    });
+    if (!nodes.length) return;
+    var minTop = Math.min.apply(null, nodes.map(function (n){return n.top;}));
+    var busY = rootR.bottom + (minTop - rootR.bottom) / 2;
+    var xs = nodes.map(function (n){return n.cx;}).concat(rootR.cx);
+    var s = "";
+    // discovery tree (LAN -> boxes)
+    s += line(rootR.cx, rootR.bottom, rootR.cx, busY, "var(--line-strong)");
+    s += line(Math.min.apply(null,xs), busY, Math.max.apply(null,xs), busY, "var(--line-strong)");
+    nodes.forEach(function (n) {
+      s += line(n.cx, busY, n.cx, n.top, n.paired ? "var(--brass)" : "var(--faint)", !n.paired);
+      s += handle(n.cx, busY, n.paired ? "var(--brass)" : "var(--faint)");
+    });
+    s += handle(rootR.cx, busY, "var(--brass)");
+    // exposure tunnels (public boxes -> Cloudflare), each on its own lane
+    var ti = 0;
+    nodes.forEach(function (n) {
+      if (n.exp !== "cloudflare" && n.exp !== "cloudflare-down") return;
+      var down = n.exp === "cloudflare-down", ox = n.cx - 50, laneY = cloud.bottom + 18 + ti * 15;
+      ti++;
+      var color = down ? "var(--critical)" : "var(--brass)";
+      s += poly([[ox, n.top], [ox, laneY], [cloud.cx, laneY], [cloud.cx, cloud.bottom]], color, down, 1.75);
+      s += handle(ox, laneY, color);
+      s += handle(cloud.cx, laneY, color);
+    });
+    wires.innerHTML = s;
+  }
+  select("box-3f2a1b");
+  requestAnimationFrame(draw);
+  addEventListener("resize", draw);
+})();
+</script>
