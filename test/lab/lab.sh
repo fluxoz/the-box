@@ -49,12 +49,19 @@ mac_for() { printf '52:54:00:b0:00:%02x' "$1"; }
 
 gen_seed() {
   local i="$1" json="$WORK/box-$i-handoff.json" seed="$WORK/box-$i-seed.img"
+  # Mint the enrollment code the way the Configurator would: user keeps the
+  # code, only its hash goes in the orders. Saved so `status` can show it.
+  local code hash
+  code="$(head -c5 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+  hash="$(printf '%s' "$code" | sha256sum | cut -d' ' -f1)"
+  echo "$code" > "$WORK/box-$i-paircode.txt"
   cat > "$json" <<EOF
 {
   "erase_disk": true,
   "disk": "/dev/vda",
   "hostname": "box-$i",
   "ssh_authorized_keys": ["$(cat "$WORK/operator_key.pub")"],
+  "enrollment_code_hash": "$hash",
   "finish": "poweroff"
 }
 EOF
@@ -128,17 +135,21 @@ ssh_to() {
 }
 
 cmd_status() {
-  printf '%-6s  %-15s  %-26s\n' box ip dashboard
+  printf '%-6s  %-15s  %-26s  %s\n' box ip dashboard "pair code"
   for pidf in "$WORK"/box-*.pid; do
     [ -f "$pidf" ] || continue
-    local i ip; i="$(basename "$pidf" .pid | sed 's/box-//')"; ip="$(ip_of "$i")"
-    printf 'box-%-2s  %-15s  %s\n' "$i" "${ip:-<no lease>}" "${ip:+http://$ip:2693}"
+    local i ip code; i="$(basename "$pidf" .pid | sed 's/box-//')"; ip="$(ip_of "$i")"
+    code="$(cat "$WORK/box-$i-paircode.txt" 2>/dev/null)"
+    printf 'box-%-2s  %-15s  %-26s  %s\n' "$i" "${ip:-<no lease>}" \
+      "${ip:+http://$ip:2693}" "${code:-<none>}"
   done
   echo
-  echo "browser dashboard needs a session — either:"
-  echo "  ./test/lab/lab.sh enroll <i>   # prints a one-time code; open the URL, go to /pair"
-  echo "  or tunnel in for instant trusted-local access:"
-  echo "  ssh -i $WORK/operator_key -L 2693:localhost:2693 root@<ip>   # then open http://localhost:2693"
+  echo "To pair a browser (the real user flow — no SSH): open the dashboard URL,"
+  echo "go to /pair, and enter that box's pair code (from the recovery kit)."
+  echo
+  echo "Shortcuts if you want them: 'lab.sh ssh <i>' for a shell; or tunnel in for"
+  echo "instant trusted-local access (no pairing):"
+  echo "  ssh -i $WORK/operator_key -L 2693:localhost:2693 root@<ip>  # open http://localhost:2693"
 }
 
 # One-time pairing code for box i — exactly what a user runs over SSH.

@@ -29,7 +29,7 @@
       Type = "oneshot";
       RemainAfterExit = true;
     };
-    path = [ pkgs.jq ];
+    path = [ pkgs.jq config.services.the-box.package ];
     script = ''
       conf=/etc/box/install-config.json
       [ -f "$conf" ] || exit 0
@@ -61,6 +61,15 @@
 
       # SSH keys for agents/operators.
       jq -r '.ssh_authorized_keys[]? // empty' "$conf" > /etc/box/authorized_keys
+
+      # Enrollment code (its hash) from the handoff: makes the box pairable from
+      # first boot with the code in the user's recovery kit — no SSH needed. We
+      # seed it before boxd starts, owned by the boxd user.
+      enroll_hash=$(jq -r '.enrollment_code_hash // empty' "$conf")
+      if [ -n "$enroll_hash" ]; then
+        install -d -o boxd -g boxd -m 750 /var/lib/boxd
+        boxd --data-dir /var/lib/boxd auth import-code --hash "$enroll_hash" --label enrollment || true
+      fi
 
       # Cloudflare tunnel token: seed boxd's secret store and enable.
       token=$(jq -r '.cloudflare_tunnel_token // empty' "$conf")
