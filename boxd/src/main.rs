@@ -103,6 +103,14 @@ enum AuthCmd {
         #[arg(long, default_value = "agent")]
         label: String,
     },
+    /// Install a pre-hashed pairing code (used by firstboot to seed the
+    /// enrollment code from the install handoff). Not for interactive use.
+    ImportCode {
+        #[arg(long)]
+        hash: String,
+        #[arg(long, default_value = "enrollment")]
+        label: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -263,6 +271,11 @@ fn run_auth(paths: &Paths, action: AuthCmd) -> Result<()> {
         AuthCmd::Mint { label } => {
             let token = boxd::auth::mint_session(paths, &label)?;
             println!("{token}");
+            Ok(())
+        }
+        AuthCmd::ImportCode { hash, label } => {
+            boxd::auth::import_code(paths, &hash, &label)?;
+            println!("imported {label} code");
             Ok(())
         }
     }

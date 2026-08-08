@@ -155,6 +155,21 @@ pub fn mint_code(paths: &Paths, label: &str) -> Result<String> {
     Ok(code)
 }
 
+/// Install a pre-hashed, non-expiring single-use code. Used to seed the
+/// enrollment code from the install handoff (its hash rides in box-install.json,
+/// generated client-side by the Configurator), so a box is pairable from first
+/// boot with the code from the user's recovery kit — no SSH.
+pub fn import_code(paths: &Paths, code_hash: &str, label: &str) -> Result<()> {
+    let mut store = load(paths);
+    store.codes.push(StoredCode {
+        hash: code_hash.trim().to_ascii_lowercase(),
+        label: label.to_string(),
+        expires_at: i64::MAX, // valid until first used (first boot may be much later)
+    });
+    save(paths, &store)?;
+    Ok(())
+}
+
 /// Redeem a one-time code for a new session. The code is consumed whether or
 /// not it was still valid, so it can't be replayed.
 pub fn redeem_code(paths: &Paths, code: &str, session_label: &str) -> Result<String> {
