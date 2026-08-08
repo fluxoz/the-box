@@ -131,6 +131,9 @@ pub async fn index(
         .and_then(|c| manifest::read_manifest(&c.store_path).ok())
         .map(|m| m.services.into_iter().map(|s| s.name).collect())
         .unwrap_or_default();
+    // A service is only actually public if it has a domain AND the tunnel that
+    // carries public traffic is up — otherwise it's reachable on the LAN only.
+    let tunnel_running = state.tunnel.status().state == "running";
 
     let body = html! {
         section.cards {
@@ -180,7 +183,7 @@ pub async fn index(
             } @else {
                 table {
                     thead {
-                        tr { th { "Name" } th { "Template" } th { "Domain" } th { "State" } th { "URL" } th {} }
+                        tr { th { "Name" } th { "Template" } th { "State" } th { "Exposure" } th { "Local URL" } th {} }
                     }
                     tbody {
                         @for s in &config.services {
@@ -188,14 +191,24 @@ pub async fn index(
                                 td { strong { (s.name) } }
                                 td { (s.template) }
                                 td {
-                                    @match &s.domain {
-                                        Some(d) => { (d) },
-                                        None => { "—" },
-                                    }
-                                }
-                                td {
                                     @if active.contains(&s.name) { span.badge.on { "active" } }
                                     @else { span.badge { "pending" } }
+                                }
+                                td {
+                                    @match &s.domain {
+                                        Some(d) => {
+                                            @if tunnel_running {
+                                                span.badge.on { "public" }
+                                                " "
+                                                a href={ "https://" (d) } target="_blank" { (d) }
+                                            } @else {
+                                                span.badge { "tunnel off" }
+                                                " "
+                                                span.muted { (d) }
+                                            }
+                                        },
+                                        None => { span.muted { "private (LAN only)" } },
+                                    }
                                 }
                                 td { a href={ "/sites/" (s.name) "/" } target="_blank" { "/sites/" (s.name) "/" } }
                                 td {
@@ -317,6 +330,7 @@ pub async fn generations(
 ) -> Result<Html<String>, AppError> {
     let mut gens = store::list(&state.paths)?;
     gens.reverse();
+    let history = crate::history::log(&state.paths, 50).unwrap_or_default();
 
     let body = html! {
         h2 { "Generations" }
@@ -356,6 +370,30 @@ pub async fn generations(
                                         button type="submit" { "Roll back" }
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        section {
+            h2 { "Change log" }
+            p.muted { "Every apply, rollback and delete is committed to this Box's config history — newest first." }
+            @if history.is_empty() {
+                div.empty { p { "No history yet." } }
+            } @else {
+                table {
+                    thead { tr { th { "When" } th { "Change" } } }
+                    tbody {
+                        @for e in &history {
+                            tr {
+                                td {
+                                    @match chrono::DateTime::from_timestamp(e.timestamp, 0) {
+                                        Some(t) => { (t.format("%Y-%m-%d %H:%M UTC")) },
+                                        None => { "—" },
+                                    }
+                                }
+                                td { (e.message) }
                             }
                         }
                     }
