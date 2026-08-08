@@ -6,6 +6,7 @@
 
 pub mod channel;
 pub mod config;
+pub mod fleet;
 pub mod history;
 pub mod hostgen;
 pub mod manifest;
