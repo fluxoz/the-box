@@ -11,10 +11,13 @@ use axum::{
 };
 use serde_json::{json, Value};
 
+use crate::channel;
 use crate::config::BoxConfig;
 use crate::manifest;
 use crate::ops;
+use crate::ostier;
 use crate::store;
+use crate::templates;
 
 use super::{blocking, SharedState};
 
@@ -51,7 +54,7 @@ pub async fn handle(State(state): State<SharedState>, Json(message): Json<Value>
                 "title": "The Box",
                 "version": env!("CARGO_PKG_VERSION"),
             },
-            "instructions": "Deploy and manage services on this Box. Deploys are atomic Nix generations; any generation can be rolled back. Deployed sites are served at /sites/<name>/ and, when a domain is set and a tunnel is configured, at that public domain.",
+            "instructions": "Deploy and manage services on this Box. Call list_templates to see what you can deploy, then deploy(name, template, params). Deploys are atomic Nix generations; any generation can be rolled back. Deployed sites are served at /sites/<name>/ and, when a domain is set and a tunnel is configured, at that public domain. channel_status / channel_check report the platform update channel (applying updates is done by the Box itself, not via MCP).",
         })),
         "ping" => Ok(json!({})),
         "tools/list" => Ok(json!({ "tools": tool_definitions() })),
@@ -82,6 +85,11 @@ fn tool_definitions() -> Value {
             "inputSchema": no_args,
         },
         {
+            "name": "list_templates",
+            "description": "List the service templates this Box can deploy — each with its id, title and description. Use the id with the deploy tool.",
+            "inputSchema": no_args,
+        },
+        {
             "name": "deploy_static_site",
             "description": "Create or update a static-site service and activate it atomically as a new generation. Provide index_html for a single-page deploy, or source_path to copy a directory on the Box as the site root.",
             "inputSchema": {
@@ -93,6 +101,22 @@ fn tool_definitions() -> Value {
                     "domain": { "type": "string", "description": "Public domain to route to this service for tunnel traffic, e.g. site.example.com" }
                 },
                 "required": ["name"],
+                "additionalProperties": false,
+            },
+        },
+        {
+            "name": "deploy",
+            "description": "Create or update a service from any template and activate it atomically as a new generation. Call list_templates first to see valid template ids and their params.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "Service name: 1-32 chars of a-z, 0-9 and '-'" },
+                    "template": { "type": "string", "description": "Template id from list_templates, e.g. 'static-site'" },
+                    "params": { "type": "object", "description": "Template-specific parameters (see list_templates)" },
+                    "domain": { "type": "string", "description": "Public domain to route to this service, e.g. site.example.com" },
+                    "public": { "type": "boolean", "description": "Whether the service is intended to be publicly exposed" }
+                },
+                "required": ["name", "template"],
                 "additionalProperties": false,
             },
         },
@@ -116,6 +140,16 @@ fn tool_definitions() -> Value {
         {
             "name": "list_history",
             "description": "Git commit history of this Box's declarative config, newest first. Each commit corresponds to a generation.",
+            "inputSchema": no_args,
+        },
+        {
+            "name": "channel_status",
+            "description": "The platform update channel: the running platform release, whether an OS-tier channel is configured, what it tracks, and the pinned platform revision. Read-only.",
+            "inputSchema": no_args,
+        },
+        {
+            "name": "channel_check",
+            "description": "Check the update channel for a newer platform than the one pinned. Returns current/latest revisions and whether an update is available. Applying an update is done by the Box's root updater, not via MCP.",
             "inputSchema": no_args,
         },
         {
@@ -178,6 +212,12 @@ async fn execute(
         "list_services" => Ok(services(&state)),
         "list_generations" => Ok(generations(&state)),
         "list_history" => Ok(config_history(&state)),
+        "list_templates" => Ok(templates_list()),
+        "channel_status" => Ok(channel_status(&state)),
+        "channel_check" => {
+            let state = state.clone();
+            Ok(blocking(move || channel_check(&state)).await)
+        }
         "deploy_static_site" => {
             let Some(name) = str_arg("name") else {
                 return Err((-32602, "missing required argument: name".into()));
@@ -191,6 +231,30 @@ async fn execute(
                 str_arg("domain"),
                 false,
             );
+            Ok(run_locked(&state, move |s| {
+                let info = ops::deploy(&s.paths, s.builder.as_ref(), request)?;
+                Ok(json!({
+                    "service": name,
+                    "generation": info.number,
+                    "url": format!("/sites/{name}/"),
+                }))
+            })
+            .await)
+        }
+        "deploy" => {
+            let Some(name) = str_arg("name") else {
+                return Err((-32602, "missing required argument: name".into()));
+            };
+            let Some(template) = str_arg("template") else {
+                return Err((-32602, "missing required argument: template".into()));
+            };
+            let request = ops::DeployRequest {
+                name: name.clone(),
+                template,
+                params: args.get("params").cloned().unwrap_or_else(|| json!({})),
+                domain: str_arg("domain"),
+                public: args.get("public").and_then(Value::as_bool).unwrap_or(false),
+            };
             Ok(run_locked(&state, move |s| {
                 let info = ops::deploy(&s.paths, s.builder.as_ref(), request)?;
                 Ok(json!({
@@ -277,6 +341,50 @@ fn config_history(state: &SharedState) -> anyhow::Result<Value> {
         &state.paths,
         100,
     )?)?)
+}
+
+fn templates_list() -> anyhow::Result<Value> {
+    let list: Vec<Value> = templates::all()
+        .iter()
+        .map(|t| {
+            json!({
+                "id": t.id(),
+                "title": t.title(),
+                "description": t.description(),
+            })
+        })
+        .collect();
+    Ok(json!(list))
+}
+
+fn platform_release() -> Option<String> {
+    let text = std::fs::read_to_string("/etc/box/platform.json").ok()?;
+    let v: Value = serde_json::from_str(&text).ok()?;
+    v.get("release").and_then(Value::as_str).map(str::to_string)
+}
+
+fn channel_status(state: &SharedState) -> anyhow::Result<Value> {
+    let cfg = channel::ChannelConfig::load(&state.paths)?;
+    let pinned = channel::locked_platform_id(&state.paths.os_config_dir())
+        .ok()
+        .flatten();
+    Ok(json!({
+        "platform_release": platform_release(),
+        "os_tier_available": ostier::available(),
+        "channel": cfg.map(|c| json!({
+            "host_id": c.host_id,
+            "platform_ref": c.platform_ref,
+            "system": c.system,
+            "auto_update": c.auto_update,
+        })),
+        "pinned_revision": pinned,
+    }))
+}
+
+fn channel_check(state: &SharedState) -> anyhow::Result<Value> {
+    let cfg = channel::ChannelConfig::load(&state.paths)?
+        .ok_or_else(|| anyhow::anyhow!("no update channel configured"))?;
+    Ok(serde_json::to_value(channel::check(&state.paths, &cfg)?)?)
 }
 
 fn generations(state: &SharedState) -> anyhow::Result<Value> {
