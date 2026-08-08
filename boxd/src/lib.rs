@@ -4,6 +4,7 @@
 //! switchable generations (built with Nix when available), and serves the
 //! local dashboard, JSON API and deployed static sites.
 
+pub mod auth;
 pub mod channel;
 pub mod config;
 pub mod fleet;

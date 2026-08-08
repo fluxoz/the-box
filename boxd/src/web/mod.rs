@@ -3,12 +3,14 @@ pub mod mcp;
 pub mod pages;
 pub mod sites;
 
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
 use axum::{
-    http::StatusCode,
-    middleware::from_fn_with_state,
-    response::{IntoResponse, Response},
+    extract::{ConnectInfo, Request, State},
+    http::{header, StatusCode},
+    middleware::{from_fn_with_state, Next},
+    response::{IntoResponse, Redirect, Response},
     routing::{get, post},
     Router,
 };
@@ -51,6 +53,11 @@ pub fn router(state: SharedState) -> Router {
         .route("/system", get(pages::system))
         .route("/system/check", post(pages::system_check))
         .route("/fleet", get(pages::fleet))
+        .route("/pair", get(pages::pair))
+        .route("/pair/redeem", post(pages::pair_redeem))
+        .route("/devices", get(pages::devices))
+        .route("/devices/add", post(pages::add_device))
+        .route("/devices/{id}/revoke", post(pages::revoke_device))
         .route("/network", get(pages::network))
         .route("/network/cloudflare", post(pages::configure_cloudflare))
         .route(
@@ -68,7 +75,45 @@ pub fn router(state: SharedState) -> Router {
         )
         .nest("/api/v1", api::router())
         .with_state(state.clone())
+        // Inner: operator auth. Outer: host_dispatch (peels off tunnel/public-
+        // site traffic first, so auth only ever guards management requests).
+        .layer(from_fn_with_state(state.clone(), require_auth))
         .layer(from_fn_with_state(state, sites::host_dispatch))
+}
+
+/// Gate management behind operator auth: coarse-public paths pass; trusted local
+/// (loopback, non-proxied) access passes; otherwise a valid session is required.
+/// Browsers without one are sent to pair; machines get a 401.
+async fn require_auth(
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    State(state): State<SharedState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let path = request.uri().path();
+    if crate::auth::is_public_path(path) {
+        return next.run(request).await;
+    }
+    let headers = request.headers();
+    let authorized = crate::auth::is_trusted_local(peer.ip().is_loopback(), headers)
+        || crate::auth::extract_token(headers)
+            .is_some_and(|t| crate::auth::verify(&state.paths, &t));
+    if authorized {
+        return next.run(request).await;
+    }
+    let wants_html = headers
+        .get(header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|a| a.contains("text/html"));
+    if wants_html {
+        Redirect::to("/pair").into_response()
+    } else {
+        (
+            StatusCode::UNAUTHORIZED,
+            axum::Json(serde_json::json!({ "error": "pairing required" })),
+        )
+            .into_response()
+    }
 }
 
 /// Errors bubbling out of handlers become a JSON 500; user-facing flows

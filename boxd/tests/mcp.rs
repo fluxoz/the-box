@@ -2,6 +2,7 @@
 //! host-based routing of tunnel traffic, and rollback via MCP.
 
 use axum::body::Body;
+use axum::extract::ConnectInfo;
 use axum::http::{Request, StatusCode};
 use axum::Router;
 use boxd::paths::Paths;
@@ -9,8 +10,15 @@ use boxd::store::local::LocalBuilder;
 use boxd::web::{self, AppState};
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
+use std::net::SocketAddr;
 use tempfile::TempDir;
 use tower::ServiceExt;
+
+/// In-memory requests present as loopback so the auth middleware trusts them,
+/// matching how local access actually reaches the daemon.
+fn local() -> ConnectInfo<SocketAddr> {
+    ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 40000)))
+}
 
 fn app() -> (TempDir, Router) {
     let tmp = TempDir::new().unwrap();
@@ -27,6 +35,7 @@ async fn rpc(app: &Router, body: Value) -> Value {
         .oneshot(
             Request::post("/mcp")
                 .header("content-type", "application/json")
+                .extension(local())
                 .body(Body::from(body.to_string()))
                 .unwrap(),
         )
@@ -54,6 +63,7 @@ async fn get(app: &Router, path: &str, host: &str) -> (StatusCode, String) {
         .oneshot(
             Request::get(path)
                 .header("host", host)
+                .extension(local())
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -89,6 +99,7 @@ async fn mcp_handshake_and_tools() {
         .oneshot(
             Request::post("/mcp")
                 .header("content-type", "application/json")
+                .extension(local())
                 .body(Body::from(
                     json!({"jsonrpc": "2.0", "method": "notifications/initialized"}).to_string(),
                 ))
