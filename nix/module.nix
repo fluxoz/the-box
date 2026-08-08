@@ -123,6 +123,13 @@ in
         release = cfg.platform.release;
       };
 
+      # The boxd CLI is on PATH and defaults to the box's data dir, so an
+      # operator who SSHes in can just run `boxd auth enroll`, `boxd status`,
+      # etc. — no wrapper, no --data-dir. (Auth writes chown to the data dir
+      # owner so a code minted by root is readable by the boxd service.)
+      environment.systemPackages = [ cfg.package ];
+      environment.variables.BOXD_DATA_DIR = "${cfg.dataDir}";
+
       # Advertise this Box on the LAN so peers can discover it (the fleet view).
       # Identity/health are read from /api/v1/health, so the record itself is a
       # static "a Box is here on this port" — no per-machine values baked in.

@@ -86,6 +86,13 @@ fn save(paths: &Paths, store: &Store) -> Result<()> {
     std::fs::write(&file, serde_json::to_string_pretty(store)?)
         .with_context(|| format!("writing {}", file.display()))?;
     std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600))?;
+    // Match the data dir's owner so a code minted by an operator running
+    // `boxd auth enroll` as root over SSH is still readable by the boxd
+    // service user. Best-effort: a no-op when we already own it.
+    if let Ok(meta) = std::fs::metadata(&paths.data_dir) {
+        use std::os::unix::fs::MetadataExt;
+        let _ = std::os::unix::fs::chown(&file, Some(meta.uid()), Some(meta.gid()));
+    }
     Ok(())
 }
 
