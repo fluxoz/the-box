@@ -52,6 +52,11 @@ impl Paths {
         self.data_dir.join("os-config")
     }
 
+    /// The OS-tier channel binding (host id, platform ref, update policy).
+    pub fn channel_file(&self) -> PathBuf {
+        self.data_dir.join("channel.toml")
+    }
+
     pub fn ensure(&self) -> Result<()> {
         for dir in [
             self.data_dir.clone(),

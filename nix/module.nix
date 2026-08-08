@@ -46,6 +46,41 @@ in
         };
       });
     };
+
+    platform = {
+      release = lib.mkOption {
+        type = lib.types.str;
+        default = "dev";
+        description = ''
+          Human-readable label for this platform release. It rides along in the
+          closure, so a box can see which platform generation it is running and
+          confirm a channel update actually took effect.
+        '';
+      };
+      substituters = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
+        description = ''
+          Extra binary caches the platform trusts. This is what lets a small
+          box download the prebuilt platform closure on a channel update instead
+          of compiling it. Empty until the real cache is stood up.
+        '';
+      };
+      trustedPublicKeys = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
+        description = "Public keys corresponding to platform.substituters.";
+      };
+    };
+
+    autoUpdate = {
+      enable = lib.mkEnableOption "periodic platform channel updates (build, switch, health-checked rollback)";
+      interval = lib.mkOption {
+        type = lib.types.str;
+        default = "daily";
+        description = "systemd OnCalendar expression for the update check.";
+      };
+    };
   };
 
   config = lib.mkIf cfg.enable (lib.mkMerge [
@@ -81,7 +116,44 @@ in
       environment.etc."box/sites.json".text = builtins.toJSON (
         lib.mapAttrs (_: site: { inherit (site) domain; root = "${site.root}"; }) cfg.sites
       );
+
+      # Which platform release this closure is: an observable marker so a
+      # channel update can be confirmed to have landed.
+      environment.etc."box/platform.json".text = builtins.toJSON {
+        release = cfg.platform.release;
+      };
     }
+
+    (lib.mkIf (cfg.platform.substituters != [ ]) {
+      # List options merge across modules, so these append to the defaults.
+      nix.settings.substituters = cfg.platform.substituters;
+      nix.settings.trusted-public-keys = cfg.platform.trustedPublicKeys;
+    })
+
+    (lib.mkIf cfg.autoUpdate.enable {
+      # The self-reconcile: check the channel, and on a new release rebuild the
+      # whole system, switch, and roll back if it doesn't come up healthy.
+      # Runs as root because switching the system profile requires it.
+      systemd.services.boxd-channel-update = {
+        description = "The Box platform channel update";
+        path = [ pkgs.nix pkgs.git ];
+        environment.HOME = "/root";
+        serviceConfig = {
+          Type = "oneshot";
+          User = "root";
+          ExecStart = "${lib.getExe cfg.package} --data-dir ${cfg.dataDir} channel update";
+        };
+      };
+      systemd.timers.boxd-channel-update = {
+        description = "Periodic Box platform channel update";
+        wantedBy = [ "timers.target" ];
+        timerConfig = {
+          OnCalendar = cfg.autoUpdate.interval;
+          Persistent = true;
+          RandomizedDelaySec = "1h";
+        };
+      };
+    })
 
     (lib.mkIf (cfg.sites != { }) {
       services.nginx = {

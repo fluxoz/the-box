@@ -78,6 +78,37 @@ enum Command {
         #[arg(long, default_value = "x86_64-linux")]
         system: String,
     },
+    /// Platform update channel: inspect and apply platform releases.
+    Channel {
+        #[command(subcommand)]
+        action: ChannelCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum ChannelCmd {
+    /// Show the configured channel and the currently pinned platform.
+    Status,
+    /// Check whether the channel has a newer platform than the current pin.
+    Check,
+    /// Apply an update: on a new release (or --force), rebuild the system,
+    /// switch, and roll back on a failed health check. A no-op when no channel
+    /// is configured or the platform is already current — safe to run on a timer.
+    Update {
+        #[arg(long)]
+        force: bool,
+    },
+    /// Configure this box's channel binding (writes channel.toml).
+    Set {
+        #[arg(long)]
+        host_id: String,
+        #[arg(long, default_value = "github:coyote-technology/the-box")]
+        platform: String,
+        #[arg(long, default_value = "x86_64-linux")]
+        system: String,
+        #[arg(long)]
+        auto_update: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -173,6 +204,104 @@ fn main() -> Result<()> {
                 &boxd::ostier::default_system_health,
             )?;
             println!("switched to new system generation: {}", toplevel.display());
+            Ok(())
+        }
+        Command::Channel { action } => run_channel(&paths, action),
+    }
+}
+
+fn run_channel(paths: &Paths, action: ChannelCmd) -> Result<()> {
+    use boxd::channel::ChannelConfig;
+
+    match action {
+        ChannelCmd::Set {
+            host_id,
+            platform,
+            system,
+            auto_update,
+        } => {
+            let cfg = ChannelConfig {
+                host_id,
+                platform_ref: platform,
+                system,
+                auto_update,
+            };
+            cfg.save(paths)?;
+            println!(
+                "channel set: {} tracking {} (auto-update: {})",
+                cfg.host_id, cfg.platform_ref, cfg.auto_update
+            );
+            Ok(())
+        }
+        ChannelCmd::Status => {
+            match ChannelConfig::load(paths)? {
+                None => println!("no channel configured"),
+                Some(cfg) => {
+                    let pinned = boxd::channel::locked_platform_id(&paths.os_config_dir())?;
+                    println!("host id:      {}", cfg.host_id);
+                    println!("platform:     {}", cfg.platform_ref);
+                    println!("system:       {}", cfg.system);
+                    println!("auto-update:  {}", cfg.auto_update);
+                    println!(
+                        "pinned to:    {}",
+                        pinned.as_deref().unwrap_or("(not yet built)")
+                    );
+                }
+            }
+            Ok(())
+        }
+        ChannelCmd::Check => {
+            let Some(cfg) = ChannelConfig::load(paths)? else {
+                println!("no channel configured");
+                return Ok(());
+            };
+            let status = boxd::channel::check(paths, &cfg)?;
+            println!("current: {}", status.current.as_deref().unwrap_or("(none)"));
+            println!("latest:  {}", status.latest);
+            println!(
+                "status:  {}",
+                if status.update_available {
+                    "update available"
+                } else {
+                    "up to date"
+                }
+            );
+            Ok(())
+        }
+        ChannelCmd::Update { force } => {
+            let Some(cfg) = ChannelConfig::load(paths)? else {
+                // Unconfigured boxes are a valid state; the timer runs this on
+                // every box, so this must be a clean no-op.
+                println!("no channel configured; nothing to update");
+                return Ok(());
+            };
+            // Only rebuild/switch when there's actually a new release, unless
+            // forced — otherwise the timer would needlessly re-switch each run.
+            let bump = if force {
+                true
+            } else {
+                match boxd::channel::check(paths, &cfg) {
+                    Ok(status) if !status.update_available => {
+                        println!("platform up to date ({})", status.latest);
+                        return Ok(());
+                    }
+                    Ok(_) => true,
+                    Err(e) => {
+                        // Offline / unreachable channel: don't fail the timer.
+                        eprintln!("channel check skipped: {e:#}");
+                        return Ok(());
+                    }
+                }
+            };
+            let config = boxd::config::BoxConfig::load(paths)?;
+            let toplevel = boxd::channel::update_and_switch(
+                paths,
+                &config,
+                &cfg,
+                bump,
+                &boxd::ostier::default_system_health,
+            )?;
+            println!("platform updated; switched to {}", toplevel.display());
             Ok(())
         }
     }

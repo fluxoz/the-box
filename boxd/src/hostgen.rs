@@ -122,6 +122,11 @@ pub fn write_host_repo(
 ) -> Result<()> {
     validate_host_id(&spec.id)?;
 
+    // Preserve the platform pin across regeneration: a routine deploy rewrites
+    // the sources but must not silently re-resolve the channel. Only an
+    // explicit `channel update` bumps flake.lock.
+    let saved_lock = std::fs::read(out_dir.join("flake.lock")).ok();
+
     util::remove_dir_all_forced(out_dir)?;
     let host_dir = out_dir.join("nodes").join("hosts").join(&spec.id);
     let services_dir = host_dir.join("services");
@@ -163,6 +168,10 @@ pub fn write_host_repo(
         } else {
             template.materialize(&params, &www)?;
         }
+    }
+
+    if let Some(lock) = saved_lock {
+        std::fs::write(out_dir.join("flake.lock"), lock)?;
     }
 
     Ok(())
@@ -228,5 +237,23 @@ mod tests {
     fn rejects_bad_host_id() {
         assert!(validate_host_id("Good-Box").is_err());
         assert!(validate_host_id("box-1").is_ok());
+    }
+
+    #[test]
+    fn preserves_flake_lock_across_regeneration() {
+        let tmp = TempDir::new().unwrap();
+        let paths = Paths::new(tmp.path().join("data"));
+        paths.ensure().unwrap();
+        let out = tmp.path().join("repo");
+        let spec = HostSpec::new("demo-box", "path:/platform", "x86_64-linux");
+
+        write_host_repo(&paths, &sample_config(), &spec, &out).unwrap();
+        // A deploy must not silently re-resolve the platform pin.
+        std::fs::write(out.join("flake.lock"), r#"{"pinned":"v1"}"#).unwrap();
+        write_host_repo(&paths, &BoxConfig::default(), &spec, &out).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(out.join("flake.lock")).unwrap(),
+            r#"{"pinned":"v1"}"#
+        );
     }
 }
