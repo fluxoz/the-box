@@ -48,6 +48,8 @@ pub fn router(state: SharedState) -> Router {
         .route("/services/{name}/delete", post(pages::delete_service))
         .route("/generations", get(pages::generations))
         .route("/generations/{number}/rollback", post(pages::rollback))
+        .route("/system", get(pages::system))
+        .route("/system/check", post(pages::system_check))
         .route("/network", get(pages::network))
         .route("/network/cloudflare", post(pages::configure_cloudflare))
         .route(

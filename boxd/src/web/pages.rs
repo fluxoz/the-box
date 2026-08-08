@@ -9,12 +9,45 @@ use axum::{
 use maud::{html, Markup, PreEscaped, DOCTYPE};
 use serde::Deserialize;
 
+use crate::channel::{self, ChannelConfig};
 use crate::config::BoxConfig;
 use crate::manifest;
 use crate::ops;
+use crate::ostier;
 use crate::store;
 
 use super::{blocking, AppError, SharedState};
+
+/// The platform release label the running system baked in (`/etc/box/platform.json`).
+/// Absent on a plain dev host; that's fine — we fall back to the boxd version.
+fn platform_release() -> Option<String> {
+    let text = std::fs::read_to_string("/etc/box/platform.json").ok()?;
+    let v: serde_json::Value = serde_json::from_str(&text).ok()?;
+    v.get("release")
+        .and_then(|r| r.as_str())
+        .map(str::to_string)
+}
+
+/// Trim a long flake ref for display without losing the front (the scheme/host).
+fn short_ref(s: &str) -> String {
+    let n = 32;
+    if s.chars().count() <= n {
+        s.to_string()
+    } else {
+        s.chars().take(n - 1).collect::<String>() + "…"
+    }
+}
+
+/// A platform revision is a git rev or a `sha256-…` content hash; show a stub.
+fn short_rev(s: &str) -> String {
+    let s = s.strip_prefix("sha256-").unwrap_or(s);
+    let n = 12;
+    if s.chars().count() <= n {
+        s.to_string()
+    } else {
+        s.chars().take(n).collect::<String>() + "…"
+    }
+}
 
 const CSS: &str = include_str!("style.css");
 const JS: &str = include_str!("dash.js");
@@ -52,6 +85,7 @@ fn layout(title: &str, flash: &Flash, body: Markup) -> Html<String> {
                 nav.tabs {
                     a.active[title == "Services"] href="/" { "Services" }
                     a.active[title == "Generations"] href="/generations" { "Generations" }
+                    a.active[title == "System"] href="/system" { "System" }
                     a.active[title == "Networking"] href="/network" { "Networking" }
                     a.btn.active[title == "Deploy"] href="/services/new" { "+ Deploy" }
                 }
@@ -126,6 +160,11 @@ pub async fn index(
                 h3 { "Builder" }
                 p.big { (state.builder.name()) }
                 p.muted { "generation backend" }
+            }
+            div.card {
+                h3 { "Platform" }
+                p.big { (platform_release().unwrap_or_else(|| "dev".into())) }
+                p.muted { a href="/system" { "updates & channel →" } }
             }
         }
         section {
@@ -413,6 +452,135 @@ pub async fn configure_cloudflare(
 pub async fn disable_cloudflare(State(state): State<SharedState>) -> Redirect {
     let result = state.tunnel.configure(None, false).map(|_| ());
     network_redirect(result, "Cloudflare tunnel disabled")
+}
+
+pub async fn system(
+    State(state): State<SharedState>,
+    Query(flash): Query<Flash>,
+) -> Result<Html<String>, AppError> {
+    let channel = ChannelConfig::load(&state.paths)?;
+    let pinned = channel::locked_platform_id(&state.paths.os_config_dir())
+        .ok()
+        .flatten();
+    let release = platform_release();
+    let os_available = ostier::available();
+
+    let body = html! {
+        h2 { "System" }
+        p.muted {
+            "What this Box is running, and where its platform updates come from. A "
+            "platform update is just another atomic generation — a failed one rolls the "
+            "whole system back on its own."
+        }
+        section.cards {
+            div.card {
+                h3 { "Platform" }
+                p.big { (release.clone().unwrap_or_else(|| "dev".into())) }
+                p.muted { "boxd " (env!("CARGO_PKG_VERSION")) }
+            }
+            div.card {
+                h3 { "Update channel" }
+                p.big {
+                    @match &channel {
+                        Some(_) => span.badge.on { "configured" },
+                        None => span.badge { "not set" },
+                    }
+                }
+                p.muted {
+                    @match &channel {
+                        Some(c) => (short_ref(&c.platform_ref)),
+                        None => "content-only",
+                    }
+                }
+            }
+            div.card {
+                h3 { "OS updates" }
+                p.big {
+                    @match &channel {
+                        Some(c) => @if c.auto_update { "automatic" } @else { "manual" },
+                        None => "—",
+                    }
+                }
+                p.muted {
+                    @if os_available { "system switch available" }
+                    @else { "not an OS-tier host" }
+                }
+            }
+        }
+        @match &channel {
+            Some(c) => {
+                section {
+                    div.section-head {
+                        h2 { "Platform channel" }
+                        form method="post" action="/system/check" {
+                            button.btn type="submit" { "Check for updates" }
+                        }
+                    }
+                    table {
+                        tbody {
+                            tr { th { "Tracking" } td { code { (c.platform_ref) } } }
+                            tr {
+                                th { "Pinned to" }
+                                td {
+                                    @match &pinned {
+                                        Some(p) => code { (short_rev(p)) },
+                                        None => span.muted { "not built yet" },
+                                    }
+                                }
+                            }
+                            tr { th { "Auto-update" } td { @if c.auto_update { "on" } @else { "off" } } }
+                            tr { th { "System" } td { (c.system) } }
+                            tr { th { "Host id" } td { (c.host_id) } }
+                        }
+                    }
+                }
+            },
+            None => {
+                section {
+                    div.empty {
+                        p { "This Box manages service content only — no platform update channel is configured." }
+                        p.muted {
+                            "Set one on the Box with "
+                            code { "boxd channel set --host-id <id>" }
+                            " to pull platform updates with automatic rollback."
+                        }
+                    }
+                }
+            },
+        }
+        section {
+            p.muted {
+                "Every change is atomic and reversible. Roll back manually any time from the "
+                a href="/generations" { "Generations" } " page."
+            }
+        }
+    };
+    Ok(layout("System", &flash, body))
+}
+
+pub async fn system_check(State(state): State<SharedState>) -> Redirect {
+    let result = {
+        let state = state.clone();
+        blocking(move || {
+            let cfg = ChannelConfig::load(&state.paths)?
+                .ok_or_else(|| anyhow::anyhow!("no update channel configured"))?;
+            channel::check(&state.paths, &cfg)
+        })
+        .await
+    };
+    let redirect =
+        |key: &str, msg: &str| Redirect::to(&format!("/system?{key}={}", urlencoding::encode(msg)));
+    match result {
+        Ok(status) if status.update_available => redirect(
+            "ok",
+            &format!("Update available — latest {}", short_rev(&status.latest)),
+        ),
+        Ok(status) => redirect(
+            "ok",
+            &format!("Platform up to date ({})", short_rev(&status.latest)),
+        ),
+        Err(err) => redirect("err", &format!("{err:#}")),
+    }
 }
 
 pub async fn rollback(State(state): State<SharedState>, Path(number): Path<u64>) -> Redirect {
