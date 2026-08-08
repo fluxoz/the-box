@@ -59,15 +59,14 @@ h1 { font-family:var(--mono); font-weight:700; font-size:clamp(24px,4vw,34px); l
 /* ---- viewport / canvas ---- */
 .viewport {
   position: relative; margin-top: 18px; height: clamp(430px, 68vh, 640px); overflow: hidden;
-  background: var(--panel); border: 1px solid var(--line-strong); border-radius: 3px;
+  background-color: var(--panel);
+  background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 30px 30px; background-position: 0 0;
+  border: 1px solid var(--line-strong); border-radius: 3px;
   cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none;
 }
 .viewport.grabbing { cursor: grabbing; }
-.world {
-  position: absolute; top: 0; left: 0; width: 2200px; height: 1400px; transform-origin: 0 0;
-  background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px);
-  background-size: 30px 30px;
-}
+.world { position: absolute; top: 0; left: 0; width: 2200px; height: 1400px; transform-origin: 0 0; }
 svg.wires { position:absolute; top:0; left:0; overflow:visible; pointer-events:none; }
 .corner { position:absolute; width:15px; height:15px; border:2px solid var(--brass); opacity:.75; z-index:3; pointer-events:none; }
 .corner.tl{ top:10px; left:10px; border-right:0; border-bottom:0; }
@@ -305,7 +304,13 @@ footer b { color: var(--dim); }
 
   // ---- pan / zoom ----
   var zoom = 1, panX = 0, panY = 0;
-  function apply(){ world.style.transform = "translate("+panX+"px,"+panY+"px) scale("+zoom+")"; document.getElementById("zoomtag").textContent = Math.round(zoom*100)+"%"; }
+  function apply(){
+    world.style.transform = "translate("+panX+"px,"+panY+"px) scale("+zoom+")";
+    var g = 30 * zoom;
+    viewport.style.backgroundSize = g + "px " + g + "px";
+    viewport.style.backgroundPosition = panX + "px " + panY + "px";
+    document.getElementById("zoomtag").textContent = Math.round(zoom*100)+"%";
+  }
   function clampZoom(z){ return Math.min(2.6, Math.max(.35, z)); }
   function fit(){
     var minx=1e9,miny=1e9,maxx=-1e9,maxy=-1e9;
@@ -330,7 +335,7 @@ footer b { color: var(--dim); }
   // background pan
   var panning = null;
   viewport.addEventListener("pointerdown", function(e){
-    if (e.target.closest(".node")) return;
+    if (e.target.closest(".node") || e.target.closest(".controls")) return;
     panning = { x:e.clientX, y:e.clientY, px:panX, py:panY };
     viewport.classList.add("grabbing"); viewport.setPointerCapture(e.pointerId);
   });
