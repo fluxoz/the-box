@@ -22,6 +22,21 @@
         ];
       };
 
+      # A per-box config composes the reusable platform (boxd + Box software)
+      # with a hardware layer and its own host/service modules — the OS tier of
+      # the reconciler. Hosts are auto-discovered from nodes/hosts/ (drop a
+      # directory in, get a nixosConfigurations.<id> out), which is what boxd's
+      # generated dendritic config repo mirrors on a real fleet.
+      mkBoxHost = id: nixpkgs.lib.nixosSystem {
+        system = "x86_64-linux";
+        modules = [
+          self.nixosModules.platform
+          (./nodes/hosts + "/${id}")
+        ];
+      };
+      boxHostNames = builtins.attrNames (builtins.readDir ./nodes/hosts);
+      boxHosts = nixpkgs.lib.genAttrs boxHostNames mkBoxHost;
+
       # RAM-resident automated installer embedding the Box OS closure.
       # Delivered as an ISO (USB/virtual media), as netboot artifacts (PXE /
       # batch installs), or staged from a running OS (Windows path).
@@ -139,7 +154,7 @@
           "${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix";
         box-installer-netboot = installerWith
           "${nixpkgs}/nixos/modules/installer/netboot/netboot-minimal.nix";
-      };
+      } // boxHosts;
 
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
@@ -159,6 +174,15 @@
         imports = [ ./nix/module.nix ];
         services.the-box.package =
           lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.boxd;
+      };
+
+      # The platform layer a per-box config composes on: the Box software
+      # (boxd) plus the shared platform defaults, with the boxd package wired.
+      nixosModules.platform = {
+        imports = [
+          self.nixosModules.default
+          ./nix/platform.nix
+        ];
       };
     };
 }

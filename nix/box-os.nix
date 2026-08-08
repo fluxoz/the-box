@@ -1,46 +1,19 @@
-# Box OS: the dedicated appliance system. The whole OS is a Nix generation —
-# kernel, services and boxd switch and roll back atomically together.
-#
-# Machine-specific state (hostname, Wi-Fi, SSH keys, tunnel token) is NOT
-# baked into this closure: the installer drops a handoff file at
-# /etc/box/install-config.json and box-firstboot applies it on every boot.
+# Box OS: the dedicated appliance system — the generic image the installer
+# lays down. It is the platform layer plus the generic boot/hardware layer,
+# plus the install-time bootstrap: machine-specific state (hostname, Wi-Fi,
+# SSH keys, tunnel token) is NOT baked in — the installer drops a handoff file
+# at /etc/box/install-config.json and box-firstboot applies it on every boot.
 # One generic closure therefore serves every machine, which is what makes
 # batch installs a matter of handing out different handoff files.
+#
+# A git-managed per-box config declares that same state in Nix instead, and
+# composes the platform + hardware layers directly (see nodes/hosts/*).
 { config, lib, pkgs, ... }:
 {
-  networking.hostName = "box";
-  networking.networkmanager.enable = true;
-  networking.firewall.allowedTCPPorts = [ 2693 ];
-
-  # box-firstboot sets the (possibly per-machine) hostname; NM must not
-  # reset it from /etc/hostname or DHCP afterwards.
-  environment.etc."NetworkManager/conf.d/box-hostname.conf".text = ''
-    [main]
-    hostname-mode=none
-  '';
-
-  # box.local on the LAN
-  services.avahi = {
-    enable = true;
-    nssmdns4 = true;
-    publish = {
-      enable = true;
-      addresses = true;
-    };
-  };
-
-  # Agent/remote management: keys come from the handoff file, never passwords.
-  services.openssh = {
-    enable = true;
-    settings.PasswordAuthentication = false;
-    settings.PermitRootLogin = "prohibit-password";
-    authorizedKeysFiles = [ "/etc/box/authorized_keys" ];
-  };
-
-  services.the-box = {
-    enable = true;
-    listen = "0.0.0.0:2693";
-  };
+  imports = [
+    ./platform.nix
+    ./hardware-appliance.nix
+  ];
 
   # Local console is a recovery hatch; physical access is the trust boundary
   # on an appliance. Remote password auth stays impossible.
@@ -101,46 +74,4 @@
       fi
     '';
   };
-
-  # Matches nix/disko-template.nix by filesystem label.
-  fileSystems."/" = {
-    device = "/dev/disk/by-label/box-root";
-    fsType = "ext4";
-  };
-  fileSystems."/boot" = {
-    device = "/dev/disk/by-label/BOX-ESP";
-    fsType = "vfat";
-  };
-
-  # One generic image must boot on any machine: broad storage/input driver
-  # set in the initrd, plus redistributable firmware (Wi-Fi, NICs, GPUs).
-  boot.initrd.availableKernelModules = [
-    "ahci"
-    "ehci_pci"
-    "mmc_block"
-    "nvme"
-    "sd_mod"
-    "sdhci_acpi"
-    "sdhci_pci"
-    "sr_mod"
-    "uas"
-    "usb_storage"
-    "usbhid"
-    "virtio_blk"
-    "virtio_pci"
-    "virtio_scsi"
-    "xhci_pci"
-  ];
-  hardware.enableRedistributableFirmware = true;
-
-  boot.loader.systemd-boot.enable = true;
-  boot.loader.efi.canTouchEfiVariables = true;
-  # ttyS0 last = primary console: appliance debugging happens over serial.
-  boot.kernelParams = [ "console=tty0" "console=ttyS0,115200" ];
-
-  nix.settings.experimental-features = [ "nix-command" "flakes" ];
-
-  environment.systemPackages = [ pkgs.jq ];
-
-  system.stateVersion = "25.11";
 }
