@@ -25,8 +25,16 @@ let
       # The handoff is always copied to RAM before anything touches a disk:
       # in the staged-from-Windows flow it lives on the very disk being wiped.
       handoff=""
+      # Orders injected into the kexec initrd (the curl|sh takeover): already in
+      # RAM, in this installer's own root filesystem — nothing to mount, nothing
+      # on any disk.
+      if [ -f /box-installer/box-install.json ]; then
+        log "using orders injected into the initrd"
+        cp /box-installer/box-install.json /tmp/box-install.json
+        handoff=/tmp/box-install.json
+      fi
       url=$(tr ' ' '\n' < /proc/cmdline | sed -n 's/^box\.install-url=//p' | head -n1)
-      if [ -n "$url" ]; then
+      if [ -z "$handoff" ] && [ -n "$url" ]; then
         log "fetching handoff from $url"
         if curl -fsSL "$url" -o /tmp/box-install.json; then
           handoff=/tmp/box-install.json

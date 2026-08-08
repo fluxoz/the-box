@@ -7,6 +7,9 @@
 .ico--sm{width:.85em;height:.85em}
 .caret{transition:transform .15s}
 .caret--open{transform:rotate(90deg)}
+.cmdbox{display:flex;gap:8px;align-items:flex-start;margin:12px 0 4px}
+.cmdbox code{flex:1;min-width:0;overflow-x:auto;white-space:nowrap;padding:8px 10px;border:1px solid var(--hair,#333);border-radius:4px;background:var(--panel,#111);font-size:.82em}
+.cav-secret{color:var(--critical,#d5543f)}
 /* ============================ TOKENS ============================ */
 :root {
   /* warm-steel neutrals biased toward brass — chosen, not defaulted */
@@ -591,6 +594,10 @@ footer.foot b { color: var(--dim); }
                 <span class="code">VEC-03</span><span class="name">Network / PXE</span>
                 <span class="desc">Fleets. Self-install over the wire.</span>
               </div>
+              <div class="vec" data-vec="sh" tabindex="0" role="radio" aria-checked="false">
+                <span class="code">VEC-04</span><span class="name">curl | sh</span>
+                <span class="desc">Convert a running Linux box or VPS.</span>
+              </div>
             </div>
           </div>
 
@@ -928,6 +935,7 @@ footer.foot b { color: var(--dim); }
     if (ready) { gate.innerHTML = '<svg class="ico ico--sm" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="8" cy="8" r="4"/></svg> Ready'; gate.style.color = "var(--ok)"; }
     else if (!armed) { gate.textContent = "Arm the unit to enable"; gate.style.color = "var(--critical)"; }
     else { gate.textContent = "Complete required fields above"; gate.style.color = "var(--critical)"; }
+    if (vector === "sh") renderInstructions(); // keep the embedded-orders command fresh
   }
 
   /* ---------- download / copy ---------- */
@@ -976,11 +984,32 @@ footer.foot b { color: var(--dim); }
     }
   };
   function renderInstructions() {
+    if (vector === "sh") { renderShVector(); return; }
     const v = VEC[vector];
     $("#instructions").innerHTML =
       `<div class="ihead">${v.head}</div>
        <ol>${v.steps.map(s => `<li>${s}</li>`).join("")}</ol>
        <div class="cav">${v.cav}</div>`;
+  }
+  function renderShVector() {
+    // Embed the orders in the command — base64 (UTF-8 safe). Nothing to move.
+    const b64 = btoa(unescape(encodeURIComponent(currentJSON)));
+    const cfg = JSON.parse(currentJSON);
+    const secret = !!(cfg.cloudflare_tunnel_token || (cfg.wifi && cfg.wifi.password));
+    const cmd = `curl -fsSL https://thebox.build/install.sh | sudo BOX_ORDERS_B64='${b64}' sh`;
+    $("#instructions").innerHTML = `
+      <div class="ihead">VEC-04 · curl | sh — a running Linux machine or VPS</div>
+      <ol>
+        <li>On the machine you want to convert (or an SSH session into it), paste the command below.</li>
+        <li>It <b>erases every disk</b> and installs Box OS — your orders are embedded, so there is nothing to download or move.</li>
+        <li>A few minutes later it comes up at <code>&lt;name&gt;.local</code>; pair it with the code above.</li>
+      </ol>
+      <div class="cmdbox"><code id="sh-cmd"></code><button type="button" class="btn small ghost" id="cp-cmd">Copy</button></div>
+      <div class="cav ${secret ? "cav-secret" : ""}">${secret
+        ? "This command carries secrets (Wi-Fi password / tunnel token) — do not paste it anywhere public."
+        : "Carries no secrets — only the box name, disk choice, your SSH public key, and the pairing-code hash."}</div>`;
+    $("#sh-cmd").textContent = cmd; // textContent avoids any HTML interpretation
+    $("#cp-cmd").addEventListener("click", () => { navigator.clipboard.writeText(cmd); toast("Command copied"); });
   }
   $$(".vec").forEach(el => {
     const pick = () => {

@@ -18,16 +18,27 @@
 set -eu
 
 BASE="${BOX_BASE:-https://thebox.build}"       # where the netboot artifacts live
-ORDERS="${BOX_ORDERS:-box-install.json}"       # your orders; secrets stay local
-WORK="/run/box-install"
+WORK="/run/box-install"                        # tmpfs — orders never touch a disk
 
 say() { printf '\033[1;33m[box]\033[0m %s\n' "$*" >&2; }
 die() { printf '\033[1;31m[box] error:\033[0m %s\n' "$*" >&2; exit 1; }
 
 [ "$(id -u)" = 0 ] || die "run as root: pipe into 'sudo sh'."
-command -v kexec >/dev/null 2>&1 || die "kexec not found — install kexec-tools (e.g. 'apt install kexec-tools')."
-command -v curl  >/dev/null 2>&1 || die "curl not found."
-[ -f "$ORDERS" ] || die "orders file '$ORDERS' not found. Generate box-install.json in the Configurator and place it here (or set BOX_ORDERS)."
+for c in kexec curl base64 cpio gzip; do
+  command -v "$c" >/dev/null 2>&1 || die "$c not found (kexec needs kexec-tools; cpio/base64/gzip are usually present)."
+done
+
+mkdir -p "$WORK"
+# Orders come from the Configurator: either encoded in the pasted command
+# (BOX_ORDERS_B64 — the normal path, no file to move) or a local file.
+if [ -n "${BOX_ORDERS_B64:-}" ]; then
+  printf '%s' "$BOX_ORDERS_B64" | base64 -d > "$WORK/box-install.json" 2>/dev/null \
+    || die "could not decode the orders embedded in the command (BOX_ORDERS_B64)."
+  ORDERS="$WORK/box-install.json"
+else
+  ORDERS="${BOX_ORDERS:-box-install.json}"
+  [ -f "$ORDERS" ] || die "no orders. Paste the command from the Configurator (it embeds them), or place box-install.json here."
+fi
 grep -q '"erase_disk"[[:space:]]*:[[:space:]]*true' "$ORDERS" \
   || die "orders do not consent to erase_disk:true — refusing to touch any disk."
 
@@ -53,21 +64,22 @@ curl -fsSL "$BASE/netboot/bzImage"      -o "$WORK/bzImage"      || die "could no
 curl -fsSL "$BASE/netboot/initrd"       -o "$WORK/initrd"       || die "could not fetch the initrd."
 curl -fsSL "$BASE/netboot/netboot.ipxe" -o "$WORK/netboot.ipxe" || die "could not fetch boot parameters."
 
-# Stage the orders where the installer's partition scan finds them — on a live
-# filesystem, so the installer copies them to RAM before wiping anything (the
-# exact trick the Windows takeover uses).
-mkdir -p /box-installer
-cp "$ORDERS" /box-installer/box-install.json
-sync
+# Inject the orders into the kexec initrd so they ride into the installer in RAM
+# and never touch a disk (nor depend on the disk layout). The kernel unpacks all
+# concatenated initramfs archives, so /box-installer/box-install.json ends up in
+# the installer's root filesystem, where box-install reads it directly.
+mkdir -p "$WORK/inject/box-installer"
+cp "$ORDERS" "$WORK/inject/box-installer/box-install.json"
+( cd "$WORK/inject" && find . | cpio -o -H newc 2>/dev/null ) | gzip -9 > "$WORK/orders.cpio.gz"
+cat "$WORK/initrd" "$WORK/orders.cpio.gz" > "$WORK/initrd.full"
 
-# Derive the installer's kernel command line from the netboot script (init=...,
-# console, etc.) and add the scan flag so it finds the staged orders.
+# Derive the installer's kernel command line from the netboot script.
 params=$(grep '^kernel' "$WORK/netboot.ipxe" \
   | sed -e 's/^kernel bzImage //' -e 's/ initrd=initrd//' -e 's/ *${cmdline}//')
 [ -n "$params" ] || die "could not parse boot parameters from netboot.ipxe."
 
 say "handing off to the Box installer via kexec — the machine will now wipe and install."
 say "it will come back up at ${name:-box}.local in a few minutes."
-kexec -l "$WORK/bzImage" --initrd="$WORK/initrd" --command-line="$params box.install-scan=1"
+kexec -l "$WORK/bzImage" --initrd="$WORK/initrd.full" --command-line="$params"
 sync
 kexec -e
