@@ -164,6 +164,12 @@
         system = "x86_64-linux";
       };
 
+      # Two Boxes on a shared network find each other over mDNS (fleet discovery).
+      checks.x86_64-linux.fleet-discovery = import ./nix/tests/fleet-discovery.nix {
+        inherit self nixpkgs;
+        system = "x86_64-linux";
+      };
+
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
           packages = with pkgs; [
