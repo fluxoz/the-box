@@ -31,6 +31,7 @@
         system = "x86_64-linux";
         modules = [
           self.nixosModules.platform
+          self.nixosModules.hardwareAppliance
           (./nodes/hosts + "/${id}")
         ];
       };
@@ -184,5 +185,10 @@
           ./nix/platform.nix
         ];
       };
+
+      # How a Box installed by the appliance boots. Exposed as a module so
+      # both the in-repo hosts and boxd's generated standalone flakes compose
+      # the exact same layer. (disko-derived hardware supersedes this later.)
+      nixosModules.hardwareAppliance = ./nix/hardware-appliance.nix;
     };
 }

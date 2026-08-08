@@ -47,6 +47,11 @@ impl Paths {
         self.data_dir.join("store")
     }
 
+    /// The generated standalone per-box config repo the OS tier builds from.
+    pub fn os_config_dir(&self) -> PathBuf {
+        self.data_dir.join("os-config")
+    }
+
     pub fn ensure(&self) -> Result<()> {
         for dir in [
             self.data_dir.clone(),

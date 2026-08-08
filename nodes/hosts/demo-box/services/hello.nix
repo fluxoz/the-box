@@ -4,6 +4,6 @@
 { ... }:
 {
   services.the-box.sites."hello" = {
-    root = ./www;
+    root = ./hello/www;
   };
 }

@@ -14,7 +14,9 @@ let
   );
 in
 {
-  imports = [ ../../../nix/hardware-appliance.nix ] ++ serviceModules;
+  # Platform + hardware layers are composed by the flake; this node contributes
+  # identity and its auto-discovered, box.toml-compiled service modules.
+  imports = serviceModules;
 
   networking.hostName = "demo-box";
 }

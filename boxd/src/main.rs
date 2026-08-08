@@ -51,6 +51,33 @@ enum Command {
     Generations,
     /// Roll back to a previous generation
     Rollback { number: u64 },
+    /// Generate the standalone dendritic per-box config repo (the OS-tier
+    /// source of truth) from the current config, without building it.
+    HostGen {
+        /// Host id (becomes the hostname and nixosConfigurations attr name)
+        #[arg(long)]
+        host_id: String,
+        /// Platform flake ref for the `the-box` input (the update channel)
+        #[arg(long, default_value = "github:coyote-technology/the-box")]
+        platform: String,
+        /// Nix system double
+        #[arg(long, default_value = "x86_64-linux")]
+        system: String,
+        /// Output directory (default: <data>/os-config)
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
+    /// OS tier: build this box's whole NixOS system from the current config and
+    /// switch to it, rolling back the system on a failed health check. Runs
+    /// only on a Box (a NixOS host with a system profile).
+    OsSwitch {
+        #[arg(long)]
+        host_id: String,
+        #[arg(long, default_value = "github:coyote-technology/the-box")]
+        platform: String,
+        #[arg(long, default_value = "x86_64-linux")]
+        system: String,
+    },
 }
 
 fn main() -> Result<()> {
@@ -113,6 +140,39 @@ fn main() -> Result<()> {
         Command::Rollback { number } => {
             let info = ops::rollback(&paths, number)?;
             println!("rolled back to generation #{}", info.number);
+            Ok(())
+        }
+        Command::HostGen {
+            host_id,
+            platform,
+            system,
+            out,
+        } => {
+            let config = boxd::config::BoxConfig::load(&paths)?;
+            let spec = boxd::hostgen::HostSpec::new(host_id, platform, system);
+            let out = out.unwrap_or_else(|| paths.os_config_dir());
+            boxd::hostgen::write_host_repo(&paths, &config, &spec, &out)?;
+            println!(
+                "generated per-box config for {:?} at {}",
+                spec.id,
+                out.display()
+            );
+            Ok(())
+        }
+        Command::OsSwitch {
+            host_id,
+            platform,
+            system,
+        } => {
+            let config = boxd::config::BoxConfig::load(&paths)?;
+            let spec = boxd::hostgen::HostSpec::new(host_id, platform, system);
+            let toplevel = boxd::ostier::reconcile(
+                &paths,
+                &config,
+                &spec,
+                &boxd::ostier::default_system_health,
+            )?;
+            println!("switched to new system generation: {}", toplevel.display());
             Ok(())
         }
     }

@@ -58,6 +58,36 @@ impl DeployRequest {
     }
 }
 
+/// Which speed a change needs. Content edits to an existing service stay on
+/// boxd's fast path (rebuild the lightweight generation, no system switch);
+/// anything that alters the shape of the system — a new or removed service, a
+/// changed template/domain/exposure — is structural and needs a full OS-tier
+/// rebuild + `switch-to-configuration`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChangeKind {
+    Content,
+    Structural,
+}
+
+/// Classify a deploy against the current config. New services and changes to a
+/// service's template, domain or exposure are structural; re-materializing an
+/// existing service's content is not.
+pub fn classify_deploy(current: &BoxConfig, req: &DeployRequest) -> ChangeKind {
+    match current.find(&req.name) {
+        None => ChangeKind::Structural,
+        Some(existing) => {
+            if existing.template != req.template
+                || existing.domain.as_deref() != req.domain.as_deref()
+                || existing.public != req.public
+            {
+                ChangeKind::Structural
+            } else {
+                ChangeKind::Content
+            }
+        }
+    }
+}
+
 /// Build the current declarative config into a new generation and switch to
 /// it atomically. No health gate — see [`apply_checked`].
 pub fn apply(paths: &Paths, builder: &dyn Builder) -> Result<GenerationInfo> {
@@ -220,4 +250,48 @@ pub fn rollback(paths: &Paths, number: u64) -> Result<GenerationInfo> {
         &format!("generation #{}: rollback (restored)", current.number),
     );
     Ok(current)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::ServiceConfig;
+    use chrono::Utc;
+
+    fn config_with(name: &str, domain: Option<&str>) -> BoxConfig {
+        BoxConfig {
+            services: vec![ServiceConfig {
+                name: name.into(),
+                template: "static-site".into(),
+                params: json!({}),
+                domain: domain.map(Into::into),
+                public: false,
+                created_at: Utc::now(),
+            }],
+        }
+    }
+
+    #[test]
+    fn new_service_is_structural() {
+        let current = BoxConfig::default();
+        let req = DeployRequest::static_site("blog", Some("<h1/>".into()), None, None, false);
+        assert_eq!(classify_deploy(&current, &req), ChangeKind::Structural);
+    }
+
+    #[test]
+    fn content_edit_is_fast_path() {
+        let current = config_with("blog", None);
+        // Same template/domain/exposure, new body → content only.
+        let req =
+            DeployRequest::static_site("blog", Some("<h1>new</h1>".into()), None, None, false);
+        assert_eq!(classify_deploy(&current, &req), ChangeKind::Content);
+    }
+
+    #[test]
+    fn adding_a_domain_is_structural() {
+        let current = config_with("blog", None);
+        let req =
+            DeployRequest::static_site("blog", None, None, Some("blog.example.com".into()), false);
+        assert_eq!(classify_deploy(&current, &req), ChangeKind::Structural);
+    }
 }
