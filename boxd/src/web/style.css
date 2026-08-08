@@ -1,6 +1,9 @@
 /* The Box — Configurator (on-box dashboard). Industrial field-ops identity,
    shared with the pre-install configurator. See memory: the-box-design-system. */
 
+/* inline SVG icons — no emoji, identical rendering everywhere */
+.ico { width: 1em; height: 1em; vertical-align: -.14em; flex: none; }
+
 :root {
   --bg: #e7e3d8; --panel: #f1ede2; --panel-2: #ece7da;
   --line: #cbc4b3; --line-strong: #a89f8b;

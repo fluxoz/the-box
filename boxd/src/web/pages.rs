@@ -53,6 +53,10 @@ fn short_rev(s: &str) -> String {
 const CSS: &str = include_str!("style.css");
 const JS: &str = include_str!("dash.js");
 
+// Inline SVG icons — no emoji, so they render identically on every platform.
+const MARK_SVG: &str = r##"<svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.6" y="1.6" width="12.8" height="12.8" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 2.3v11.4H3.6A1.6 1.6 0 0 1 2 12.1V3.9A1.6 1.6 0 0 1 3.6 2.3z" fill="currentColor"/></svg>"##;
+const THEME_SVG: &str = r##"<svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.6a6.4 6.4 0 0 0 0 12.8z" fill="currentColor"/></svg>"##;
+
 #[derive(Deserialize, Default)]
 pub struct Flash {
     ok: Option<String>,
@@ -72,7 +76,7 @@ fn layout(title: &str, flash: &Flash, body: Markup) -> Html<String> {
             body {
                 header.top {
                     a.brand href="/" {
-                        span.mark { "◧ THE " b { "BOX" } }
+                        span.mark { (PreEscaped(MARK_SVG)) " THE " b { "BOX" } }
                         span.sub { "Configurator" }
                     }
                     div.top-right {
@@ -80,7 +84,7 @@ fn layout(title: &str, flash: &Flash, body: Markup) -> Html<String> {
                             div { "FIELD OP: " b { "MANAGE" } }
                             div id="clock" { "--:--:--" }
                         }
-                        button.theme-btn type="button" id="theme" { "◐ Theme" }
+                        button.theme-btn type="button" id="theme" { (PreEscaped(THEME_SVG)) " Theme" }
                     }
                 }
                 nav.tabs {
@@ -640,7 +644,7 @@ pub async fn pair(Query(flash): Query<Flash>) -> Html<String> {
             body {
                 header.top {
                     a.brand href="/pair" {
-                        span.mark { "◧ THE " b { "BOX" } }
+                        span.mark { (PreEscaped(MARK_SVG)) " THE " b { "BOX" } }
                         span.sub { "Configurator" }
                     }
                 }
