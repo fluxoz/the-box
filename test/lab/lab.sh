@@ -141,15 +141,8 @@ cmd_status() {
   echo "  ssh -i $WORK/operator_key -L 2693:localhost:2693 root@<ip>   # then open http://localhost:2693"
 }
 
-# One-time pairing code for box i. boxd isn't on the interactive PATH and must
-# run as the boxd user (to own auth.json), so resolve the daemon's own binary
-# and run it in that context via systemd-run.
-cmd_enroll() {
-  ssh_to "$1" 'set -e
-    b=$(systemctl show -p ExecStart --value boxd | sed -n "s/.*path=\([^ ;]*\).*/\1/p")
-    systemd-run --pipe --quiet --uid=boxd --setenv=HOME=/var/lib/boxd \
-      "$b" --data-dir /var/lib/boxd auth enroll'
-}
+# One-time pairing code for box i — exactly what a user runs over SSH.
+cmd_enroll() { ssh_to "$1" boxd auth enroll; }
 cmd_ssh()    { ssh_to "$1"; }                     # shell on box i (operator key)
 
 cmd_down() {
