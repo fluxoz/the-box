@@ -157,6 +157,13 @@
           "${nixpkgs}/nixos/modules/installer/netboot/netboot-minimal.nix";
       } // boxHosts;
 
+      # Live VM proof that the OS-tier switch + system rollback work on a
+      # booted Box (exercises the exact command sequence ostier.rs drives).
+      checks.x86_64-linux.os-switch = import ./nix/tests/os-switch.nix {
+        inherit self nixpkgs;
+        system = "x86_64-linux";
+      };
+
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
           packages = with pkgs; [
