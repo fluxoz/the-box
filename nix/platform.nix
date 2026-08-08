@@ -21,6 +21,11 @@
   services.avahi = {
     enable = true;
     nssmdns4 = true;
+    # Advertise under the *runtime* hostname. The appliance's firstboot sets a
+    # per-machine hostname at boot; an empty hostName makes avahi use
+    # gethostname() rather than baking in the build-time "box", so a fleet of
+    # appliance boxes don't all collide on box.local.
+    hostName = "";
     publish = {
       enable = true;
       addresses = true;
