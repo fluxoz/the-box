@@ -122,6 +122,46 @@ cmd_run() {
   log "fleet up. 'lab.sh status' for IPs + dashboard URLs."
 }
 
+# Install a blank VM from a handoff YOU generated in the Configurator, then boot
+# it on the network. This is the self-driven path: `byo ~/Downloads/box-install.json`.
+cmd_byo() {
+  local handoff="$1" name="${2:-mybox}"
+  [ -f "$handoff" ] || { log "handoff not found: $handoff"; exit 1; }
+  ensure_key; resolve_iso; resolve_ovmf
+  local disk="$WORK/$name.qcow2" seed="$WORK/$name-seed.img" vars="$WORK/$name-vars.fd"
+  local mac; mac="$(printf '52:54:00:b0:01:%02x' "$((RANDOM % 256))")"
+  echo "$mac" > "$WORK/$name.mac"
+  rm -f "$seed"; truncate -s 16M "$seed"
+  nix shell nixpkgs#dosfstools nixpkgs#mtools -c bash -c \
+    "mkfs.vfat -n BOX-INSTALL '$seed' >/dev/null && mcopy -i '$seed' '$handoff' ::/box-install.json"
+  qemu-img create -f qcow2 "$disk" 12G >/dev/null
+  cp "$OVMF_VARS_SRC" "$vars"; chmod u+w "$vars"
+  log "installing '$name' from your orders (blank 12G disk + installer ISO)..."
+  qemu-system-x86_64 -enable-kvm -machine q35 -m "$MEM" -smp "$CPU" \
+    -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
+    -drive if=pflash,format=raw,file="$vars" \
+    -cdrom "$ISO" \
+    -drive file="$disk",if=virtio,format=qcow2 \
+    -drive file="$seed",if=virtio,format=raw \
+    -boot d -no-reboot -display none -serial "file:$WORK/$name-install.log"
+  log "'$name' installed; booting on the network..."
+  qemu-system-x86_64 -enable-kvm -machine q35 -m "$MEM" -smp "$CPU" \
+    -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
+    -drive if=pflash,format=raw,file="$vars" \
+    -drive file="$disk",if=virtio,format=qcow2 \
+    -netdev bridge,id=lan,br="$BRIDGE",helper="$HELPER" \
+    -device virtio-net-pci,netdev=lan,mac="$mac" \
+    -display none -serial "file:$WORK/$name-run.log" \
+    -pidfile "$WORK/$name.pid" -daemonize
+  local ip="" t=0
+  while [ -z "$ip" ] && [ "$t" -lt 30 ]; do
+    sleep 4; t=$((t + 1))
+    ip="$(virsh -c qemu:///system net-dhcp-leases default 2>/dev/null | awk -v m="$mac" 'tolower($3)==m{print $5}' | cut -d/ -f1 | head -1)"
+  done
+  log "'$name' is up at ${ip:-<no lease yet>}"
+  log "  dashboard: http://${ip:-?}:2693   (pair with the code from your Configurator recovery kit)"
+}
+
 ip_of() {
   local mac; mac="$(mac_for "$1")"
   virsh -c qemu:///system net-dhcp-leases "${BOX_LAB_NET:-default}" 2>/dev/null \
@@ -157,7 +197,7 @@ cmd_enroll() { ssh_to "$1" boxd auth enroll; }
 cmd_ssh()    { ssh_to "$1"; }                     # shell on box i (operator key)
 
 cmd_down() {
-  for pidf in "$WORK"/box-*.pid; do
+  for pidf in "$WORK"/*.pid; do
     [ -f "$pidf" ] || continue
     kill "$(cat "$pidf")" 2>/dev/null && log "stopped $(basename "$pidf" .pid)"
     rm -f "$pidf"
@@ -168,9 +208,10 @@ case "${1:-}" in
   provision) cmd_provision "${2:-1}" ;;
   run)       cmd_run "${2:-1}" ;;
   up)        cmd_provision "${2:-1}"; cmd_run "${2:-1}" ;;
+  byo)       cmd_byo "${2:?path to your box-install.json}" "${3:-mybox}" ;;
   status)    cmd_status ;;
   enroll)    cmd_enroll "${2:?box index}" ;;
   ssh)       cmd_ssh "${2:?box index}" ;;
   down)      cmd_down ;;
-  *) echo "usage: lab.sh {provision|run|up|status|enroll|ssh|down} [N|i]" >&2; exit 1 ;;
+  *) echo "usage: lab.sh {provision N|run N|up N|byo <handoff.json> [name]|status|enroll i|ssh i|down}" >&2; exit 1 ;;
 esac
