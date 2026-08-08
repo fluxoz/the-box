@@ -25,13 +25,17 @@ let
       # The handoff is always copied to RAM before anything touches a disk:
       # in the staged-from-Windows flow it lives on the very disk being wiped.
       handoff=""
-      # Orders injected into the kexec initrd (the curl|sh takeover): already in
-      # RAM, in this installer's own root filesystem — nothing to mount, nothing
-      # on any disk.
-      if [ -f /box-installer/box-install.json ]; then
-        log "using orders injected into the initrd"
-        cp /box-installer/box-install.json /tmp/box-install.json
-        handoff=/tmp/box-install.json
+      # Orders passed on the kernel command line (the curl|sh takeover): base64,
+      # RAM-only, and survives the initramfs -> installer switch-root (files
+      # injected into the initramfs do NOT — NixOS drops them at switch-root).
+      b64=$(tr ' ' '\n' < /proc/cmdline | sed -n 's/^box\.install-b64=//p' | head -n1)
+      if [ -z "$handoff" ] && [ -n "$b64" ]; then
+        log "using orders from the kernel command line"
+        if printf '%s' "$b64" | base64 -d > /tmp/box-install.json 2>/dev/null; then
+          handoff=/tmp/box-install.json
+        else
+          log "failed to decode box.install-b64"
+        fi
       fi
       url=$(tr ' ' '\n' < /proc/cmdline | sed -n 's/^box\.install-url=//p' | head -n1)
       if [ -z "$handoff" ] && [ -n "$url" ]; then
