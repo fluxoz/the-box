@@ -86,6 +86,7 @@ fn layout(title: &str, flash: &Flash, body: Markup) -> Html<String> {
                     a.active[title == "Services"] href="/" { "Services" }
                     a.active[title == "Generations"] href="/generations" { "Generations" }
                     a.active[title == "System"] href="/system" { "System" }
+                    a.active[title == "Fleet"] href="/fleet" { "Fleet" }
                     a.active[title == "Networking"] href="/network" { "Networking" }
                     a.btn.active[title == "Deploy"] href="/services/new" { "+ Deploy" }
                 }
@@ -619,6 +620,87 @@ pub async fn system_check(State(state): State<SharedState>) -> Redirect {
         ),
         Err(err) => redirect("err", &format!("{err:#}")),
     }
+}
+
+pub async fn fleet(
+    State(state): State<SharedState>,
+    Query(flash): Query<Flash>,
+) -> Result<Html<String>, AppError> {
+    let me = crate::fleet::self_health(&state.paths);
+    let peers = blocking(|| Ok(crate::fleet::discover())).await?;
+
+    let body = html! {
+        h2 { "Fleet" }
+        p.muted {
+            "Boxes on this network announce themselves over mDNS. This view is "
+            "peer-federated — your Box discovers the others directly and reads each "
+            "one's coarse health. Seeing a Box here doesn't grant control; that needs "
+            "pairing."
+        }
+        section.cards {
+            div.card {
+                h3 { "This Box" }
+                p.big { (me.name) }
+                p.muted { (me.services) " service" (if me.services == 1 { "" } else { "s" }) " · boxd " (me.version) }
+            }
+            div.card {
+                h3 { "Peers found" }
+                p.big { (peers.len()) }
+                p.muted { "on this LAN, right now" }
+            }
+        }
+        section {
+            div.section-head { h2 { "Boxes" } }
+            table {
+                thead {
+                    tr { th { "Box" } th { "Health" } th { "Services" } th { "Version" } th { "Address" } }
+                }
+                tbody {
+                    tr {
+                        td { strong { (me.name) } " " span.muted { "(this box)" } }
+                        td {
+                            @if me.health == "ok" { span.badge.on { "ok" } }
+                            @else { span.badge { (me.health) } }
+                        }
+                        td { (me.services) }
+                        td { (me.version) }
+                        td { span.muted { "local" } }
+                    }
+                    @for p in &peers {
+                        tr {
+                            td { strong { (p.host) } }
+                            td {
+                                @match &p.health {
+                                    Some(h) => {
+                                        @if h.health == "ok" { span.badge.on { "ok" } }
+                                        @else { span.badge { (h.health) } }
+                                    },
+                                    None => span.badge { "unreachable" },
+                                }
+                            }
+                            td {
+                                @match &p.health { Some(h) => (h.services), None => "—" }
+                            }
+                            td {
+                                @match &p.health {
+                                    Some(h) => (h.version.as_str()),
+                                    None => "—",
+                                }
+                            }
+                            td { code { (p.address) ":" (p.port) } }
+                        }
+                    }
+                }
+            }
+            @if peers.is_empty() {
+                div.empty {
+                    p { "No other Boxes found on this network." }
+                    p.muted { "Boxes discover each other over mDNS on the same LAN — check that any peers are on the same subnet and advertising." }
+                }
+            }
+        }
+    };
+    Ok(layout("Fleet", &flash, body))
 }
 
 pub async fn rollback(State(state): State<SharedState>, Path(number): Path<u64>) -> Redirect {

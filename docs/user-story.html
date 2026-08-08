@@ -1,0 +1,308 @@
+<title>The Box — The Full User Story</title>
+<style>
+  :root {
+    /* light ground (warm steel) */
+    --ground: #e7e3d8;
+    --panel: #f1ede2;
+    --hair: #cbc4b3;
+    --brass: #916d2f;
+    --critical: #ad3c2b;
+    --ink: #2a251c;
+    --ink-dim: #5f5949;
+    --ink-faint: #8a8373;
+    --ok: #5c6b43;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #14110c;
+      --panel: #1b170f;
+      --hair: #322b1f;
+      --brass: #c99b4e;
+      --critical: #d5543f;
+      --ink: #ded7c8;
+      --ink-dim: #98917f;
+      --ink-faint: #6b6557;
+      --ok: #9aa876;
+    }
+  }
+  :root[data-theme="light"] {
+    --ground: #e7e3d8; --panel: #f1ede2; --hair: #cbc4b3; --brass: #916d2f;
+    --critical: #ad3c2b; --ink: #2a251c; --ink-dim: #5f5949; --ink-faint: #8a8373; --ok: #5c6b43;
+  }
+  :root[data-theme="dark"] {
+    --ground: #14110c; --panel: #1b170f; --hair: #322b1f; --brass: #c99b4e;
+    --critical: #d5543f; --ink: #ded7c8; --ink-dim: #98917f; --ink-faint: #6b6557; --ok: #9aa876;
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--mono);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    background-image:
+      linear-gradient(var(--hair) 1px, transparent 1px),
+      linear-gradient(90deg, var(--hair) 1px, transparent 1px);
+    background-size: 46px 46px;
+    background-position: -1px -1px;
+  }
+  .sheet {
+    max-width: 74ch;
+    margin: 0 auto;
+    padding: clamp(1.2rem, 4vw, 3.5rem) clamp(1.1rem, 5vw, 2.5rem) 6rem;
+    background: color-mix(in srgb, var(--ground) 88%, transparent);
+  }
+
+  .label { font-size: .68rem; letter-spacing: .2em; text-transform: uppercase; color: var(--ink-faint); }
+  .brass { color: var(--brass); }
+
+  /* header */
+  .top {
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: 1rem; padding-bottom: 1rem; margin-bottom: 2.6rem;
+    border-bottom: 1px solid var(--hair); flex-wrap: wrap;
+  }
+  .mark { font-weight: 700; letter-spacing: .04em; }
+  .mark .sub { color: var(--ink-faint); font-weight: 400; letter-spacing: .2em; text-transform: uppercase; font-size: .66rem; }
+  .theme-btn {
+    font-family: var(--mono); font-size: .66rem; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--ink-dim); background: transparent; border: 1px solid var(--hair);
+    padding: .4rem .7rem; cursor: pointer; border-radius: 2px;
+  }
+  .theme-btn:hover { color: var(--brass); border-color: var(--brass); }
+  .theme-btn:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+
+  /* hero */
+  .hero { margin-bottom: 3.4rem; }
+  .hero h1 {
+    font-size: clamp(1.9rem, 6vw, 3.1rem); line-height: 1.08; font-weight: 700;
+    letter-spacing: -.01em; margin: .7rem 0 0; text-wrap: balance;
+  }
+  .hero .deck {
+    font-family: var(--sans); font-size: clamp(1rem, 2.4vw, 1.2rem);
+    color: var(--ink-dim); max-width: 60ch; margin-top: 1.1rem; line-height: 1.55;
+  }
+  .operators { display: flex; gap: .6rem; flex-wrap: wrap; margin-top: 1.8rem; }
+  .op {
+    border: 1px solid var(--hair); border-left: 2px solid var(--brass);
+    padding: .55rem .85rem; background: var(--panel); border-radius: 2px; font-size: .8rem;
+  }
+  .op b { color: var(--brass); font-weight: 700; }
+  .op span { color: var(--ink-dim); }
+
+  h2.section {
+    font-size: .72rem; letter-spacing: .22em; text-transform: uppercase; color: var(--ink-faint);
+    margin: 3.4rem 0 1.4rem; padding-bottom: .5rem; border-bottom: 1px solid var(--hair);
+  }
+
+  .lede { font-family: var(--sans); font-size: 1.02rem; color: var(--ink-dim); max-width: 62ch; }
+
+  /* stages */
+  .stage { display: grid; grid-template-columns: 3.4rem 1fr; gap: 1.1rem; padding: 1.7rem 0; border-bottom: 1px solid var(--hair); }
+  .stage:last-of-type { border-bottom: 0; }
+  .stage .num { font-size: 1.5rem; font-weight: 700; color: var(--brass); line-height: 1; font-variant-numeric: tabular-nums; }
+  .stage h3 { font-size: 1.16rem; font-weight: 700; margin: .1rem 0 .5rem; letter-spacing: -.005em; }
+  .stage .oneline { color: var(--ink-dim); font-size: .84rem; letter-spacing: .02em; margin-bottom: .7rem; }
+  .stage p { font-family: var(--sans); color: var(--ink); max-width: 60ch; margin: .55rem 0; }
+  .stage p.dim { color: var(--ink-dim); }
+
+  .note {
+    font-family: var(--sans); font-size: .9rem; color: var(--ink-dim);
+    border-left: 2px solid var(--hair); padding: .3rem 0 .3rem .85rem; margin: .8rem 0;
+  }
+  .note b { color: var(--ink); font-weight: 700; }
+  .note.op-a { border-left-color: var(--brass); }
+  .note.op-b { border-left-color: var(--ink-faint); }
+  .note.safe { border-left-color: var(--ok); }
+  .tag { font-family: var(--mono); font-size: .64rem; letter-spacing: .16em; text-transform: uppercase; }
+
+  /* table */
+  .tablewrap { overflow-x: auto; margin: 1.4rem 0; border: 1px solid var(--hair); border-radius: 2px; }
+  table { border-collapse: collapse; width: 100%; font-size: .84rem; min-width: 34rem; }
+  th, td { text-align: left; padding: .6rem .85rem; border-bottom: 1px solid var(--hair); }
+  thead th { background: var(--panel); font-size: .66rem; letter-spacing: .16em; text-transform: uppercase; color: var(--ink-faint); }
+  tbody td:first-child { color: var(--ink); }
+  .yes { color: var(--ok); font-weight: 700; }
+  .paid { color: var(--brass); font-weight: 700; }
+  .no { color: var(--ink-faint); }
+  tr:last-child td { border-bottom: 0; }
+
+  /* status */
+  .statusgrid { display: grid; gap: 1rem; grid-template-columns: 1fr; margin-top: 1.2rem; }
+  @media (min-width: 640px) { .statusgrid { grid-template-columns: 1fr 1fr; } }
+  .card { border: 1px solid var(--hair); background: var(--panel); border-radius: 2px; padding: 1.1rem 1.2rem; }
+  .card h4 { font-size: .68rem; letter-spacing: .18em; text-transform: uppercase; margin: 0 0 .8rem; }
+  .card.live h4 { color: var(--ok); }
+  .card.next h4 { color: var(--brass); }
+  .card ul { list-style: none; padding: 0; margin: 0; font-family: var(--sans); font-size: .92rem; }
+  .card li { padding: .28rem 0 .28rem 1.3rem; position: relative; color: var(--ink); }
+  .card li::before { position: absolute; left: 0; top: .28rem; font-family: var(--mono); font-size: .8rem; }
+  .card.live li::before { content: "✓"; color: var(--ok); }
+  .card.next li::before { content: "→"; color: var(--brass); }
+
+  footer { margin-top: 3.5rem; padding-top: 1.2rem; border-top: 1px solid var(--hair); color: var(--ink-faint); font-size: .72rem; letter-spacing: .04em; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .theme-btn, .op { transition: color .15s, border-color .15s; }
+  }
+</style>
+
+<div class="sheet">
+  <header class="top">
+    <div class="mark">◧ THE BOX <span class="sub">· field manual</span></div>
+    <button class="theme-btn" id="theme" type="button" aria-label="Toggle light or dark theme">◐ theme</button>
+  </header>
+
+  <section class="hero">
+    <div class="label">The full user story</div>
+    <h1>A spare machine becomes a server that runs itself.</h1>
+    <p class="deck">Running your own server is powerful, and almost nobody does it — because keeping one alive is a second job. The Box removes the second job. You point it at a machine you already have; it becomes a private server that's safe to change, hard to break, and able to look after itself.</p>
+    <div class="operators">
+      <div class="op"><b>Operator A</b> — <span>a person, using a dashboard</span></div>
+      <div class="op"><b>Operator B</b> — <span>an AI agent, using the same actions as tools</span></div>
+    </div>
+  </section>
+
+  <p class="lede">The same Box serves both. Everything below happens through one friendly front door for people and one machine-to-machine door for agents — the two doors do the same things. Here's the whole journey.</p>
+
+  <h2 class="section">The journey · start to steady state</h2>
+
+  <div class="stage">
+    <div class="num">01</div>
+    <div>
+      <h3>A machine you already have</h3>
+      <div class="oneline">Old laptop · mini-PC · Raspberry Pi · a rented VPS</div>
+      <p>No special hardware. If it can turn on, it can become a Box. The whole idea is to make cheap, idle, or already-paid-for compute useful without it becoming a hobby that eats your evenings.</p>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="num">02</div>
+    <div>
+      <h3>It becomes a Box</h3>
+      <div class="oneline">Answer a few questions → the machine sets itself up</div>
+      <p>You don't install and configure an operating system. You answer a few plain questions in a small tool — the Configurator — like what to name it, your Wi-Fi, and who's allowed in. That produces a single orders file. The Box's standard image reads those orders on first boot and configures itself to match. No account required, and nothing you typed ever leaves your browser.</p>
+      <p class="note op-a"><span class="tag brass">Operator A</span> &nbsp;Plug in a prepared USB stick (or run one command) and walk away; a few minutes later the machine is a Box.</p>
+      <p class="note op-b"><span class="tag">Operator B</span> &nbsp;An agent does the same unattended — and can turn a whole list of machines into Boxes in one pass.</p>
+      <p class="note safe"><span class="tag">Why it holds up</span> &nbsp;One identical image for every machine, personalized only by the orders file. One Box or fifty is the same amount of effort.</p>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="num">03</div>
+    <div>
+      <h3>First contact</h3>
+      <div class="oneline">A private dashboard shows up on your network</div>
+      <p>The Box comes up at <b>box.local</b> with a dashboard — the same Configurator look. It's <b>private by default</b>: only you, on your own network, can reach it. Nothing is exposed to the internet until you choose to expose it.</p>
+      <p class="note op-b"><span class="tag">Operator B</span> &nbsp;An agent connects to the same Box through its machine interface and sees the same controls, as tools it can call.</p>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="num">04</div>
+    <div>
+      <h3>You put something on it</h3>
+      <div class="oneline">Pick a template, or say what you want in plain English</div>
+      <p>Choose a template — a website today; a photo library, a notes API, a database as the catalog grows — or just describe what you want. The Box builds it and turns it on. You never see the machinery underneath.</p>
+      <p class="note op-b"><span class="tag">Operator B</span> &nbsp;An agent calls one action, "deploy this," and gets back a working service it can start using immediately — its own durable place to keep state and run things.</p>
+      <p class="note dim" style="border:0;padding-left:0"><span class="tag" style="color:var(--ink-faint)">Status</span> &nbsp;Working today for static websites; more templates are next.</p>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="num">05</div>
+    <div>
+      <h3>You make it public</h3>
+      <div class="oneline">A tunnel carries traffic in — your home network stays closed</div>
+      <p>By default your Box is private. To put a service on the internet, you don't open risky holes in your home router. You connect a <b>tunnel</b> — the free way is pasting one token from Cloudflare — and the Box routes your chosen web address to your service. Traffic comes in through the tunnel; your network stays shut. Your dashboard stays private even while your website is public.</p>
+      <p class="note op-a"><span class="tag brass">Paid option</span> &nbsp;Skip the setup entirely and let us hand you a web address and carry the traffic. That's the paid tier — and the free path never depends on us.</p>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="num">06</div>
+    <div>
+      <h3>You can't really break it</h3>
+      <div class="oneline">Every change is a snapshot · a bad one undoes itself</div>
+      <p>Before any change takes effect, the Box saves the whole machine's state as a labeled snapshot. After the change, it checks that everything still works — and if something's wrong, it flips itself back to the last good snapshot automatically. You can also roll back to any earlier snapshot with one click. Mistakes are cheap, and "I broke my server" mostly stops being a thing that can happen.</p>
+      <p class="note safe"><span class="tag">Why it holds up</span> &nbsp;This is the heart of the product: safety isn't a feature you turn on, it's how every change already works.</p>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="num">07</div>
+    <div>
+      <h3>It keeps itself current</h3>
+      <div class="oneline">Updates its own core software, like a phone OS update</div>
+      <p>The Box can update its own platform: it fetches the new version, installs it, confirms the machine comes back healthy, and undoes the update by itself if anything's off. You can let it do this on a schedule, or pin it to a specific version you trust.</p>
+      <p class="note safe"><span class="tag">Why it holds up</span> &nbsp;An update is just another snapshot — so the same safety net that catches a bad change catches a bad update.</p>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="num">08</div>
+    <div>
+      <h3>More than one</h3>
+      <div class="oneline">Several Boxes find each other and show up as one map</div>
+      <p>Own a few Boxes and they discover each other on your network and appear together in a single view — which are healthy, which are public, what each one is running. Seeing a Box on the map doesn't grant control; you <b>pair</b> with one to actually manage it. Look is public-ish on your LAN; touch requires permission.</p>
+    </div>
+  </div>
+
+  <h2 class="section">Where the money is · free vs. paid</h2>
+  <p class="lede">Free forever for fully self-hosted. You only pay for the convenience of us carrying your public traffic — never for the software, the safety, or the control.</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Capability</th><th>Free · self-hosted</th><th>Paid · managed networking</th></tr></thead>
+      <tbody>
+        <tr><td>The software, dashboard &amp; agent interface</td><td class="yes">Included</td><td class="yes">Included</td></tr>
+        <tr><td>Templates &amp; deploys</td><td class="yes">Included</td><td class="yes">Included</td></tr>
+        <tr><td>Snapshots, rollback &amp; self-update</td><td class="yes">Included</td><td class="yes">Included</td></tr>
+        <tr><td>Your own tunnel or domain (e.g. Cloudflare)</td><td class="yes">Yes</td><td class="no">—</td></tr>
+        <tr><td>Web addresses &amp; routing on our edge</td><td class="no">—</td><td class="paid">Paid</td></tr>
+        <tr><td>Public traffic carried by us</td><td class="no">—</td><td class="paid">Paid</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 class="section">The two operators, one Box</h2>
+  <p class="lede">A person at a dashboard and an agent at a tool interface are doing the same things to the same machine. The Box is built for both from the start — not a human product with an API bolted on, and not a robot product a person can't use.</p>
+
+  <h2 class="section">Where we are today</h2>
+  <p class="lede">An honest read on story vs. reality, so the picture above doesn't oversell.</p>
+  <div class="statusgrid">
+    <div class="card live">
+      <h4>Working now</h4>
+      <ul>
+        <li>Turning a real machine into a Box — proven on hardware, including converting a Windows PC</li>
+        <li>Deploying a website</li>
+        <li>The snapshot + automatic-rollback safety net</li>
+        <li>The self-update mechanism (with rollback)</li>
+      </ul>
+    </div>
+    <div class="card next">
+      <h4>Next up</h4>
+      <ul>
+        <li>Showing all of this in the dashboard — versions, what's running, updates available</li>
+        <li>Several Boxes on one live map</li>
+        <li>More templates — photos, notes, databases</li>
+        <li>The paid managed-networking tier</li>
+      </ul>
+    </div>
+  </div>
+
+  <footer>◧ THE BOX · CONFIGURATOR · the full user story — a plain-language companion to PLAN.md</footer>
+</div>
+
+<script>
+  (function () {
+    var btn = document.getElementById("theme");
+    btn.addEventListener("click", function () {
+      var root = document.documentElement;
+      var dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      var current = root.getAttribute("data-theme") || (dark ? "dark" : "light");
+      root.setAttribute("data-theme", current === "dark" ? "light" : "dark");
+    });
+  })();
+</script>

@@ -29,6 +29,27 @@ pub fn router() -> Router<SharedState> {
         .route("/history", get(list_history))
         .route("/templates", get(list_templates))
         .route("/network", get(network_status).post(configure_network))
+        .route("/health", get(health))
+        .route("/fleet", get(fleet))
+}
+
+/// Coarse public health — what peers read to render the fleet map. Public by
+/// design (discovery ≠ authorization); reveals only a summary.
+async fn health(State(state): State<SharedState>) -> Json<crate::fleet::CoarseHealth> {
+    Json(crate::fleet::self_health(&state.paths))
+}
+
+#[derive(Serialize)]
+struct FleetView {
+    this_box: crate::fleet::CoarseHealth,
+    peers: Vec<crate::fleet::Peer>,
+}
+
+/// This Box plus the peers it can currently discover on the LAN.
+async fn fleet(State(state): State<SharedState>) -> Result<Json<FleetView>, AppError> {
+    let this_box = crate::fleet::self_health(&state.paths);
+    let peers = blocking(|| Ok(crate::fleet::discover())).await?;
+    Ok(Json(FleetView { this_box, peers }))
 }
 
 #[derive(Serialize)]

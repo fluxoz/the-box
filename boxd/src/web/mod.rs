@@ -50,6 +50,7 @@ pub fn router(state: SharedState) -> Router {
         .route("/generations/{number}/rollback", post(pages::rollback))
         .route("/system", get(pages::system))
         .route("/system/check", post(pages::system_check))
+        .route("/fleet", get(pages::fleet))
         .route("/network", get(pages::network))
         .route("/network/cloudflare", post(pages::configure_cloudflare))
         .route(

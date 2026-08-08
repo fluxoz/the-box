@@ -95,9 +95,9 @@ in
         description = "The Box daemon";
         wantedBy = [ "multi-user.target" ];
         after = [ "network.target" ];
-        # boxd shells out to nix to build generations and to cloudflared for
-        # BYO tunnel exposure.
-        path = [ pkgs.nix pkgs.cloudflared ];
+        # boxd shells out to nix (generation builds), cloudflared (BYO tunnel),
+        # and avahi-browse + curl (LAN fleet discovery).
+        path = [ pkgs.nix pkgs.cloudflared pkgs.avahi pkgs.curl ];
         # nix (invoked by boxd for generation builds) needs a writable cache
         # under $HOME; the boxd system user's default home is /var/empty.
         environment.HOME = cfg.dataDir;
@@ -122,6 +122,22 @@ in
       environment.etc."box/platform.json".text = builtins.toJSON {
         release = cfg.platform.release;
       };
+
+      # Advertise this Box on the LAN so peers can discover it (the fleet view).
+      # Identity/health are read from /api/v1/health, so the record itself is a
+      # static "a Box is here on this port" — no per-machine values baked in.
+      services.avahi.extraServiceFiles.the-box = pkgs.writeText "the-box.service" ''
+        <?xml version="1.0" standalone='no'?>
+        <!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+        <service-group>
+          <name replace-wildcards="yes">%h · The Box</name>
+          <service>
+            <type>_thebox._tcp</type>
+            <port>${lib.last (lib.splitString ":" cfg.listen)}</port>
+            <txt-record>vendor=thebox</txt-record>
+          </service>
+        </service-group>
+      '';
     }
 
     (lib.mkIf (cfg.platform.substituters != [ ]) {
