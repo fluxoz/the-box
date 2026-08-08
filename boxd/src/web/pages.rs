@@ -17,6 +17,7 @@ use crate::store;
 use super::{blocking, AppError, SharedState};
 
 const CSS: &str = include_str!("style.css");
+const JS: &str = include_str!("dash.js");
 
 #[derive(Deserialize, Default)]
 pub struct Flash {
@@ -31,18 +32,28 @@ fn layout(title: &str, flash: &Flash, body: Markup) -> Html<String> {
             head {
                 meta charset="utf-8";
                 meta name="viewport" content="width=device-width, initial-scale=1";
-                title { (title) " · The Box" }
+                title { (title) " · The Box Configurator" }
                 style { (PreEscaped(CSS)) }
             }
             body {
-                nav {
-                    a.brand href="/" { "📦 The Box" }
-                    div.links {
-                        a href="/" { "Services" }
-                        a href="/generations" { "Generations" }
-                        a href="/network" { "Networking" }
-                        a.btn href="/services/new" { "Deploy" }
+                header.top {
+                    a.brand href="/" {
+                        span.mark { "◧ THE " b { "BOX" } }
+                        span.sub { "Configurator" }
                     }
+                    div.top-right {
+                        div.stamp {
+                            div { "FIELD OP: " b { "MANAGE" } }
+                            div id="clock" { "--:--:--" }
+                        }
+                        button.theme-btn type="button" id="theme" { "◐ Theme" }
+                    }
+                }
+                nav.tabs {
+                    a.active[title == "Services"] href="/" { "Services" }
+                    a.active[title == "Generations"] href="/generations" { "Generations" }
+                    a.active[title == "Networking"] href="/network" { "Networking" }
+                    a.btn.active[title == "Deploy"] href="/services/new" { "+ Deploy" }
                 }
                 main {
                     @if let Some(msg) = &flash.ok {
@@ -54,10 +65,10 @@ fn layout(title: &str, flash: &Flash, body: Markup) -> Html<String> {
                     (body)
                 }
                 footer {
-                    "boxd " (env!("CARGO_PKG_VERSION"))
-                    " — local dashboard · JSON API at "
-                    code { "/api/v1" }
+                    "THE BOX CONFIGURATOR · boxd " (env!("CARGO_PKG_VERSION"))
+                    " · LOCAL · API " code { "/api/v1" } " · MCP " code { "/mcp" }
                 }
+                script { (PreEscaped(JS)) }
             }
         }
     };
