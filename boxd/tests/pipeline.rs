@@ -16,11 +16,7 @@ fn setup() -> (TempDir, Paths, LocalBuilder) {
 }
 
 fn deploy_inline(name: &str, html: &str) -> DeployRequest {
-    DeployRequest {
-        name: name.into(),
-        index_html: Some(html.into()),
-        ..Default::default()
-    }
+    DeployRequest::static_site(name, Some(html.into()), None, None, false)
 }
 
 fn served(paths: &Paths, service: &str, file: &str) -> String {
@@ -95,4 +91,49 @@ fn rollback_to_missing_generation_fails() {
     assert!(ops::rollback(&paths, 42).is_err());
     // Still on generation 1.
     assert_eq!(store::current(&paths).unwrap().unwrap().number, 1);
+}
+
+#[test]
+fn unhealthy_deploy_auto_rolls_back() {
+    let (tmp, paths, builder) = setup();
+
+    // Healthy generation 1.
+    ops::deploy(&paths, &builder, deploy_inline("site", "<h1>good</h1>")).unwrap();
+    assert_eq!(served(&paths, "site", "index.html"), "<h1>good</h1>");
+
+    // Deploy from a directory with NO index.html — the static-site health
+    // check must reject it and auto-roll-back to generation 1.
+    let broken = tmp.path().join("broken-src");
+    std::fs::create_dir_all(&broken).unwrap();
+    std::fs::write(broken.join("style.css"), "body{}").unwrap();
+    let req = DeployRequest::static_site("site", None, Some(broken), None, false);
+    let err = ops::deploy(&paths, &builder, req).unwrap_err();
+    assert!(
+        format!("{err:#}").contains("rolled back"),
+        "expected auto-rollback, got: {err:#}"
+    );
+
+    // Still serving the good generation, and config was restored.
+    assert_eq!(store::current(&paths).unwrap().unwrap().number, 1);
+    assert_eq!(served(&paths, "site", "index.html"), "<h1>good</h1>");
+    let config = BoxConfig::load(&paths).unwrap();
+    assert_eq!(config.services.len(), 1);
+    assert_eq!(config.services[0].params["index_html"], "<h1>good</h1>");
+}
+
+#[test]
+fn config_history_tracks_generations() {
+    if !boxd::history::available() {
+        return; // git not on PATH here
+    }
+    let (_tmp, paths, builder) = setup();
+    ops::deploy(&paths, &builder, deploy_inline("a", "1")).unwrap();
+    ops::deploy(&paths, &builder, deploy_inline("b", "2")).unwrap();
+    ops::rollback(&paths, 1).unwrap();
+
+    let hist = boxd::history::log(&paths, 20).unwrap();
+    assert_eq!(hist.len(), 3);
+    assert!(hist[0].message.contains("rollback"));
+    assert!(hist.iter().any(|h| h.message.contains("deploy a")));
+    assert!(hist.iter().any(|h| h.message.contains("deploy b")));
 }

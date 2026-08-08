@@ -147,7 +147,7 @@ pub async fn index(
                         @for s in &config.services {
                             tr {
                                 td { strong { (s.name) } }
-                                td { (s.template.as_str()) }
+                                td { (s.template) }
                                 td {
                                     @match &s.domain {
                                         Some(d) => { (d) },
@@ -225,13 +225,13 @@ pub async fn create_service(
     State(state): State<SharedState>,
     Form(form): Form<NewServiceForm>,
 ) -> Redirect {
-    let request = ops::DeployRequest {
-        name: form.name.trim().to_string(),
-        domain: none_if_empty(form.domain),
-        public: false,
-        index_html: none_if_empty(form.content),
-        source_path: none_if_empty(form.source_path).map(PathBuf::from),
-    };
+    let request = ops::DeployRequest::static_site(
+        form.name.trim().to_string(),
+        none_if_empty(form.content),
+        none_if_empty(form.source_path).map(PathBuf::from),
+        none_if_empty(form.domain),
+        false,
+    );
     let name = request.name.clone();
     let result = {
         let state = state.clone();

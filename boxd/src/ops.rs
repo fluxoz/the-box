@@ -1,49 +1,65 @@
 //! High-level operations: the same code paths back the dashboard, the JSON
-//! API, the CLI and (later) the MCP tools.
+//! API, the CLI and the MCP tools. A service is a template + params; applying
+//! builds a generation, health-checks it, and auto-rolls-back on failure.
 
 use std::fs;
 use std::path::PathBuf;
 
 use anyhow::{bail, Context, Result};
 use chrono::Utc;
+use serde_json::{json, Value};
 
-use crate::config::{validate_domain, validate_service_name, BoxConfig, ServiceConfig, Template};
+use crate::config::{validate_domain, validate_service_name, BoxConfig, ServiceConfig};
+use crate::history;
 use crate::manifest;
 use crate::nixgen;
 use crate::paths::Paths;
 use crate::store::{self, Builder, GenerationInfo};
+use crate::templates;
 use crate::util;
 
-pub const DEFAULT_INDEX: &str = r#"<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Hello from The Box</title>
-</head>
-<body style="font-family: system-ui, sans-serif; display: grid; place-items: center; min-height: 100vh; margin: 0;">
-  <div style="text-align: center;">
-    <h1>&#128230; It works!</h1>
-    <p>This site is served by The Box.</p>
-  </div>
-</body>
-</html>
-"#;
+/// Re-exported so callers keep a single import site for the default page.
+pub use crate::templates::DEFAULT_INDEX;
 
-#[derive(Debug, Clone, Default)]
+/// A request to create or update a service from a template.
+#[derive(Debug, Clone)]
 pub struct DeployRequest {
     pub name: String,
+    pub template: String,
+    pub params: Value,
     pub domain: Option<String>,
     pub public: bool,
-    /// Inline content for a single-page deploy (index.html).
-    pub index_html: Option<String>,
-    /// Alternative: copy an existing directory as the site root. Wins over
-    /// `index_html` when both are given.
-    pub source_path: Option<PathBuf>,
+}
+
+impl DeployRequest {
+    /// Convenience constructor for the static-site template — the shape the
+    /// dashboard/API/MCP have historically spoken.
+    pub fn static_site(
+        name: impl Into<String>,
+        index_html: Option<String>,
+        source_path: Option<PathBuf>,
+        domain: Option<String>,
+        public: bool,
+    ) -> Self {
+        let mut params = serde_json::Map::new();
+        if let Some(html) = index_html {
+            params.insert("index_html".into(), json!(html));
+        }
+        if let Some(path) = source_path {
+            params.insert("source_path".into(), json!(path.to_string_lossy()));
+        }
+        Self {
+            name: name.into(),
+            template: "static-site".into(),
+            params: Value::Object(params),
+            domain,
+            public,
+        }
+    }
 }
 
 /// Build the current declarative config into a new generation and switch to
-/// it atomically.
+/// it atomically. No health gate — see [`apply_checked`].
 pub fn apply(paths: &Paths, builder: &dyn Builder) -> Result<GenerationInfo> {
     let config = BoxConfig::load(paths)?;
     let gensrc = nixgen::write_gensrc(paths, &config)?;
@@ -51,13 +67,64 @@ pub fn apply(paths: &Paths, builder: &dyn Builder) -> Result<GenerationInfo> {
     store::record_and_switch(paths, &output)
 }
 
-/// Create or update a static-site service, then apply.
+/// A health check runs against a freshly-switched generation; returning `Err`
+/// triggers an automatic rollback to the prior generation.
+pub type HealthCheck = dyn Fn(&Paths, &GenerationInfo) -> Result<()>;
+
+/// Default health: ask each service's template whether its outputs are present
+/// in the built generation. A static site with no index.html, for instance,
+/// fails here and is rolled back rather than served broken.
+pub fn default_health(_paths: &Paths, info: &GenerationInfo) -> Result<()> {
+    let m = manifest::read_manifest(&info.store_path)
+        .context("health check: generation manifest is unreadable")?;
+    for svc in &m.services {
+        if let Some(t) = templates::get(&svc.template) {
+            let www = info.store_path.join("services").join(&svc.name).join("www");
+            t.health(&svc.name, &www)?;
+        }
+    }
+    Ok(())
+}
+
+/// Apply, then health-check the new generation. On failure, roll back to the
+/// previous generation (restoring its config + sources) and return the error.
+/// This is the reconciler's core safety property: a bad change never sticks.
+pub fn apply_checked(
+    paths: &Paths,
+    builder: &dyn Builder,
+    health: &HealthCheck,
+) -> Result<GenerationInfo> {
+    let previous = store::current(paths)?;
+    let info = apply(paths, builder)?;
+    match health(paths, &info) {
+        Ok(()) => Ok(info),
+        Err(e) => match previous {
+            Some(prev) => {
+                rollback(paths, prev.number)?;
+                bail!(
+                    "health check failed — rolled back to generation #{}: {e:#}",
+                    prev.number
+                );
+            }
+            None => bail!(
+                "health check failed on the first generation (nothing to roll back to): {e:#}"
+            ),
+        },
+    }
+}
+
+/// Create or update a service from a template, then apply with the health gate.
 pub fn deploy(
     paths: &Paths,
     builder: &dyn Builder,
     mut req: DeployRequest,
 ) -> Result<GenerationInfo> {
     validate_service_name(&req.name)?;
+
+    let template = templates::get(&req.template)
+        .with_context(|| format!("unknown template {:?}", req.template))?;
+    template.validate(&req.params)?;
+
     if let Some(domain) = req.domain.take() {
         let domain = domain.trim().to_ascii_lowercase();
         validate_domain(&domain)?;
@@ -75,38 +142,36 @@ pub fn deploy(
         req.domain = Some(domain);
     }
 
-    let source_dir = paths.source_dir(&req.name);
-    if let Some(from) = &req.source_path {
-        let from = fs::canonicalize(from)
-            .with_context(|| format!("resolving source path {}", from.display()))?;
-        if !from.is_dir() {
-            bail!("source path {} is not a directory", from.display());
-        }
-        util::remove_dir_all_forced(&source_dir)?;
-        util::copy_dir_recursive(&from, &source_dir)?;
-    } else {
-        let html = req.index_html.as_deref().unwrap_or(DEFAULT_INDEX);
-        util::remove_dir_all_forced(&source_dir)?;
-        fs::create_dir_all(&source_dir)?;
-        fs::write(source_dir.join("index.html"), html)?;
-    }
+    template.materialize(&req.params, &paths.source_dir(&req.name))?;
 
     let mut config = BoxConfig::load(paths)?;
     match config.services.iter_mut().find(|s| s.name == req.name) {
         Some(existing) => {
-            existing.domain = req.domain;
+            existing.template = req.template.clone();
+            existing.params = req.params.clone();
+            existing.domain = req.domain.clone();
             existing.public = req.public;
         }
         None => config.services.push(ServiceConfig {
             name: req.name.clone(),
-            template: Template::StaticSite,
-            domain: req.domain,
+            template: req.template.clone(),
+            params: req.params.clone(),
+            domain: req.domain.clone(),
             public: req.public,
             created_at: Utc::now(),
         }),
     }
     config.save(paths)?;
-    apply(paths, builder)
+
+    let info = apply_checked(paths, builder, &default_health)?;
+    history::commit_soft(
+        paths,
+        &format!(
+            "generation #{}: deploy {} ({})",
+            info.number, req.name, req.template
+        ),
+    );
+    Ok(info)
 }
 
 /// Remove a service from the config and its sources, then apply.
@@ -119,12 +184,17 @@ pub fn delete_service(paths: &Paths, builder: &dyn Builder, name: &str) -> Resul
     }
     config.save(paths)?;
     util::remove_dir_all_forced(&paths.source_dir(name))?;
-    apply(paths, builder)
+    let info = apply_checked(paths, builder, &default_health)?;
+    history::commit_soft(
+        paths,
+        &format!("generation #{}: delete {}", info.number, name),
+    );
+    Ok(info)
 }
 
-/// Switch to an existing generation and restore the declarative state
-/// (config and sources) that generation was built from, so a later apply
-/// starts from the rolled-back world, not the abandoned one.
+/// Switch to an existing generation and restore the declarative state (config
+/// and sources) that generation was built from, so a later apply starts from
+/// the rolled-back world, not the abandoned one.
 pub fn rollback(paths: &Paths, number: u64) -> Result<GenerationInfo> {
     store::switch(paths, number)?;
     let current = store::current(paths)?.context("no current generation after switch")?;
@@ -145,5 +215,9 @@ pub fn rollback(paths: &Paths, number: u64) -> Result<GenerationInfo> {
             util::copy_dir_recursive(&www, &paths.source_dir(&service.name))?;
         }
     }
+    history::commit_soft(
+        paths,
+        &format!("generation #{}: rollback (restored)", current.number),
+    );
     Ok(current)
 }

@@ -114,6 +114,11 @@ fn tool_definitions() -> Value {
             "inputSchema": no_args,
         },
         {
+            "name": "list_history",
+            "description": "Git commit history of this Box's declarative config, newest first. Each commit corresponds to a generation.",
+            "inputSchema": no_args,
+        },
+        {
             "name": "rollback",
             "description": "Atomically switch back to a previous generation, restoring its services and configuration.",
             "inputSchema": {
@@ -172,20 +177,20 @@ async fn execute(
         "get_status" => Ok(status(&state)),
         "list_services" => Ok(services(&state)),
         "list_generations" => Ok(generations(&state)),
+        "list_history" => Ok(config_history(&state)),
         "deploy_static_site" => {
             let Some(name) = str_arg("name") else {
                 return Err((-32602, "missing required argument: name".into()));
             };
-            let request = ops::DeployRequest {
-                name: name.clone(),
-                domain: str_arg("domain"),
-                public: false,
-                index_html: args
-                    .get("index_html")
+            let request = ops::DeployRequest::static_site(
+                name.clone(),
+                args.get("index_html")
                     .and_then(Value::as_str)
                     .map(String::from),
-                source_path: str_arg("source_path").map(Into::into),
-            };
+                str_arg("source_path").map(Into::into),
+                str_arg("domain"),
+                false,
+            );
             Ok(run_locked(&state, move |s| {
                 let info = ops::deploy(&s.paths, s.builder.as_ref(), request)?;
                 Ok(json!({
@@ -256,7 +261,8 @@ fn services(state: &SharedState) -> anyhow::Result<Value> {
         .map(|s| {
             json!({
                 "name": s.name,
-                "template": s.template.as_str(),
+                "template": s.template,
+                "params": s.params,
                 "domain": s.domain,
                 "url": format!("/sites/{}/", s.name),
                 "state": if active.contains(&s.name) { "active" } else { "pending" },
@@ -264,6 +270,13 @@ fn services(state: &SharedState) -> anyhow::Result<Value> {
         })
         .collect();
     Ok(json!(list))
+}
+
+fn config_history(state: &SharedState) -> anyhow::Result<Value> {
+    Ok(serde_json::to_value(crate::history::log(
+        &state.paths,
+        100,
+    )?)?)
 }
 
 fn generations(state: &SharedState) -> anyhow::Result<Value> {

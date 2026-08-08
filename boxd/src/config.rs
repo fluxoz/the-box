@@ -3,6 +3,7 @@ use std::fs;
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::paths::Paths;
 
@@ -18,29 +19,23 @@ pub struct BoxConfig {
     pub services: Vec<ServiceConfig>,
 }
 
+/// A service is a template id plus that template's params. This is the
+/// declarative record the GUI, MCP and CLI all write; boxd compiles it into a
+/// generation (and a dendritic module) via the [`crate::templates`] registry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceConfig {
     pub name: String,
-    pub template: Template,
+    /// Template id, e.g. "static-site". Resolved against the template registry.
+    pub template: String,
+    /// Template-specific parameters. Shape is defined and validated by the
+    /// template; opaque to the config layer.
+    #[serde(default)]
+    pub params: Value,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub domain: Option<String>,
     #[serde(default)]
     pub public: bool,
     pub created_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Template {
-    StaticSite,
-}
-
-impl Template {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Template::StaticSite => "static-site",
-        }
-    }
 }
 
 impl BoxConfig {
@@ -162,7 +157,8 @@ mod tests {
         let config = BoxConfig {
             services: vec![ServiceConfig {
                 name: "hello".into(),
-                template: Template::StaticSite,
+                template: "static-site".into(),
+                params: serde_json::json!({ "index_html": "<h1>hi</h1>" }),
                 domain: Some("hello.example.com".into()),
                 public: true,
                 created_at: Utc::now(),
@@ -172,7 +168,8 @@ mod tests {
         let parsed: BoxConfig = toml::from_str(&text).unwrap();
         assert_eq!(parsed.services.len(), 1);
         assert_eq!(parsed.services[0].name, "hello");
-        assert_eq!(parsed.services[0].template, Template::StaticSite);
+        assert_eq!(parsed.services[0].template, "static-site");
+        assert_eq!(parsed.services[0].params["index_html"], "<h1>hi</h1>");
         assert!(parsed.services[0].public);
     }
 }

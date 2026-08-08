@@ -5,12 +5,14 @@
 //! local dashboard, JSON API and deployed static sites.
 
 pub mod config;
+pub mod history;
 pub mod manifest;
 pub mod nixgen;
 pub mod ops;
 pub mod paths;
 pub mod secrets;
 pub mod store;
+pub mod templates;
 pub mod tunnel;
 pub mod util;
 pub mod web;
