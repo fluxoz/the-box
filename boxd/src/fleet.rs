@@ -82,7 +82,10 @@ pub fn parse_avahi(output: &str) -> Vec<(String, String, u16)> {
         let Ok(port) = f[8].parse::<u16>() else {
             continue;
         };
-        if host.is_empty() || address.is_empty() {
+        // Skip IPv6 link-local: avahi advertises both A and AAAA, but a plain
+        // HTTP GET to fe80:: needs a zone id, so those records are unreachable
+        // noise (the same peer shows up again via its routable address).
+        if host.is_empty() || address.is_empty() || address.starts_with("fe80") {
             continue;
         }
         out.push((host, address, port));
@@ -151,8 +154,10 @@ mod tests {
 =;eth0;IPv4;broken;_thebox._tcp;local;box-x.local
 =;wlan0;IPv6;box-def;_thebox._tcp;local;box-def.local;fe80::2;2693;\"vendor=thebox\"
 ";
+        // Only the resolved IPv4 record survives: the malformed line and the
+        // fe80 (IPv6 link-local) record are both dropped.
         let peers = parse_avahi(sample);
-        assert_eq!(peers.len(), 2);
+        assert_eq!(peers.len(), 1);
         assert_eq!(
             peers[0],
             (
@@ -161,6 +166,5 @@ mod tests {
                 2693
             )
         );
-        assert_eq!(peers[1].2, 2693);
     }
 }
