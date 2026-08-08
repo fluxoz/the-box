@@ -83,6 +83,26 @@ enum Command {
         #[command(subcommand)]
         action: ChannelCmd,
     },
+    /// Operator access: enroll the first device, list or revoke sessions.
+    Auth {
+        #[command(subcommand)]
+        action: AuthCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum AuthCmd {
+    /// Mint a one-time enrollment code for the first device to pair with.
+    Enroll,
+    /// List active operator sessions (paired devices).
+    List,
+    /// Revoke a session by id.
+    Revoke { id: String },
+    /// Mint a session token directly (e.g. for an agent). Prints the token once.
+    Mint {
+        #[arg(long, default_value = "agent")]
+        label: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -116,6 +136,9 @@ fn main() -> Result<()> {
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
+        // Logs go to stderr so command output (e.g. `auth mint` printing a
+        // token) stays clean for capture by scripts and agents.
+        .with_writer(std::io::stderr)
         .init();
 
     let cli = Cli::parse();
@@ -207,6 +230,41 @@ fn main() -> Result<()> {
             Ok(())
         }
         Command::Channel { action } => run_channel(&paths, action),
+        Command::Auth { action } => run_auth(&paths, action),
+    }
+}
+
+fn run_auth(paths: &Paths, action: AuthCmd) -> Result<()> {
+    match action {
+        AuthCmd::Enroll => {
+            let code = boxd::auth::mint_code(paths, "enrollment")?;
+            println!("Enrollment code (valid 15 min, single use):\n\n    {code}\n");
+            println!("Enter it at http://<box>:2693/pair on the device you want to pair.");
+            Ok(())
+        }
+        AuthCmd::List => {
+            let sessions = boxd::auth::list(paths);
+            if sessions.is_empty() {
+                println!("no paired devices");
+            }
+            for s in sessions {
+                println!("{}\t{}", s.id, s.label);
+            }
+            Ok(())
+        }
+        AuthCmd::Revoke { id } => {
+            if boxd::auth::revoke(paths, &id)? {
+                println!("revoked {id}");
+            } else {
+                println!("no session with id {id}");
+            }
+            Ok(())
+        }
+        AuthCmd::Mint { label } => {
+            let token = boxd::auth::mint_session(paths, &label)?;
+            println!("{token}");
+            Ok(())
+        }
     }
 }
 
@@ -332,7 +390,12 @@ fn run_server(paths: Paths, builder: Box<dyn Builder>, listen: SocketAddr) -> Re
             .await
             .with_context(|| format!("binding {listen}"))?;
         tracing::info!("The Box dashboard listening on http://{listen}");
-        axum::serve(listener, app).await?;
+        // ConnectInfo carries the peer address so auth can trust loopback.
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await?;
         Ok(())
     })
 }

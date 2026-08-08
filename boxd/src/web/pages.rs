@@ -3,7 +3,8 @@ use std::path::PathBuf;
 
 use axum::{
     extract::{Path, Query, State},
-    response::{Html, Redirect},
+    http::{header, HeaderValue},
+    response::{Html, IntoResponse, Redirect, Response},
     Form,
 };
 use maud::{html, Markup, PreEscaped, DOCTYPE};
@@ -592,6 +593,10 @@ pub async fn system(
                 "Every change is atomic and reversible. Roll back manually any time from the "
                 a href="/generations" { "Generations" } " page."
             }
+            p.muted {
+                "Control who can manage this Box on the "
+                a href="/devices" { "Paired devices" } " page."
+            }
         }
     };
     Ok(layout("System", &flash, body))
@@ -619,6 +624,148 @@ pub async fn system_check(State(state): State<SharedState>) -> Redirect {
             &format!("Platform up to date ({})", short_rev(&status.latest)),
         ),
         Err(err) => redirect("err", &format!("{err:#}")),
+    }
+}
+
+pub async fn pair(Query(flash): Query<Flash>) -> Html<String> {
+    let page = html! {
+        (DOCTYPE)
+        html lang="en" {
+            head {
+                meta charset="utf-8";
+                meta name="viewport" content="width=device-width, initial-scale=1";
+                title { "Pair · The Box Configurator" }
+                style { (PreEscaped(CSS)) }
+            }
+            body {
+                header.top {
+                    a.brand href="/pair" {
+                        span.mark { "◧ THE " b { "BOX" } }
+                        span.sub { "Configurator" }
+                    }
+                }
+                main {
+                    @if let Some(msg) = &flash.err { div.flash.err { (msg) } }
+                    @if let Some(msg) = &flash.ok { div.flash.ok { (msg) } }
+                    section style="max-width:34rem;margin:2.5rem auto" {
+                        h2 { "Pair this device" }
+                        p.muted {
+                            "Management on this Box answers to you. Enter your one-time pairing "
+                            "code — from your setup recovery kit, or from “Add device” on a device "
+                            "that's already paired."
+                        }
+                        form.stack method="post" action="/pair/redeem" {
+                            label {
+                                "Pairing code"
+                                input type="text" name="code" required autofocus
+                                    placeholder="abcd1234ef" autocomplete="one-time-code";
+                            }
+                            button.btn type="submit" { "Pair" }
+                        }
+                        p.muted style="margin-top:1.5rem" {
+                            "No code? On the Box run " code { "boxd auth enroll" }
+                            " (over SSH or its console) to mint one."
+                        }
+                    }
+                }
+                footer { "THE BOX CONFIGURATOR · pairing" }
+            }
+        }
+    };
+    Html(page.into_string())
+}
+
+#[derive(Deserialize)]
+pub struct CodeForm {
+    code: String,
+}
+
+pub async fn pair_redeem(State(state): State<SharedState>, Form(form): Form<CodeForm>) -> Response {
+    match crate::auth::redeem_code(&state.paths, &form.code, "browser") {
+        Ok(token) => {
+            let mut resp = Redirect::to("/?ok=Device+paired").into_response();
+            if let Ok(cookie) = HeaderValue::from_str(&crate::auth::session_cookie(&token)) {
+                resp.headers_mut().insert(header::SET_COOKIE, cookie);
+            }
+            resp
+        }
+        Err(err) => Redirect::to(&format!(
+            "/pair?err={}",
+            urlencoding::encode(&format!("{err:#}"))
+        ))
+        .into_response(),
+    }
+}
+
+pub async fn devices(State(state): State<SharedState>, Query(flash): Query<Flash>) -> Html<String> {
+    let sessions = crate::auth::list(&state.paths);
+    let body = html! {
+        h2 { "Paired devices" }
+        p.muted {
+            "Every browser or agent with management access holds a session here. Add a device "
+            "by handing it a one-time code; revoke any device without affecting the others. "
+            "Trusted local access (loopback / SSH) always works and isn't listed."
+        }
+        div.section-head {
+            h2 { "Devices" }
+            form method="post" action="/devices/add" { button.btn type="submit" { "+ Add device" } }
+        }
+        @if sessions.is_empty() {
+            div.empty {
+                p { "No paired devices yet." }
+                p.muted { "This Box is currently managed from trusted local access only." }
+            }
+        } @else {
+            table {
+                thead { tr { th { "Id" } th { "Label" } th { "Paired" } th {} } }
+                tbody {
+                    @for s in &sessions {
+                        tr {
+                            td { code { (s.id) } }
+                            td { (s.label) }
+                            td {
+                                @match chrono::DateTime::from_timestamp(s.created_at, 0) {
+                                    Some(t) => (t.format("%Y-%m-%d %H:%M UTC")),
+                                    None => "—",
+                                }
+                            }
+                            td {
+                                form method="post" action={ "/devices/" (s.id) "/revoke" } {
+                                    button.danger type="submit" { "Revoke" }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+    layout("Devices", &flash, body)
+}
+
+pub async fn add_device(State(state): State<SharedState>) -> Redirect {
+    match crate::auth::mint_code(&state.paths, "device") {
+        Ok(code) => Redirect::to(&format!(
+            "/devices?ok={}",
+            urlencoding::encode(&format!(
+                "Pairing code (15 min, single use): {code} — enter it at /pair on the new device"
+            ))
+        )),
+        Err(err) => Redirect::to(&format!(
+            "/devices?err={}",
+            urlencoding::encode(&format!("{err:#}"))
+        )),
+    }
+}
+
+pub async fn revoke_device(State(state): State<SharedState>, Path(id): Path<String>) -> Redirect {
+    match crate::auth::revoke(&state.paths, &id) {
+        Ok(true) => Redirect::to("/devices?ok=Device+revoked"),
+        Ok(false) => Redirect::to("/devices?err=No+such+device"),
+        Err(err) => Redirect::to(&format!(
+            "/devices?err={}",
+            urlencoding::encode(&format!("{err:#}"))
+        )),
     }
 }
 

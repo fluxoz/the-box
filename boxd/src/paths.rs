@@ -57,6 +57,11 @@ impl Paths {
         self.data_dir.join("channel.toml")
     }
 
+    /// Operator sessions and one-time pairing codes (hashed, 0600, never in git).
+    pub fn auth_file(&self) -> PathBuf {
+        self.data_dir.join("auth.json")
+    }
+
     pub fn ensure(&self) -> Result<()> {
         for dir in [
             self.data_dir.clone(),

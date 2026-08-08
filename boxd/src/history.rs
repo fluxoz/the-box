@@ -22,6 +22,7 @@ const GITIGNORE: &str = "\
 /generation-src/
 /logs/
 /network.toml
+/auth.json
 ";
 
 fn git(paths: &Paths, args: &[&str]) -> Result<std::process::Output> {
