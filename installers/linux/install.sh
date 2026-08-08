@@ -18,14 +18,15 @@
 set -eu
 
 BASE="${BOX_BASE:-https://thebox.build}"       # where the netboot artifacts live
-WORK="/run/box-install"                        # tmpfs — orders never touch a disk
+# tmpfs with room for the (large) netboot initrd; orders never touch a disk.
+WORK="${BOX_WORK:-/dev/shm/box-install}"
 
 say() { printf '\033[1;33m[box]\033[0m %s\n' "$*" >&2; }
 die() { printf '\033[1;31m[box] error:\033[0m %s\n' "$*" >&2; exit 1; }
 
 [ "$(id -u)" = 0 ] || die "run as root: pipe into 'sudo sh'."
-for c in kexec curl base64 cpio gzip; do
-  command -v "$c" >/dev/null 2>&1 || die "$c not found (kexec needs kexec-tools; cpio/base64/gzip are usually present)."
+for c in kexec curl base64; do
+  command -v "$c" >/dev/null 2>&1 || die "$c not found (kexec needs kexec-tools; base64 is usually present)."
 done
 
 mkdir -p "$WORK"
@@ -68,18 +69,19 @@ curl -fsSL "$BASE/netboot/netboot.ipxe" -o "$WORK/netboot.ipxe" || die "could no
 # and never touch a disk (nor depend on the disk layout). The kernel unpacks all
 # concatenated initramfs archives, so /box-installer/box-install.json ends up in
 # the installer's root filesystem, where box-install reads it directly.
-mkdir -p "$WORK/inject/box-installer"
-cp "$ORDERS" "$WORK/inject/box-installer/box-install.json"
-( cd "$WORK/inject" && find . | cpio -o -H newc 2>/dev/null ) | gzip -9 > "$WORK/orders.cpio.gz"
-cat "$WORK/initrd" "$WORK/orders.cpio.gz" > "$WORK/initrd.full"
+# Pass the orders on the kernel command line (base64). Unlike files injected
+# into the initramfs — which NixOS discards when it switches root into the
+# installer — the command line survives to stage 2, and it still touches no
+# disk. Orders are small; if yours ever exceed the kernel command-line limit,
+# use the USB path.
+orders_b64=$(base64 -w0 "$ORDERS")
 
-# Derive the installer's kernel command line from the netboot script.
 params=$(grep '^kernel' "$WORK/netboot.ipxe" \
   | sed -e 's/^kernel bzImage //' -e 's/ initrd=initrd//' -e 's/ *${cmdline}//')
 [ -n "$params" ] || die "could not parse boot parameters from netboot.ipxe."
 
 say "handing off to the Box installer via kexec — the machine will now wipe and install."
 say "it will come back up at ${name:-box}.local in a few minutes."
-kexec -l "$WORK/bzImage" --initrd="$WORK/initrd.full" --command-line="$params"
+kexec -l "$WORK/bzImage" --initrd="$WORK/initrd" --command-line="$params box.install-b64=$orders_b64"
 sync
 kexec -e
