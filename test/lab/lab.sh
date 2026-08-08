@@ -115,19 +115,34 @@ cmd_run() {
   log "fleet up. 'lab.sh status' for IPs + dashboard URLs."
 }
 
+ip_of() {
+  local mac; mac="$(mac_for "$1")"
+  virsh -c qemu:///system net-dhcp-leases "${BOX_LAB_NET:-default}" 2>/dev/null \
+    | awk -v m="$mac" 'tolower($3)==m {print $5}' | cut -d/ -f1 | head -1
+}
+
+ssh_to() {
+  local ip; ip="$(ip_of "$1")"; [ -n "$ip" ] || { log "box-$1 has no lease"; return 1; }
+  ssh -i "$WORK/operator_key" -o StrictHostKeyChecking=no \
+    -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8 "root@$ip" "${@:2}"
+}
+
 cmd_status() {
-  echo "MAC                IP               box"
+  printf '%-6s  %-15s  %-26s\n' box ip dashboard
   for pidf in "$WORK"/box-*.pid; do
     [ -f "$pidf" ] || continue
-    local i mac ip
-    i="$(basename "$pidf" .pid | sed 's/box-//')"
-    mac="$(mac_for "$i")"
-    ip="$(virsh -c qemu:///system net-dhcp-leases "${BOX_LAB_NET:-default}" 2>/dev/null \
-      | awk -v m="$mac" 'tolower($3)==m {print $5}' | cut -d/ -f1 | head -1)"
-    printf '%s  %-15s  box-%s  %s\n' "$mac" "${ip:-<no lease yet>}" "$i" \
-      "${ip:+http://$ip:2693}"
+    local i ip; i="$(basename "$pidf" .pid | sed 's/box-//')"; ip="$(ip_of "$i")"
+    printf 'box-%-2s  %-15s  %s\n' "$i" "${ip:-<no lease>}" "${ip:+http://$ip:2693}"
   done
+  echo
+  echo "browser dashboard needs a session — either:"
+  echo "  ./test/lab/lab.sh enroll <i>   # prints a one-time code; open the URL, go to /pair"
+  echo "  or tunnel in for instant trusted-local access:"
+  echo "  ssh -i $WORK/operator_key -L 2693:localhost:2693 root@<ip>   # then open http://localhost:2693"
 }
+
+cmd_enroll() { ssh_to "$1" boxd auth enroll; }   # one-time pairing code for box i
+cmd_ssh()    { ssh_to "$1"; }                     # shell on box i (operator key)
 
 cmd_down() {
   for pidf in "$WORK"/box-*.pid; do
@@ -142,6 +157,8 @@ case "${1:-}" in
   run)       cmd_run "${2:-1}" ;;
   up)        cmd_provision "${2:-1}"; cmd_run "${2:-1}" ;;
   status)    cmd_status ;;
+  enroll)    cmd_enroll "${2:?box index}" ;;
+  ssh)       cmd_ssh "${2:?box index}" ;;
   down)      cmd_down ;;
-  *) echo "usage: lab.sh {provision|run|up|status|down} [N]" >&2; exit 1 ;;
+  *) echo "usage: lab.sh {provision|run|up|status|enroll|ssh|down} [N|i]" >&2; exit 1 ;;
 esac
