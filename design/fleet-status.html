@@ -56,30 +56,42 @@ h1 { font-family:var(--mono); font-weight:700; font-size:clamp(24px,4vw,34px); l
 .legend .edge.loose { border-top:1.5px dashed var(--faint); }
 .legend .g { font-size:13px; line-height:1; }
 
-/* ---- canvas ---- */
-.canvas {
-  position: relative; margin-top: 18px; padding: 34px 26px 30px; overflow-x: auto;
-  background: var(--panel);
-  background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px);
-  background-size: 30px 30px; background-position: -1px -1px;
-  border: 1px solid var(--line-strong); border-radius: 3px;
+/* ---- viewport / canvas ---- */
+.viewport {
+  position: relative; margin-top: 18px; height: clamp(430px, 68vh, 640px); overflow: hidden;
+  background: var(--panel); border: 1px solid var(--line-strong); border-radius: 3px;
+  cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none;
 }
-.corner { position:absolute; width:15px; height:15px; border:2px solid var(--brass); opacity:.75; }
-.corner.tl{ top:9px; left:9px; border-right:0; border-bottom:0; }
-.corner.tr{ top:9px; right:9px; border-left:0; border-bottom:0; }
-.corner.bl{ bottom:9px; left:9px; border-right:0; border-top:0; }
-.corner.br{ bottom:9px; right:9px; border-left:0; border-top:0; }
+.viewport.grabbing { cursor: grabbing; }
+.world {
+  position: absolute; top: 0; left: 0; width: 2200px; height: 1400px; transform-origin: 0 0;
+  background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 30px 30px;
+}
+svg.wires { position:absolute; top:0; left:0; overflow:visible; pointer-events:none; }
+.corner { position:absolute; width:15px; height:15px; border:2px solid var(--brass); opacity:.75; z-index:3; pointer-events:none; }
+.corner.tl{ top:10px; left:10px; border-right:0; border-bottom:0; }
+.corner.tr{ top:10px; right:10px; border-left:0; border-bottom:0; }
+.corner.bl{ bottom:10px; left:10px; border-right:0; border-top:0; }
+.corner.br{ bottom:10px; right:10px; border-left:0; border-top:0; }
 
-.diagram { position: relative; min-width: 980px; margin: 0 auto; }
-svg.wires { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; overflow:visible; }
-
-.top-zone { position:relative; display:flex; justify-content:center; margin-bottom:78px; }
-.fleet-row { display:flex; justify-content:center; gap:22px; }
+.controls { position:absolute; right:12px; bottom:12px; display:flex; gap:6px; z-index:4; }
+.controls button {
+  font-family:var(--mono); font-size:15px; line-height:1; width:32px; height:32px; display:grid; place-items:center;
+  color:var(--ink); background:var(--panel-2); border:1px solid var(--line-strong); border-radius:2px; cursor:pointer;
+}
+.controls button:hover { color:var(--brass); border-color:var(--brass); }
+.hint {
+  position:absolute; left:12px; bottom:12px; z-index:4; font-family:var(--mono); font-size:10px;
+  letter-spacing:.1em; text-transform:uppercase; color:var(--faint); pointer-events:none;
+}
+.zoomtag { position:absolute; right:12px; top:12px; z-index:4; font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; color:var(--dim); background:var(--panel-2); border:1px solid var(--line); border-radius:2px; padding:3px 7px; pointer-events:none; }
 
 .node {
-  position: relative; width: 178px; background: var(--panel-2); border: 1px solid var(--line-strong);
-  border-radius: 3px; cursor: pointer; box-shadow: 0 1px 0 var(--shadow); transition: border-color .12s, background .12s;
+  position: absolute; width: 178px; background: var(--panel-2); border: 1px solid var(--line-strong);
+  border-radius: 3px; cursor: grab; box-shadow: 0 1px 0 var(--shadow); z-index: 2;
 }
+.node.dragging { cursor: grabbing; z-index: 5; box-shadow: 0 6px 18px var(--shadow); }
 .node:hover { border-color: var(--brass); }
 .node .node-h { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 11px; border-bottom:1px solid var(--line); }
 .node .desig { font-family:var(--mono); font-size:12.5px; font-weight:700; color:var(--ink); letter-spacing:.01em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -87,7 +99,6 @@ svg.wires { position:absolute; inset:0; width:100%; height:100%; pointer-events:
 .pill { font-family:var(--mono); font-size:9.5px; letter-spacing:.1em; text-transform:uppercase; padding:2px 6px 2px 5px; border-radius:2px; color:var(--bg); white-space:nowrap; display:inline-flex; align-items:center; gap:4px; }
 .pill.ok{ background:var(--ok); } .pill.work{ background:var(--brass); } .pill.crit{ background:var(--critical); }
 .pill.off{ background:transparent; color:var(--faint); border:1px solid var(--faint); }
-
 .stat { display:flex; justify-content:space-between; font-family:var(--mono); font-size:11.5px; }
 .stat span { color:var(--faint); letter-spacing:.1em; text-transform:uppercase; font-size:10px; }
 .stat b { color:var(--ink); font-weight:600; font-variant-numeric:tabular-nums; }
@@ -100,18 +111,15 @@ svg.wires { position:absolute; inset:0; width:100%; height:100%; pointer-events:
 .expo { display:inline-flex; align-items:center; gap:5px; font-family:var(--mono); font-size:9.5px; letter-spacing:.09em; text-transform:uppercase; padding:3px 6px; border-radius:2px; border:1px solid var(--line); background:var(--bg); color:var(--dim); align-self:flex-start; margin-top:1px; }
 .expo.pub { color:var(--brass); border-color:color-mix(in srgb,var(--brass) 45%, var(--line)); }
 .expo.down { color:var(--critical); border-color:color-mix(in srgb,var(--critical) 45%, var(--line)); }
-
 .node.selected { border-color: var(--brass); background: var(--brass-wash); box-shadow: 0 0 0 3px var(--brass-wash); }
 .node.offline { opacity: .6; }
 .node.root { width: 288px; background: var(--panel); border-color: var(--brass); }
 .node.root .node-h { border-bottom-color: color-mix(in srgb, var(--brass) 35%, var(--line)); }
 .node.root .desig { color: var(--brass); }
 .node.root .sub, .node.cloud .sub { font-family:var(--mono); font-size:10px; letter-spacing:.13em; text-transform:uppercase; color:var(--faint); }
-.node.cloud { position:absolute; right:0; top:2px; width:190px; background:var(--panel); border-color:color-mix(in srgb,var(--brass) 55%, var(--line-strong)); cursor:default; }
-.node.cloud:hover { border-color: color-mix(in srgb,var(--brass) 55%, var(--line-strong)); }
+.node.cloud { width: 190px; background:var(--panel); border-color:color-mix(in srgb,var(--brass) 55%, var(--line-strong)); }
 .node.cloud .desig { color:var(--brass); }
 
-/* ---- detail readout ---- */
 .detail { margin-top: 20px; border: 1px solid var(--line-strong); border-radius: 3px; background: var(--panel); overflow: hidden; }
 .detail .dh { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:11px 14px; border-bottom:1px solid var(--line); background:var(--panel-2); }
 .detail .dh .t { font-family:var(--mono); font-size:11px; letter-spacing:.2em; text-transform:uppercase; color:var(--dim); font-weight:600; }
@@ -124,9 +132,7 @@ svg.wires { position:absolute; inset:0; width:100%; height:100%; pointer-events:
 
 footer { margin-top:26px; font-family:var(--mono); font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--faint); }
 footer b { color: var(--dim); }
-
 @media (max-width: 640px) { .stamp { display:none; } }
-@media (prefers-reduced-motion: reduce) { * { animation:none!important; transition:none!important; } }
 </style>
 
 <div class="wrap">
@@ -159,29 +165,17 @@ footer b { color: var(--dim); }
     </div>
   </div>
 
-  <div class="canvas">
+  <div class="viewport" id="viewport">
+    <div class="world" id="world">
+      <svg class="wires" id="wires" width="2200" height="1400" viewBox="0 0 2200 1400" aria-hidden="true"></svg>
+    </div>
     <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
-    <div class="diagram" id="diagram">
-      <svg class="wires" id="wires" aria-hidden="true"></svg>
-      <div class="top-zone">
-        <div class="node root" id="rootnode">
-          <div class="node-h"><span class="desig">LAN · WORKSHOP</span><span class="pill ok">● SEGMENT</span></div>
-          <div class="node-b">
-            <div class="stat"><span>Subnet</span><b>192.168.1.0/24</b></div>
-            <div class="stat"><span>Discovered</span><b id="count">5 units</b></div>
-            <div class="sub">mDNS · _thebox._tcp · coarse health public</div>
-          </div>
-        </div>
-        <div class="node cloud" id="cloudnode">
-          <div class="node-h"><span class="desig">◈ CLOUDFLARE</span><span class="pill work">● EDGE</span></div>
-          <div class="node-b">
-            <div class="sub">Public ingress</div>
-            <div class="stat"><span>Tunnels</span><b>2</b></div>
-            <div class="note crit">▲ 1 down</div>
-          </div>
-        </div>
-      </div>
-      <div class="fleet-row" id="row"></div>
+    <span class="zoomtag" id="zoomtag">100%</span>
+    <span class="hint">Drag canvas to pan · scroll to zoom · drag a node to move it</span>
+    <div class="controls">
+      <button type="button" id="zin" title="Zoom in">+</button>
+      <button type="button" id="zout" title="Zoom out">−</button>
+      <button type="button" id="zfit" title="Fit">⤢</button>
     </div>
   </div>
 
@@ -201,8 +195,7 @@ footer b { color: var(--dim); }
   var clk = document.getElementById("clock");
   function p(n){ return String(n).padStart(2,"0"); }
   var days=["SUN","MON","TUE","WED","THU","FRI","SAT"];
-  function tick(){ var d=new Date(); clk.textContent=p(d.getHours())+":"+p(d.getMinutes())+":"+p(d.getSeconds())+" • "+days[d.getDay()]; }
-  tick(); setInterval(tick,1000);
+  (function tick(){ var d=new Date(); clk.textContent=p(d.getHours())+":"+p(d.getMinutes())+":"+p(d.getSeconds())+" • "+days[d.getDay()]; setTimeout(tick,1000); })();
 
   var FLEET = [
     { id:"box-3f2a1b",  state:"online",   paired:true,  gen:14, svc:3, load:"0.12", up:"6d 04h", reach:"box-3f2a1b.local",  exposure:"cloudflare" },
@@ -211,140 +204,174 @@ footer b { color: var(--dim); }
     { id:"shed-vps",    state:"online",   paired:false,                             reach:"shed-vps.local", exposure:null },
     { id:"old-laptop",  state:"offline",  paired:true,  gen:11, svc:1,              reach:"old-laptop.local", seen:"4m ago", exposure:"private" }
   ];
-  var PILL = {
-    online:  { cls:"ok",   txt:"● ONLINE" },
-    updating:{ cls:"work", txt:"● UPDATING" },
-    degraded:{ cls:"crit", txt:"● DEGRADED" },
-    offline: { cls:"off",  txt:"○ OFFLINE" }
-  };
-  function expoChip(b) {
-    if (b.exposure === "cloudflare") return '<span class="expo pub">☁ Cloudflare</span>';
-    if (b.exposure === "cloudflare-down") return '<span class="expo down">☁ Tunnel down</span>';
-    if (b.exposure === "private") return '<span class="expo">⊟ LAN · Private</span>';
-    return "";
-  }
-  function expoLabel(c) {
-    return c === "cloudflare" ? "Cloudflare tunnel · public"
-      : c === "cloudflare-down" ? "Cloudflare tunnel · DOWN"
-      : c === "private" ? "Private · LAN" : "Unknown (unpaired)";
+  var PILL = { online:{cls:"ok",txt:"● ONLINE"}, updating:{cls:"work",txt:"● UPDATING"}, degraded:{cls:"crit",txt:"● DEGRADED"}, offline:{cls:"off",txt:"○ OFFLINE"} };
+  function expoChip(b){ return b.exposure==="cloudflare"?'<span class="expo pub">☁ Cloudflare</span>':b.exposure==="cloudflare-down"?'<span class="expo down">☁ Tunnel down</span>':b.exposure==="private"?'<span class="expo">⊟ LAN · Private</span>':""; }
+  function expoLabel(c){ return c==="cloudflare"?"Cloudflare tunnel · public":c==="cloudflare-down"?"Cloudflare tunnel · DOWN":c==="private"?"Private · LAN":"Unknown (unpaired)"; }
+  function boxBody(b){
+    var body;
+    if (!b.paired) body='<div class="unpair">Unpaired</div><button class="pairbtn" type="button">⚿ Pair</button>';
+    else if (b.state==="offline") body='<div class="note">Last seen '+b.seen+'</div><div class="reach">'+b.reach+'</div>';
+    else if (b.state==="updating") body='<div class="note">Gen '+b.gen+' → '+b.next+'</div><div class="stat"><span>Services</span><b>'+b.svc+'</b></div><div class="reach">'+b.reach+'</div>';
+    else if (b.state==="degraded") body='<div class="note crit">▲ '+b.issue+'</div><div class="stat"><span>Gen</span><b>'+b.gen+'</b></div><div class="stat"><span>Services</span><b>'+b.svc+'</b></div><div class="reach">'+b.reach+'</div>';
+    else body='<div class="stat"><span>Gen</span><b>'+b.gen+'</b></div><div class="stat"><span>Services</span><b>'+b.svc+'</b></div><div class="stat"><span>Load</span><b>'+b.load+'</b></div><div class="reach">'+b.reach+'</div>';
+    if (b.paired) body+=expoChip(b);
+    var pill=PILL[b.state];
+    return '<div class="node-h"><span class="desig">'+b.id+'</span><span class="pill '+pill.cls+'">'+pill.txt+'</span></div><div class="node-b">'+body+'</div>';
   }
 
-  var row = document.getElementById("row");
-  document.getElementById("count").textContent = FLEET.length + " units";
+  // node definitions with world coordinates
+  var ROOT_HTML = '<div class="node-h"><span class="desig">LAN · WORKSHOP</span><span class="pill ok">● SEGMENT</span></div>'
+    + '<div class="node-b"><div class="stat"><span>Subnet</span><b>192.168.1.0/24</b></div><div class="stat"><span>Discovered</span><b>5 units</b></div><div class="sub">mDNS · _thebox._tcp · coarse health public</div></div>';
+  var CLOUD_HTML = '<div class="node-h"><span class="desig">◈ CLOUDFLARE</span><span class="pill work">● EDGE</span></div>'
+    + '<div class="node-b"><div class="sub">Public ingress</div><div class="stat"><span>Tunnels</span><b>2</b></div><div class="note crit">▲ 1 down</div></div>';
 
-  FLEET.forEach(function (b) {
-    var n = document.createElement("div");
-    n.className = "node " + b.state + (b.paired ? " paired" : " loose") + (b.state === "offline" ? " offline" : "");
-    n.dataset.id = b.id;
-    n.dataset.exp = b.exposure || "";
-    var pill = PILL[b.state], body;
-    if (!b.paired) {
-      body = '<div class="unpair">Unpaired</div><button class="pairbtn" type="button">⚿ Pair</button>';
-    } else if (b.state === "offline") {
-      body = '<div class="note">Last seen ' + b.seen + '</div><div class="reach">' + b.reach + '</div>';
-    } else if (b.state === "updating") {
-      body = '<div class="note">Gen ' + b.gen + ' → ' + b.next + '</div>'
-           + '<div class="stat"><span>Services</span><b>' + b.svc + '</b></div>'
-           + '<div class="reach">' + b.reach + '</div>';
-    } else if (b.state === "degraded") {
-      body = '<div class="note crit">▲ ' + b.issue + '</div>'
-           + '<div class="stat"><span>Gen</span><b>' + b.gen + '</b></div>'
-           + '<div class="stat"><span>Services</span><b>' + b.svc + '</b></div>'
-           + '<div class="reach">' + b.reach + '</div>';
-    } else {
-      body = '<div class="stat"><span>Gen</span><b>' + b.gen + '</b></div>'
-           + '<div class="stat"><span>Services</span><b>' + b.svc + '</b></div>'
-           + '<div class="stat"><span>Load</span><b>' + b.load + '</b></div>'
-           + '<div class="reach">' + b.reach + '</div>';
-    }
-    if (b.paired) body += expoChip(b);
-    n.innerHTML =
-      '<div class="node-h"><span class="desig">' + b.id + '</span><span class="pill ' + pill.cls + '">' + pill.txt + '</span></div>'
-      + '<div class="node-b">' + body + '</div>';
-    n.addEventListener("click", function (e) {
-      if (e.target.classList.contains("pairbtn")) return;
-      select(b.id);
-    });
-    row.appendChild(n);
+  var CX = 900;
+  var NODES = [
+    { id:"lan",   cls:"root",  html:ROOT_HTML,  x:CX-144, y:120, kind:"root" },
+    { id:"cloud", cls:"cloud", html:CLOUD_HTML, x:CX+250, y:126, kind:"cloud" },
+  ];
+  var COLS = [CX-455, CX-227, CX+1, CX+229, CX+457];
+  FLEET.forEach(function (b, i) {
+    NODES.push({ id:b.id, cls:b.state+(b.paired?" paired":" loose")+(b.state==="offline"?" offline":""),
+      html:boxBody(b), x:COLS[i], y:380, kind:"box", box:b, exp:b.exposure||"" });
   });
 
-  function select(id) {
-    document.querySelectorAll(".fleet-row .node").forEach(function (n) { n.classList.toggle("selected", n.dataset.id === id); });
-    renderDetail(FLEET.filter(function (x) { return x.id === id; })[0]);
-  }
-  function drow(k, v, cls) { return '<div class="drow"><span class="k">' + k + '</span><span class="v' + (cls ? " " + cls : "") + '">' + v + '</span></div>'; }
-  function renderDetail(b) {
-    var st = PILL[b.state].txt.replace(/^[●○]\s*/, "");
-    var rows = drow("Status", st, b.state === "online" ? "brass" : b.state === "degraded" ? "crit" : "");
-    rows += drow("Reach", b.reach, "brass");
-    if (!b.paired) {
-      rows += drow("Pairing", "NOT PAIRED", "crit") + drow("Access", "Coarse health only") + drow("Exposure", "Unknown");
-    } else {
-      if (b.gen != null) rows += drow("Generation", b.state === "updating" ? (b.gen + " → " + b.next) : ("#" + b.gen));
-      if (b.svc != null) rows += drow("Services", b.svc);
-      if (b.load != null) rows += drow("Load", b.load);
-      if (b.up != null) rows += drow("Uptime", b.up);
-      rows += drow("Exposure", expoLabel(b.exposure), b.exposure === "cloudflare" ? "brass" : b.exposure === "cloudflare-down" ? "crit" : "");
-      if (b.issue != null) rows += drow("Fault", b.issue, "crit");
-      if (b.seen != null) rows += drow("Last seen", b.seen);
+  var world = document.getElementById("world");
+  var wires = document.getElementById("wires");
+  var viewport = document.getElementById("viewport");
+  var pos = {}, dim = {}, els = {};
+
+  NODES.forEach(function (nd) {
+    var el = document.createElement("div");
+    el.className = "node " + nd.cls;
+    el.style.left = nd.x + "px"; el.style.top = nd.y + "px";
+    el.innerHTML = nd.html;
+    world.appendChild(el);
+    els[nd.id] = el; pos[nd.id] = { x:nd.x, y:nd.y };
+    attachDrag(nd, el);
+  });
+  NODES.forEach(function (nd) { dim[nd.id] = { w: els[nd.id].offsetWidth, h: els[nd.id].offsetHeight }; });
+
+  // ---- detail ----
+  function drow(k,v,cls){ return '<div class="drow"><span class="k">'+k+'</span><span class="v'+(cls?" "+cls:"")+'">'+v+'</span></div>'; }
+  function select(id){
+    var nd = NODES.filter(function(n){return n.id===id;})[0];
+    if (!nd || nd.kind!=="box") return;
+    NODES.forEach(function(n){ if(n.kind==="box") els[n.id].classList.toggle("selected", n.id===id); });
+    var b = nd.box, st = PILL[b.state].txt.replace(/^[●○]\s*/,"");
+    var rows = drow("Status", st, b.state==="online"?"brass":b.state==="degraded"?"crit":"") + drow("Reach", b.reach, "brass");
+    if (!b.paired) rows += drow("Pairing","NOT PAIRED","crit")+drow("Access","Coarse health only")+drow("Exposure","Unknown");
+    else {
+      if (b.gen!=null) rows += drow("Generation", b.state==="updating"?(b.gen+" → "+b.next):("#"+b.gen));
+      if (b.svc!=null) rows += drow("Services", b.svc);
+      if (b.load!=null) rows += drow("Load", b.load);
+      if (b.up!=null) rows += drow("Uptime", b.up);
+      rows += drow("Exposure", expoLabel(b.exposure), b.exposure==="cloudflare"?"brass":b.exposure==="cloudflare-down"?"crit":"");
+      if (b.issue!=null) rows += drow("Fault", b.issue, "crit");
+      if (b.seen!=null) rows += drow("Last seen", b.seen);
     }
     document.getElementById("detail").innerHTML =
-      '<div class="dh"><span class="t">Unit Detail</span><span class="id">' + b.id + (b.paired ? "" : " · unpaired") + '</span></div>'
-      + '<div class="db">' + rows + '</div>';
+      '<div class="dh"><span class="t">Unit Detail</span><span class="id">'+b.id+(b.paired?"":" · unpaired")+'</span></div><div class="db">'+rows+'</div>';
   }
 
-  // ---- draw connectors ----
-  var diagram = document.getElementById("diagram"), wires = document.getElementById("wires");
-  function rel(el) {
-    var d = diagram.getBoundingClientRect(), r = el.getBoundingClientRect();
-    return { cx: r.left - d.left + r.width / 2, top: r.top - d.top, bottom: r.top - d.top + r.height };
-  }
-  function line(x1,y1,x2,y2,stroke,dashed,w) {
-    return '<path d="M ' + x1 + ' ' + y1 + ' L ' + x2 + ' ' + y2 + '" fill="none" stroke="' + stroke + '" stroke-width="' + (w||1.5) + '"'
-      + (dashed ? ' stroke-dasharray="4 4"' : '') + '/>';
-  }
-  function poly(pts,stroke,dashed,w) {
-    var d = "M " + pts[0][0] + " " + pts[0][1];
-    for (var i=1;i<pts.length;i++) d += " L " + pts[i][0] + " " + pts[i][1];
-    return '<path d="' + d + '" fill="none" stroke="' + stroke + '" stroke-width="' + (w||1.5) + '"' + (dashed ? ' stroke-dasharray="5 4"' : '') + '/>';
-  }
-  function handle(x,y,color) { return '<rect x="' + (x-3) + '" y="' + (y-3) + '" width="6" height="6" fill="' + color + '"/>'; }
-
-  function draw() {
-    wires.setAttribute("viewBox", "0 0 " + diagram.offsetWidth + " " + diagram.offsetHeight);
-    var rootR = rel(document.getElementById("rootnode"));
-    var cloud = rel(document.getElementById("cloudnode"));
-    var nodes = Array.prototype.map.call(row.children, function (n) {
-      var r = rel(n); return { cx: r.cx, top: r.top, paired: n.classList.contains("paired"), exp: n.dataset.exp };
+  // ---- connectors ----
+  function C(id){ var pnt=pos[id], d=dim[id]; return { cx:pnt.x+d.w/2, top:pnt.y, bottom:pnt.y+d.h }; }
+  function line(x1,y1,x2,y2,stroke,dashed,w){ return '<path d="M '+x1+' '+y1+' L '+x2+' '+y2+'" fill="none" stroke="'+stroke+'" stroke-width="'+(w||1.5)+'"'+(dashed?' stroke-dasharray="4 4"':'')+'/>'; }
+  function poly(pts,stroke,dashed,w){ var d="M "+pts[0][0]+" "+pts[0][1]; for(var i=1;i<pts.length;i++) d+=" L "+pts[i][0]+" "+pts[i][1]; return '<path d="'+d+'" fill="none" stroke="'+stroke+'" stroke-width="'+(w||1.5)+'"'+(dashed?' stroke-dasharray="5 4"':'')+'/>'; }
+  function handle(x,y,color){ return '<rect x="'+(x-3)+'" y="'+(y-3)+'" width="6" height="6" fill="'+color+'"/>'; }
+  function drawWires(){
+    var r = C("lan"), cloud = C("cloud");
+    var boxes = NODES.filter(function(n){return n.kind==="box";}).map(function(n){ var c=C(n.id); return {cx:c.cx, top:c.top, paired:els[n.id].classList.contains("paired"), exp:n.exp}; });
+    var minTop = Math.min.apply(null, boxes.map(function(b){return b.top;}));
+    var busY = r.bottom + (minTop - r.bottom)/2;
+    var xs = boxes.map(function(b){return b.cx;}).concat(r.cx);
+    var s = line(r.cx, r.bottom, r.cx, busY, "var(--line-strong)")
+          + line(Math.min.apply(null,xs), busY, Math.max.apply(null,xs), busY, "var(--line-strong)");
+    boxes.forEach(function(b){
+      s += line(b.cx, busY, b.cx, b.top, b.paired?"var(--brass)":"var(--faint)", !b.paired);
+      s += handle(b.cx, busY, b.paired?"var(--brass)":"var(--faint)");
     });
-    if (!nodes.length) return;
-    var minTop = Math.min.apply(null, nodes.map(function (n){return n.top;}));
-    var busY = rootR.bottom + (minTop - rootR.bottom) / 2;
-    var xs = nodes.map(function (n){return n.cx;}).concat(rootR.cx);
-    var s = "";
-    // discovery tree (LAN -> boxes)
-    s += line(rootR.cx, rootR.bottom, rootR.cx, busY, "var(--line-strong)");
-    s += line(Math.min.apply(null,xs), busY, Math.max.apply(null,xs), busY, "var(--line-strong)");
-    nodes.forEach(function (n) {
-      s += line(n.cx, busY, n.cx, n.top, n.paired ? "var(--brass)" : "var(--faint)", !n.paired);
-      s += handle(n.cx, busY, n.paired ? "var(--brass)" : "var(--faint)");
-    });
-    s += handle(rootR.cx, busY, "var(--brass)");
-    // exposure tunnels (public boxes -> Cloudflare), each on its own lane
+    s += handle(r.cx, busY, "var(--brass)");
     var ti = 0;
-    nodes.forEach(function (n) {
-      if (n.exp !== "cloudflare" && n.exp !== "cloudflare-down") return;
-      var down = n.exp === "cloudflare-down", ox = n.cx - 50, laneY = cloud.bottom + 18 + ti * 15;
-      ti++;
-      var color = down ? "var(--critical)" : "var(--brass)";
-      s += poly([[ox, n.top], [ox, laneY], [cloud.cx, laneY], [cloud.cx, cloud.bottom]], color, down, 1.75);
-      s += handle(ox, laneY, color);
-      s += handle(cloud.cx, laneY, color);
+    boxes.forEach(function(b){
+      if (b.exp!=="cloudflare" && b.exp!=="cloudflare-down") return;
+      var down = b.exp==="cloudflare-down", ox = b.cx-50, laneY = cloud.bottom+18+ti*15; ti++;
+      var color = down?"var(--critical)":"var(--brass)";
+      s += poly([[ox,b.top],[ox,laneY],[cloud.cx,laneY],[cloud.cx,cloud.bottom]], color, down, 1.75);
+      s += handle(ox,laneY,color) + handle(cloud.cx,laneY,color);
     });
     wires.innerHTML = s;
   }
+
+  // ---- pan / zoom ----
+  var zoom = 1, panX = 0, panY = 0;
+  function apply(){ world.style.transform = "translate("+panX+"px,"+panY+"px) scale("+zoom+")"; document.getElementById("zoomtag").textContent = Math.round(zoom*100)+"%"; }
+  function clampZoom(z){ return Math.min(2.6, Math.max(.35, z)); }
+  function fit(){
+    var minx=1e9,miny=1e9,maxx=-1e9,maxy=-1e9;
+    NODES.forEach(function(n){ var pnt=pos[n.id], d=dim[n.id]; minx=Math.min(minx,pnt.x); miny=Math.min(miny,pnt.y); maxx=Math.max(maxx,pnt.x+d.w); maxy=Math.max(maxy,pnt.y+d.h); });
+    var pad=64, bw=maxx-minx+pad*2, bh=maxy-miny+pad*2, vp=viewport.getBoundingClientRect();
+    zoom = clampZoom(Math.min(vp.width/bw, vp.height/bh));
+    panX = (vp.width - bw*zoom)/2 - (minx-pad)*zoom;
+    panY = (vp.height - bh*zoom)/2 - (miny-pad)*zoom;
+    apply();
+  }
+  function zoomAt(mx,my,factor){ var wx=(mx-panX)/zoom, wy=(my-panY)/zoom; zoom=clampZoom(zoom*factor); panX=mx-wx*zoom; panY=my-wy*zoom; apply(); }
+
+  viewport.addEventListener("wheel", function(e){
+    e.preventDefault();
+    var rect = viewport.getBoundingClientRect();
+    zoomAt(e.clientX-rect.left, e.clientY-rect.top, e.deltaY<0 ? 1.12 : 1/1.12);
+  }, { passive:false });
+  document.getElementById("zin").addEventListener("click", function(){ var v=viewport.getBoundingClientRect(); zoomAt(v.width/2, v.height/2, 1.2); });
+  document.getElementById("zout").addEventListener("click", function(){ var v=viewport.getBoundingClientRect(); zoomAt(v.width/2, v.height/2, 1/1.2); });
+  document.getElementById("zfit").addEventListener("click", fit);
+
+  // background pan
+  var panning = null;
+  viewport.addEventListener("pointerdown", function(e){
+    if (e.target.closest(".node")) return;
+    panning = { x:e.clientX, y:e.clientY, px:panX, py:panY };
+    viewport.classList.add("grabbing"); viewport.setPointerCapture(e.pointerId);
+  });
+  viewport.addEventListener("pointermove", function(e){
+    if (!panning) return;
+    panX = panning.px + (e.clientX - panning.x); panY = panning.py + (e.clientY - panning.y); apply();
+  });
+  function endPan(){ panning = null; viewport.classList.remove("grabbing"); }
+  viewport.addEventListener("pointerup", endPan);
+  viewport.addEventListener("pointercancel", endPan);
+
+  // node drag
+  function attachDrag(nd, el){
+    el.addEventListener("pointerdown", function(e){
+      if (e.button !== 0 && e.pointerType === "mouse") return;
+      if (e.target.classList.contains("pairbtn")) { e.stopPropagation(); return; }
+      e.stopPropagation();
+      var sx=e.clientX, sy=e.clientY, ox=pos[nd.id].x, oy=pos[nd.id].y, moved=false;
+      el.classList.add("dragging"); el.setPointerCapture(e.pointerId);
+      function mv(ev){
+        var dx=ev.clientX-sx, dy=ev.clientY-sy;
+        if (Math.abs(dx)+Math.abs(dy) > 4) moved=true;
+        pos[nd.id].x = ox + dx/zoom; pos[nd.id].y = oy + dy/zoom;
+        el.style.left = pos[nd.id].x+"px"; el.style.top = pos[nd.id].y+"px";
+        drawWires();
+      }
+      function up(ev){
+        el.removeEventListener("pointermove", mv); el.removeEventListener("pointerup", up); el.removeEventListener("pointercancel", up);
+        el.classList.remove("dragging");
+        if (!moved && nd.kind==="box") select(nd.id);
+      }
+      el.addEventListener("pointermove", mv);
+      el.addEventListener("pointerup", up);
+      el.addEventListener("pointercancel", up);
+    });
+  }
+
+  // ---- init ----
+  drawWires();
   select("box-3f2a1b");
-  requestAnimationFrame(draw);
-  addEventListener("resize", draw);
+  requestAnimationFrame(function(){ dim = {}; NODES.forEach(function(nd){ dim[nd.id]={w:els[nd.id].offsetWidth,h:els[nd.id].offsetHeight}; }); drawWires(); fit(); });
+  addEventListener("resize", fit);
 })();
 </script>
