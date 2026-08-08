@@ -6,9 +6,11 @@
 
 pub mod config;
 pub mod history;
+pub mod hostgen;
 pub mod manifest;
 pub mod nixgen;
 pub mod ops;
+pub mod ostier;
 pub mod paths;
 pub mod secrets;
 pub mod store;
