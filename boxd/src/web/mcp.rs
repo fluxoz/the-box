@@ -164,6 +164,33 @@ fn tool_definitions() -> Value {
                 "additionalProperties": false,
             },
         },
+        json!({
+            "name": "backup_status",
+            "description": "Backup status: whether the destination is reachable, how many snapshots exist, and when the last backup ran. Read-only.",
+            "inputSchema": no_args,
+        }),
+        json!({
+            "name": "backup_snapshots",
+            "description": "List backup snapshots (id, time, paths), newest last. Read-only.",
+            "inputSchema": no_args,
+        }),
+        json!({
+            "name": "backup_now",
+            "description": "Take a backup snapshot now (e.g. before a risky change), then apply the retention policy. Blocks until the backup finishes.",
+            "inputSchema": no_args,
+        }),
+        json!({
+            "name": "backup_restore",
+            "description": "Restore from a backup snapshot, in place. Destructive — overwrites current files. Scope with 'config' (Box config only, the default), 'all' (everything), or a service name (that service's data).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "snapshot": { "type": "string", "description": "Snapshot id, or 'latest' (default)" },
+                    "scope": { "type": "string", "description": "'config' (default) | 'all' | a service name" }
+                },
+                "additionalProperties": false,
+            },
+        }),
     ])
 }
 
@@ -217,6 +244,24 @@ async fn execute(
         "channel_check" => {
             let state = state.clone();
             Ok(blocking(move || channel_check(&state)).await)
+        }
+        "backup_status" => {
+            let state = state.clone();
+            Ok(blocking(move || backup_status(&state)).await)
+        }
+        "backup_snapshots" => {
+            let state = state.clone();
+            Ok(blocking(move || backup_snapshots(&state)).await)
+        }
+        "backup_now" => {
+            let state = state.clone();
+            Ok(blocking(move || backup_now(&state)).await)
+        }
+        "backup_restore" => {
+            let snapshot = str_arg("snapshot").unwrap_or_else(|| "latest".into());
+            let scope = str_arg("scope").unwrap_or_else(|| "config".into());
+            let state = state.clone();
+            Ok(blocking(move || backup_restore(&state, &snapshot, &scope)).await)
         }
         "deploy_static_site" => {
             let Some(name) = str_arg("name") else {
@@ -389,4 +434,51 @@ fn channel_check(state: &SharedState) -> anyhow::Result<Value> {
 
 fn generations(state: &SharedState) -> anyhow::Result<Value> {
     Ok(serde_json::to_value(store::list(&state.paths)?)?)
+}
+
+fn backup_bc(state: &SharedState) -> anyhow::Result<(BoxConfig, crate::config::BackupConfig)> {
+    let config = BoxConfig::load(&state.paths)?;
+    let bc = config
+        .backup
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("no backup destination configured"))?;
+    Ok((config, bc))
+}
+
+fn backup_status(state: &SharedState) -> anyhow::Result<Value> {
+    let (_, bc) = backup_bc(state)?;
+    let st = crate::backup::status(&state.paths, &bc);
+    Ok(serde_json::json!({
+        "reachable": st.reachable,
+        "snapshots": st.count,
+        "last": st.last.map(|s| s.time),
+    }))
+}
+
+fn backup_snapshots(state: &SharedState) -> anyhow::Result<Value> {
+    let (_, bc) = backup_bc(state)?;
+    Ok(serde_json::json!({ "snapshots": crate::backup::snapshots(&state.paths, &bc)? }))
+}
+
+fn backup_now(state: &SharedState) -> anyhow::Result<Value> {
+    let (config, bc) = backup_bc(state)?;
+    crate::backup::run(&state.paths, &config, &bc)?;
+    Ok(serde_json::json!({ "ok": true, "message": "backup complete" }))
+}
+
+fn backup_restore(state: &SharedState, snapshot: &str, scope: &str) -> anyhow::Result<Value> {
+    let (config, bc) = backup_bc(state)?;
+    let includes = match scope {
+        "all" => Vec::new(),
+        "config" => crate::backup::config_includes(&state.paths),
+        svc => crate::backup::service_includes(&config, svc),
+    };
+    crate::backup::restore(
+        &state.paths,
+        &bc,
+        snapshot,
+        std::path::Path::new("/"),
+        &includes,
+    )?;
+    Ok(serde_json::json!({ "ok": true, "restored": snapshot, "scope": scope }))
 }

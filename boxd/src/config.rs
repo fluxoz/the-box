@@ -231,6 +231,7 @@ mod tests {
                 public: true,
                 created_at: Utc::now(),
             }],
+            ..Default::default()
         };
         let text = config.to_toml().unwrap();
         let parsed: BoxConfig = toml::from_str(&text).unwrap();

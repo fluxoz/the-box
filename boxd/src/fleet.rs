@@ -28,6 +28,11 @@ pub struct CoarseHealth {
     /// Coarse status color: "ok" (running a generation) or "new" (nothing
     /// applied yet). Unreachable peers are represented by `Peer.health = None`.
     pub health: String,
+    /// Backup freshness: `None` when backup isn't configured, else whether the
+    /// last successful backup is older than a day (stale). Lets the fleet view
+    /// flag a Box whose backups have quietly stopped.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backup_stale: Option<bool>,
 }
 
 /// The Box's runtime hostname (identity on the LAN and in mDNS).
@@ -43,9 +48,18 @@ pub fn hostname() -> String {
 pub fn self_health(paths: &Paths) -> CoarseHealth {
     let name = hostname();
     let generation = store::current(paths).ok().flatten().map(|g| g.number);
-    let services = BoxConfig::load(paths)
-        .map(|c| c.services.len())
-        .unwrap_or(0);
+    let config = BoxConfig::load(paths).unwrap_or_default();
+    let services = config.services.len();
+    // Configured-but-stale: no backup yet, or the last one is over a day old.
+    let backup_stale = config
+        .backup
+        .as_ref()
+        .filter(|b| b.enabled)
+        .map(|_| {
+            crate::backup::last_backup_age(paths)
+                .map(|age| age > chrono::Duration::days(1))
+                .unwrap_or(true)
+        });
     CoarseHealth {
         id: name.clone(),
         name,
@@ -53,6 +67,7 @@ pub fn self_health(paths: &Paths) -> CoarseHealth {
         health: (if generation.is_some() { "ok" } else { "new" }).to_string(),
         generation,
         services,
+        backup_stale,
     }
 }
 

@@ -130,6 +130,7 @@ mod tests {
                 public: false,
                 created_at: Utc::now(),
             }],
+            ..Default::default()
         };
         let flake = render_flake(&config);
         assert!(flake.contains("cp -r ${./services/blog/www}"));
