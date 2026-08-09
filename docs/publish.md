@@ -33,48 +33,63 @@ compromise there still can't feed a tampered kernel — the hashes come from the
 TLS-protected script. (A future hardening signs `SHA256SUMS` with an offline
 key to also cover a compromise of `thebox.build` itself; not required for v1.)
 
-## Recommended hosting
+## The wired path: GitHub Releases + GitHub Pages (free, no org)
 
-- **Origin + CDN:** Cloudflare in front of the bundle for TLS + edge caching.
-  The 1.4 GB `initrd` wants object storage — **Cloudflare R2** (or S3) behind
-  the CDN — with `install.sh` / `index.html` served from the same host.
-- **Mirror:** publish `netboot/` + `install.sh` to **GitHub Releases** on
-  `coyote-technology/the-box`. Run the installer against it with
-  `BOX_BASE=https://github.com/.../releases/download/<tag>`; the stamped hashes
-  make the mirror safe.
-- **Alternative (sovereign):** a small VPS running nginx serving `result/`, or
-  a Box itself behind a cloudflared tunnel. Same bundle, no code change.
+`.github/workflows/publish.yml` does this on a `v*` tag push:
 
-Any host works — the bundle is a plain directory. Only the trust model above is
-load-bearing.
+- **Heavy artifacts** (`bzImage`, `initrd`, `netboot.ipxe`) → a **GitHub
+  Release** on this repo (free, CDN-backed, handles the 1.4 GB initrd).
+- **`install.sh` + `index.html`** → **GitHub Pages** at `thebox.build`. The
+  published `install.sh` has `@NETBOOT_BASE@` rewritten to the Release download
+  URL, so `thebox.build` only serves the tiny script + landing and the kernel/
+  initrd come straight from the Release. The stamped hashes keep that split
+  safe (see the trust model above).
 
-## Manual publish (until CI is wired)
+Everything is on your **personal** account — the workflow uses
+`${{ github.repository }}`, so no organization is needed.
+
+### One-time setup (your hands)
+
+1. **Push this repo to GitHub** (personal account is fine), e.g.
+   `git remote add origin git@github.com:<you>/the-box.git && git push -u origin main`.
+2. **Enable Pages**: repo → Settings → Pages → *Source: GitHub Actions*.
+3. **Set the custom domain**: repo → Settings → Pages → *Custom domain* →
+   `thebox.build` (the workflow also writes a `CNAME` file). Leave *Enforce
+   HTTPS* on once DNS resolves.
+4. **Verify the domain** (so only you can point Pages at it): GitHub → your
+   account → Settings → Pages → *Verified domains* → add `thebox.build`; it
+   gives you a `TXT` record to add at Namecheap.
+5. **Namecheap DNS** (Domain → *Advanced DNS*):
+   - the domain-verification `TXT` from step 4 (host `_github-pages-challenge-<you>`);
+   - **apex A records** (host `@`) to GitHub Pages:
+     `185.199.108.153`, `185.199.109.153`, `185.199.110.153`, `185.199.111.153`;
+   - optional `CNAME` host `www` → `<you>.github.io`.
+   Remove Namecheap's default parking/redirect records.
+6. **Release**: `git tag v0.1.0 && git push --tags`. The workflow builds,
+   creates the Release, and deploys Pages.
+
+### Verify it's live
 
 ```sh
-site=$(nix build .#site --no-link --print-out-paths)
-
-# object storage for the heavy artifacts
-rclone copy "$site/netboot" r2:thebox-build/netboot
-
-# static files at the web root (rsync to a VPS, or Cloudflare Pages, or...)
-rsync -a --delete \
-  --exclude netboot \
-  "$site/" deploy@thebox.build:/var/www/thebox.build/
-rsync -a "$site/netboot/netboot.ipxe" deploy@thebox.build:/var/www/thebox.build/netboot/
+curl -fsSL https://thebox.build/install.sh | head        # script, real hashes stamped
+curl -fsSL https://thebox.build/install.sh | grep NETBOOT_BASE   # points at the Release
+# smoke-test on a throwaway VPS:
+curl -fsSL https://thebox.build/install.sh | sudo BOX_ORDERS_B64=<...> sh
 ```
 
-`scripts/publish.sh <target>` wraps this; edit its rsync/rclone targets for your
-host.
+## Alternatives (later, if you outgrow the free tier)
 
-## DNS / one-time setup (your hands)
+- **Cloudflare + R2:** move `netboot/` into R2 behind the CDN when download
+  traffic warrants it; point `BOX_NETBOOT_BASE` / the stamped URL at R2.
+- **Sovereign VPS:** nginx serving the whole `nix build .#site` result. Use
+  `scripts/publish.sh` (edit its rsync target). Serve `install.sh` as
+  `text/x-shellscript`/`text/plain`, not `application/octet-stream`.
+- **A Box hosts it:** a Box behind a cloudflared tunnel serving the bundle —
+  best once the initrd is trimmed.
 
-1. Point `thebox.build` A/AAAA (or Cloudflare proxied CNAME) at the origin.
-2. TLS: Cloudflare, or Let's Encrypt on the VPS.
-3. Ensure `Content-Type` for `install.sh` is `text/x-shellscript` or
-   `text/plain` (not `application/octet-stream`) so `curl | sh` streams cleanly.
-4. Verify: `curl -fsSL https://thebox.build/install.sh | head` shows the script
-   with real hashes, and `curl -fsSLI https://thebox.build/netboot/initrd`
-   returns 200 with the full length.
+The bundle is a plain directory and `install.sh` takes `BOX_BASE` /
+`BOX_NETBOOT_BASE` overrides, so switching hosts is a target change, never a
+rewrite.
 
 ## Releases / update channel
 

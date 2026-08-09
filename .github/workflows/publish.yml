@@ -1,0 +1,77 @@
+# Publish thebox.build on a version tag:
+#   * heavy netboot artifacts  -> a GitHub Release (free, CDN-backed)
+#   * install.sh + landing page -> GitHub Pages at thebox.build
+# No org and no third-party host needed — everything is on this repo.
+name: Publish thebox.build
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch: {} # manual run: deploys Pages; skips the Release
+
+permissions:
+  contents: write # create the Release
+  pages: write # deploy Pages
+  id-token: write # Pages OIDC
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+      # Optional: add a binary cache here later to speed builds.
+
+      - name: Build the site bundle
+        run: nix build .#site
+
+      - name: Stage the bundle + stamp the Release URL into install.sh
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          rel="https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}"
+          mkdir -p pub
+          cp -rL result/. pub/
+          chmod -R u+w pub
+          # netboot artifacts are served from the Release, not thebox.build
+          sed -i "s|@NETBOOT_BASE@|${rel}|" pub/install.sh
+          # refresh checksums over the final served files
+          ( cd pub && find . -type f ! -name SHA256SUMS -print0 \
+              | sort -z | xargs -0 sha256sum > SHA256SUMS )
+
+      - name: Publish the Release (heavy artifacts)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            pub/netboot/bzImage
+            pub/netboot/initrd
+            pub/netboot/netboot.ipxe
+            pub/install.sh
+            pub/SHA256SUMS
+          fail_on_unmatched_files: true
+
+      - name: Assemble Pages content (small — script + landing only)
+        run: |
+          set -euo pipefail
+          mkdir -p site_out
+          cp pub/install.sh pub/install.ps1 pub/index.html pub/mac.txt pub/SHA256SUMS site_out/
+          echo 'thebox.build' > site_out/CNAME
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site_out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
