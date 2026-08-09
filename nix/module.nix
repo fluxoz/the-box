@@ -111,6 +111,32 @@ in
         };
       };
 
+      # Scheduled backups: an hourly heartbeat that runs `backup run --if-due`,
+      # which no-ops unless backup is enabled and the configured interval (in
+      # box.toml) has elapsed — so cadence is controlled by config, not a rebuild.
+      systemd.services.boxd-backup = {
+        description = "The Box scheduled backup";
+        after = [ "network-online.target" "boxd.service" ];
+        wants = [ "network-online.target" ];
+        path = [ pkgs.restic pkgs.openssh ];
+        environment.HOME = cfg.dataDir;
+        serviceConfig = {
+          Type = "oneshot";
+          User = "boxd";
+          Group = "boxd";
+          ExecStart = "${lib.getExe cfg.package} --data-dir ${cfg.dataDir} backup run --if-due";
+        };
+      };
+      systemd.timers.boxd-backup = {
+        description = "Hourly Box backup heartbeat (runs when a backup is due)";
+        wantedBy = [ "timers.target" ];
+        timerConfig = {
+          OnCalendar = "hourly";
+          Persistent = true;
+          RandomizedDelaySec = "20m";
+        };
+      };
+
       # A machine-readable record of what the OS tier declares, for boxd/GUI
       # introspection of the composed layer stack.
       environment.etc."box/sites.json".text = builtins.toJSON (

@@ -59,6 +59,10 @@ pub fn router(state: SharedState) -> Router {
         .route("/devices", get(pages::devices))
         .route("/devices/add", post(pages::add_device))
         .route("/devices/{id}/revoke", post(pages::revoke_device))
+        .route("/backup", get(pages::backup))
+        .route("/backup/configure", post(pages::configure_backup))
+        .route("/backup/run", post(pages::run_backup_now))
+        .route("/backup/restore", post(pages::restore_backup))
         .route("/network", get(pages::network))
         .route("/network/cloudflare", post(pages::configure_cloudflare))
         .route(
