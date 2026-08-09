@@ -37,6 +37,8 @@ enum Screen {
 enum Outcome {
     Committed(ResolvedLayout),
     Aborted,
+    /// The browser wizard committed — leave the files it wrote alone.
+    CommittedElsewhere,
 }
 
 struct App {
@@ -49,6 +51,8 @@ struct App {
     /// Seconds until auto-cancel while no operator has responded; `None` once
     /// someone has interacted (an operator is present — stop the clock).
     idle_left: Option<u32>,
+    /// If this path appears, the browser wizard committed — bow out.
+    watch_commit: Option<std::path::PathBuf>,
 }
 
 impl App {
@@ -61,7 +65,12 @@ impl App {
     }
 }
 
-pub fn run(base_orders: Option<&str>, orders_out: &str, disko_out: &str) -> Result<()> {
+pub fn run(
+    base_orders: Option<&str>,
+    orders_out: &str,
+    disko_out: &str,
+    watch_commit: Option<&str>,
+) -> Result<()> {
     let base = match base_orders {
         Some(path) => orders::load(path).with_context(|| format!("reading base orders {path}"))?,
         None => Value::Null,
@@ -76,6 +85,7 @@ pub fn run(base_orders: Option<&str>, orders_out: &str, disko_out: &str) -> Resu
         confirm_input: String::new(),
         base,
         idle_left: None,
+        watch_commit: watch_commit.map(std::path::PathBuf::from),
     };
 
     let mut terminal = ratatui::init();
@@ -90,6 +100,10 @@ pub fn run(base_orders: Option<&str>, orders_out: &str, disko_out: &str) -> Resu
             std::fs::write(disko_out, disko::render(&layout))
                 .with_context(|| format!("writing disko config to {disko_out}"))?;
             eprintln!("Storage layout confirmed:\n{}", plan::plan_summary(&layout));
+            Ok(())
+        }
+        Outcome::CommittedElsewhere => {
+            eprintln!("Storage was chosen in the browser wizard; continuing with that.");
             Ok(())
         }
         Outcome::Aborted => {
@@ -108,6 +122,10 @@ fn event_loop(terminal: &mut DefaultTerminal, app: &mut App) -> Result<Outcome> 
     let mut idle: u32 = 0;
 
     loop {
+        // The browser wizard beat us to it — leave its files untouched.
+        if app.watch_commit.as_ref().is_some_and(|p| p.exists()) {
+            return Ok(Outcome::CommittedElsewhere);
+        }
         app.idle_left = (!seen_input).then(|| IDLE_LIMIT.saturating_sub(idle));
         terminal.draw(|f| draw(f, app))?;
 

@@ -88,6 +88,23 @@ enum Command {
         #[command(subcommand)]
         action: AuthCmd,
     },
+    /// Serve the browser install wizard inside the installer (pre-pairing, no
+    /// auth). On commit it writes orders + a disko config for box-install to
+    /// act on, and serves install progress read from --progress.
+    InstallWizard {
+        #[arg(long, default_value = "0.0.0.0:2693")]
+        listen: SocketAddr,
+        #[arg(long)]
+        orders_out: PathBuf,
+        #[arg(long)]
+        disko_out: PathBuf,
+        #[arg(long)]
+        commit_flag: PathBuf,
+        #[arg(long)]
+        progress: PathBuf,
+        #[arg(long)]
+        done: PathBuf,
+    },
 }
 
 #[derive(Subcommand)]
@@ -239,6 +256,23 @@ fn main() -> Result<()> {
         }
         Command::Channel { action } => run_channel(&paths, action),
         Command::Auth { action } => run_auth(&paths, action),
+        Command::InstallWizard {
+            listen,
+            orders_out,
+            disko_out,
+            commit_flag,
+            progress,
+            done,
+        } => web::wizard::run(
+            web::wizard::WizardCfg {
+                orders_out,
+                disko_out,
+                commit_flag,
+                progress,
+                done,
+            },
+            listen,
+        ),
     }
 }
 

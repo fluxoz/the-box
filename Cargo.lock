@@ -187,6 +187,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "box-core",
  "chrono",
  "clap",
  "http-body-util",

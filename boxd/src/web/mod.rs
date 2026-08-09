@@ -2,6 +2,7 @@ pub mod api;
 pub mod mcp;
 pub mod pages;
 pub mod sites;
+pub mod wizard;
 
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};

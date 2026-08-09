@@ -11,12 +11,13 @@
 #
 # The same module backs the ISO/USB image, the PXE netboot image, and the
 # Windows-staged install — only the delivery of kernel/initrd/orders differs.
-{ config, lib, pkgs, modulesPath, boxSystem, diskoPkg, boxInstaller, nixpkgsSrc, ... }:
+{ config, lib, pkgs, modulesPath, boxSystem, diskoPkg, boxInstaller, boxDaemon, nixpkgsSrc, ... }:
 let
   installScript = pkgs.writeShellApplication {
     name = "box-install";
     runtimeInputs = [
       boxInstaller
+      boxDaemon
       diskoPkg
       pkgs.coreutils
       pkgs.curl
@@ -28,7 +29,9 @@ let
       pkgs.util-linux
     ];
     text = ''
-      log() { echo "[box-install] $*"; }
+      # Milestones go to serial AND the wizard's progress log (browser view).
+      PROG=/tmp/box-install-progress.log
+      log() { echo "[box-install] $*"; echo "[box-install] $*" >> "$PROG" 2>/dev/null || true; }
 
       # ---- 1. Locate the orders (consent + config) ------------------------
       # Orders are always copied to RAM before anything touches a disk; in the
@@ -90,15 +93,31 @@ let
       # within a couple of minutes (headless boot with no orders) — so an
       # unattended machine that reached here by accident is never wiped.
       if [ -z "$handoff" ]; then
-        log "no orders found — starting the setup wizard (refusing if no operator responds)."
+        log "no orders found — starting setup (screen + browser); refusing if no operator responds."
+        : > "$PROG"; rm -f /tmp/box-wizard.commit /tmp/box-wizard.done
+        # Door 2, networked: the browser wizard on the LAN. Same box-core
+        # pipeline; on commit it writes the orders + disko and the commit flag.
+        boxd install-wizard \
+          --listen 0.0.0.0:2693 \
+          --orders-out /tmp/box-install.json \
+          --disko-out /tmp/box-disko.nix \
+          --commit-flag /tmp/box-wizard.commit \
+          --progress "$PROG" \
+          --done /tmp/box-wizard.done &
+        # Door 2, on-screen: the console TUI. setsid -c gives it the VT as its
+        # controlling terminal so the kernel routes keystrokes to it; it exits
+        # on its own if the browser commits first (--watch-commit).
         wtty=/dev/tty1; [ -c "$wtty" ] || wtty=/dev/console
-        # setsid -c makes the wizard the session leader with $wtty as its
-        # controlling terminal, so the kernel actually routes keystrokes to it
-        # (a plain redirect leaves it as a background process the VT ignores);
-        # -w waits and propagates its exit status.
-        if TERM=linux setsid -w -c box-installer wizard \
-             --orders-out /tmp/box-install.json \
-             --disko-out /tmp/box-disko.nix <> "$wtty" >&0 2>&0; then
+        TERM=linux setsid -w -c box-installer wizard \
+          --orders-out /tmp/box-install.json \
+          --disko-out /tmp/box-disko.nix \
+          --watch-commit /tmp/box-wizard.commit <> "$wtty" >&0 2>&0 || true
+        # Whoever won, wait briefly for the files to land, then proceed.
+        for _ in 1 2 3 4 5; do
+          [ -f /tmp/box-install.json ] && [ -f /tmp/box-disko.nix ] && break
+          sleep 1
+        done
+        if [ -f /tmp/box-install.json ] && [ -f /tmp/box-disko.nix ]; then
           handoff=/tmp/box-install.json
           diskocfg=/tmp/box-disko.nix
         fi
@@ -132,15 +151,16 @@ let
       # ---- 4. Partition + format via disko --------------------------------
       log "partitioning with disko (this ERASES the target disk(s))"
       disko --mode destroy,format,mount --yes-wipe-all-disks \
-        --root-mountpoint /mnt "$diskocfg"
+        --root-mountpoint /mnt "$diskocfg" 2>&1 | tee -a "$PROG"
 
       # ---- 5. Install the embedded Box OS closure (offline) ---------------
       system=$(cat /etc/box/system-store-path)
       log "installing Box OS from $system"
       mkdir -p /mnt/etc/box
       install -m 600 "$handoff" /mnt/etc/box/install-config.json
-      nixos-install --system "$system" --no-root-passwd --no-channel-copy
+      nixos-install --system "$system" --no-root-passwd --no-channel-copy 2>&1 | tee -a "$PROG"
       log "BOX INSTALL COMPLETE"
+      : > /tmp/box-wizard.done # tell the browser wizard the install finished
 
       # ---- 6. Finish ------------------------------------------------------
       finish=$(jq -r '.finish // "reboot"' "$handoff")
@@ -155,6 +175,10 @@ let
 in
 {
   networking.hostName = "box-installer";
+  # The browser install wizard is served on 2693; open it so a LAN browser can
+  # reach the pre-pairing setup (the installer firewall otherwise allows only
+  # SSH). Transient installer environment only.
+  networking.firewall.allowedTCPPorts = [ 2693 ];
   # ttyS0 last = primary console, so installer progress is visible over serial.
   boot.kernelParams = [ "console=tty0" "console=ttyS0,115200" ];
   # Load RAID/device-mapper modules in the installer so disko can *build* a
@@ -170,7 +194,7 @@ in
   # The Box OS closure rides inside the installer image so installation needs
   # no network at all.
   environment.etc."box/system-store-path".text = "${boxSystem}";
-  environment.systemPackages = [ installScript boxInstaller diskoPkg pkgs.jq ];
+  environment.systemPackages = [ installScript boxInstaller boxDaemon diskoPkg pkgs.jq ];
 
   # disko evaluates its config at runtime; bake nixpkgs in so that also works
   # offline.

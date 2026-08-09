@@ -47,6 +47,10 @@ enum Cmd {
         /// Where to write the generated disko config.
         #[arg(long, default_value = "/tmp/box-disko.nix")]
         disko_out: String,
+        /// If this file appears, another door (the browser wizard) committed —
+        /// exit without writing, so the two never both drive an install.
+        #[arg(long)]
+        watch_commit: Option<String>,
     },
 }
 
@@ -58,6 +62,12 @@ fn main() -> Result<()> {
             base_orders,
             orders_out,
             disko_out,
-        } => wizard::run(base_orders.as_deref(), &orders_out, &disko_out),
+            watch_commit,
+        } => wizard::run(
+            base_orders.as_deref(),
+            &orders_out,
+            &disko_out,
+            watch_commit.as_deref(),
+        ),
     }
 }

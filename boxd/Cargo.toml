@@ -8,6 +8,7 @@ license = "Apache-2.0"
 [dependencies]
 anyhow = "1"
 axum = "0.8"
+box-core = { path = "../crates/box-core" }
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
 maud = "0.27"
