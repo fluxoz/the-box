@@ -9,6 +9,7 @@
 
 pub mod disko;
 pub mod model;
+pub mod orders;
 pub mod probe;
 pub mod resolve;
 

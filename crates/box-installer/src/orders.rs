@@ -96,30 +96,6 @@ pub fn load(path: &str) -> Result<Value> {
     serde_json::from_str(&text).with_context(|| format!("{path} is not valid JSON"))
 }
 
-/// Merge a chosen layout into a base orders object and return the effective
-/// orders the installer will act on: consent is forced on, and the resolved
-/// storage is recorded for provenance. `base` may be `Value::Null` (a blank
-/// box configured entirely at the console).
-pub fn effective_orders(base: &Value, layout: &ResolvedLayout) -> Value {
-    let mut obj = match base {
-        Value::Object(m) => m.clone(),
-        _ => serde_json::Map::new(),
-    };
-    obj.insert("erase_disk".into(), Value::Bool(true));
-    if !obj.contains_key("hostname") {
-        obj.insert("hostname".into(), Value::String("auto".into()));
-    }
-    let devices: Vec<Value> = layout
-        .devices
-        .iter()
-        .map(|d| Value::String(d.stable_path.clone()))
-        .collect();
-    obj.insert(
-        "storage".into(),
-        serde_json::json!({
-            "layout": layout.kind.as_str(),
-            "devices": devices,
-        }),
-    );
-    Value::Object(obj)
-}
+// The effective-orders merge is shared with the browser wizard (boxd), so it
+// lives in box-core.
+pub use box_core::orders::effective_orders;

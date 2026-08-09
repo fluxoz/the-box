@@ -59,6 +59,7 @@
           boxSystem = boxOs.config.system.build.toplevel;
           diskoPkg = disko.packages.x86_64-linux.disko;
           boxInstaller = self.packages.x86_64-linux.box-installer;
+          boxDaemon = self.packages.x86_64-linux.boxd;
           nixpkgsSrc = nixpkgs;
         };
         modules = [
