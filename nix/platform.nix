@@ -48,5 +48,11 @@
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
   environment.systemPackages = [ pkgs.jq ];
 
+  # Box Connect: WireGuard mesh via Tailscale/Headscale. tailscaled runs; boxd
+  # drives it (`boxd connect enroll` / `cloud connect`). Which coordinator it
+  # joins is the operator's choice — self-hosted Headscale (free) or the managed
+  # relay (paid) — so nothing is enabled toward any server until they enroll.
+  services.tailscale.enable = true;
+
   system.stateVersion = "25.11";
 }

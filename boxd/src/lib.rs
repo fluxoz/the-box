@@ -9,6 +9,7 @@ pub mod backup;
 pub mod channel;
 pub mod cloud;
 pub mod config;
+pub mod connect;
 pub mod fleet;
 pub mod history;
 pub mod hostgen;

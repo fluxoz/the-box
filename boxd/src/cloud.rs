@@ -107,6 +107,27 @@ pub fn usage(paths: &Paths) -> Result<Value> {
     ])
 }
 
+/// Provision a Box Connect key from the control plane and join the mesh.
+pub fn connect(paths: &Paths, hostname: &str) -> Result<()> {
+    let (server, token) = creds(paths)?;
+    let resp = curl_json(&[
+        "-X",
+        "POST",
+        &format!("{server}/v1/connect/provision"),
+        "-H",
+        &format!("authorization: Bearer {token}"),
+    ])?;
+    let login_server = resp
+        .get("login_server")
+        .and_then(Value::as_str)
+        .context("connect: no login_server")?;
+    let authkey = resp
+        .get("authkey")
+        .and_then(Value::as_str)
+        .context("connect: no authkey")?;
+    crate::connect::enroll(login_server, authkey, hostname)
+}
+
 fn creds(paths: &Paths) -> Result<(String, String)> {
     let server = secrets::get(paths, SERVER)?
         .context("not enrolled — run `boxd cloud enroll --server <url> --token <token>`")?;

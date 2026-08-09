@@ -98,6 +98,11 @@ enum Command {
         #[command(subcommand)]
         action: CloudCmd,
     },
+    /// Box Connect: private remote access over a WireGuard mesh.
+    Connect {
+        #[command(subcommand)]
+        action: ConnectCmd,
+    },
     /// Serve the browser install wizard inside the installer (pre-pairing, no
     /// auth). On commit it writes orders + a disko config for box-install to
     /// act on, and serves install progress read from --progress.
@@ -195,6 +200,30 @@ enum CloudCmd {
     Provision,
     /// Show managed backup usage.
     Status,
+    /// Turn on managed Box Connect (provision a mesh key + join).
+    Connect {
+        #[arg(long)]
+        hostname: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum ConnectCmd {
+    /// Join a mesh with your own coordinator (free / self-hosted).
+    Enroll {
+        /// Headscale/Tailscale coordinator URL.
+        #[arg(long)]
+        server: String,
+        /// Pre-auth key.
+        #[arg(long)]
+        authkey: String,
+        #[arg(long)]
+        hostname: Option<String>,
+    },
+    /// Show mesh status.
+    Status,
+    /// Leave the mesh.
+    Down,
 }
 
 #[derive(Subcommand)]
@@ -339,6 +368,33 @@ fn main() -> Result<()> {
                 let u = boxd::cloud::usage(&paths)?;
                 let bytes = u.get("bytes").and_then(|v| v.as_u64()).unwrap_or(0);
                 println!("managed backup: {:.2} MiB stored", bytes as f64 / 1_048_576.0);
+                Ok(())
+            }
+            CloudCmd::Connect { hostname } => {
+                let host = hostname.unwrap_or_else(boxd::connect::default_hostname);
+                boxd::cloud::connect(&paths, &host)?;
+                println!("Box Connect on — reachable privately as '{host}' on your mesh");
+                Ok(())
+            }
+        },
+        Command::Connect { action } => match action {
+            ConnectCmd::Enroll {
+                server,
+                authkey,
+                hostname,
+            } => {
+                let host = hostname.unwrap_or_else(boxd::connect::default_hostname);
+                boxd::connect::enroll(&server, &authkey, &host)?;
+                println!("joined the mesh as '{host}'");
+                Ok(())
+            }
+            ConnectCmd::Status => {
+                println!("{}", serde_json::to_string_pretty(&boxd::connect::status()?)?);
+                Ok(())
+            }
+            ConnectCmd::Down => {
+                boxd::connect::down()?;
+                println!("left the mesh");
                 Ok(())
             }
         },
