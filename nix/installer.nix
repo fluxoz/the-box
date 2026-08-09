@@ -11,8 +11,15 @@
 #
 # The same module backs the ISO/USB image, the PXE netboot image, and the
 # Windows-staged install — only the delivery of kernel/initrd/orders differs.
-{ config, lib, pkgs, modulesPath, boxSystem, diskoPkg, boxInstaller, boxDaemon, nixpkgsSrc, ... }:
+{ config, lib, pkgs, modulesPath, boxSystem, diskoPkg, boxInstaller, boxDaemon, boxCache, nixpkgsSrc, ... }:
 let
+  # The initrd trim (fetch the Box OS closure from the cache instead of
+  # embedding it) only activates once boxCache carries a REAL key — otherwise a
+  # release would ship an installer that can't fetch anything. Until then the
+  # closure is embedded (fat initrd, but works offline), so main is always
+  # shippable; pasting the real cachix key flips the trim on automatically.
+  cacheReady = !(lib.any (lib.hasInfix "REPLACE_WITH_CACHIX_PUBLIC_KEY")
+    boxCache.trustedPublicKeys);
   installScript = pkgs.writeShellApplication {
     name = "box-install";
     runtimeInputs = [
@@ -234,15 +241,27 @@ in
   systemd.services."getty@tty1".enable = lib.mkForce false;
   systemd.services."autovt@tty1".enable = lib.mkForce false;
 
-  # The Box OS closure rides inside the installer image so installation needs
-  # no network at all.
-  environment.etc."box/system-store-path".text = "${boxSystem}";
+  # With a real cache, bake only the store *path* (unsafeDiscardStringContext
+  # keeps the ~1.4 GB closure out of the initrd) and fetch it at install time —
+  # the installer writes it straight to the target disk. Without one, embed the
+  # closure so the installer still works fully offline.
+  environment.etc."box/system-store-path".text =
+    if cacheReady
+    then builtins.unsafeDiscardStringContext "${boxSystem}"
+    else "${boxSystem}";
   environment.systemPackages = [ installScript boxInstaller boxDaemon diskoPkg pkgs.jq ];
 
   # disko evaluates its config at runtime; bake nixpkgs in so that also works
   # offline.
   nix.nixPath = [ "nixpkgs=${nixpkgsSrc}" ];
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
+  # Where a trimmed installer pulls the Box OS closure from (cache.nixos.org for
+  # the nixpkgs deps + our platform cache for boxd/box-os paths).
+  nix.settings.substituters =
+    [ "https://cache.nixos.org" ] ++ lib.optionals cacheReady boxCache.substituters;
+  nix.settings.trusted-public-keys =
+    [ "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=" ]
+    ++ lib.optionals cacheReady boxCache.trustedPublicKeys;
 
   systemd.services.box-install = {
     description = "The Box automated installer";

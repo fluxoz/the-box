@@ -29,6 +29,22 @@ jobs:
       - name: Build the site bundle
         run: nix build .#site
 
+      # Publish the Box OS closure so a trimmed installer (and channel updates)
+      # can fetch it instead of embedding/compiling it. Skips cleanly until
+      # CACHIX_AUTH_TOKEN is set — see docs/publish.md.
+      - name: Publish Box OS closure to the cache
+        env:
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+        run: |
+          if [ -z "$CACHIX_AUTH_TOKEN" ]; then
+            echo "CACHIX_AUTH_TOKEN not set — skipping cache push (installer stays fat/embedded)."
+            exit 0
+          fi
+          nix profile install nixpkgs#cachix
+          cachix authtoken "$CACHIX_AUTH_TOKEN"
+          sys=$(nix build .#nixosConfigurations.box-os.config.system.build.toplevel --no-link --print-out-paths)
+          cachix push fluxoz "$sys"
+
       - name: Stage the bundle + stamp the Release URL into install.sh
         run: |
           set -euo pipefail

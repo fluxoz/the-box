@@ -98,6 +98,35 @@ The bundle is a plain directory and `install.sh` takes `BOX_BASE` /
 `BOX_NETBOOT_BASE` overrides, so switching hosts is a target change, never a
 rewrite.
 
+## Binary cache — trim the initrd (optional but recommended)
+
+By default the netboot installer **embeds the whole Box OS closure**, which
+makes the initrd ~1.4 GB. `kexec` has to place that in RAM, so the `curl | sh`
+path needs a box with **≥ 8 GB** — a 4 GB VPS OOM-kills it. Standing up a binary
+cache lets the installer **fetch the closure at install time** instead, dropping
+the initrd to ~540 MB (works on small boxes) and speeding installs and channel
+updates.
+
+It auto-activates once a real cache key is present; until then everything stays
+fat/embedded and works offline. To turn it on:
+
+1. Create a **free cachix cache** (public, for open source) named `fluxoz` at
+   <https://app.cachix.org>. It shows a **public key** like
+   `fluxoz.cachix.org-1:AbC…=`.
+2. Paste that key into `flake.nix` → `boxCache.trustedPublicKeys` (replacing the
+   `REPLACE_WITH_CACHIX_PUBLIC_KEY` placeholder). This flips `cacheReady`, so the
+   installer trims and installed boxes gain the update substituter.
+3. Add the cache's **auth token** as a repo secret: GitHub → Settings → Secrets
+   and variables → Actions → `CACHIX_AUTH_TOKEN` (from cachix → cache → Settings).
+4. Commit + tag a release. CI pushes the Box OS closure to the cache and ships
+   the trimmed installer.
+
+(If the cache name isn't `fluxoz`, update it in both `flake.nix` and the
+`cachix push` step in `.github/workflows/publish.yml`.)
+
+The deeper win: with the closure on a cache, hosting the netboot artifacts gets
+cheap and even "a Box hosts thebox.build" becomes realistic.
+
 ## Releases / update channel
 
 Cutting a platform release (what `boxd channel` pulls) is separate from serving
