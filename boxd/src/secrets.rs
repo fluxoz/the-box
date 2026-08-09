@@ -14,6 +14,12 @@ fn secrets_dir(paths: &Paths) -> PathBuf {
     paths.data_dir.join("secrets")
 }
 
+/// The on-disk path of a secret (0600), for tools that read a credential from a
+/// file rather than an env var (e.g. restic's `RESTIC_PASSWORD_FILE`).
+pub fn secret_file(paths: &Paths, name: &str) -> PathBuf {
+    secrets_dir(paths).join(name)
+}
+
 fn validate_name(name: &str) -> Result<()> {
     let ok = !name.is_empty()
         && name.len() <= 64

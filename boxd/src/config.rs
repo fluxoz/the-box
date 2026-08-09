@@ -17,6 +17,74 @@ const CONFIG_HEADER: &str =
 pub struct BoxConfig {
     #[serde(default)]
     pub services: Vec<ServiceConfig>,
+    /// Backup destination + policy (bring-your-own backend). Absent = off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backup: Option<BackupConfig>,
+}
+
+/// Client-side-encrypted backups (restic) to a user-provided backend. What to
+/// back up is derived from the service manifest, not listed here — see
+/// [`crate::backup`]. Secrets (repo password, backend creds) live in the secret
+/// store, never in this config.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackupConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    /// "daily" | "hourly" | a cron expression — consumed by the systemd timer.
+    #[serde(default = "default_schedule")]
+    pub schedule: String,
+    #[serde(default)]
+    pub retention: Retention,
+    pub backend: BackendConfig,
+    /// Extra paths to include beyond the manifest-derived set (rarely needed).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extra_paths: Vec<String>,
+}
+
+/// restic `forget --keep-*` policy.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Retention {
+    pub daily: u32,
+    pub weekly: u32,
+    pub monthly: u32,
+}
+
+impl Default for Retention {
+    fn default() -> Self {
+        Self {
+            daily: 7,
+            weekly: 4,
+            monthly: 6,
+        }
+    }
+}
+
+/// A restic backend. Flat (kind + optional fields) to stay TOML-clean; the
+/// fields required for each kind are checked when the repository URL is built.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct BackendConfig {
+    /// "local" | "s3" | "sftp" | "rest"
+    pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>, // local, sftp remote path
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>, // s3
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bucket: Option<String>, // s3
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prefix: Option<String>, // s3
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>, // sftp
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>, // sftp
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>, // sftp
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>, // rest
+}
+
+fn default_schedule() -> String {
+    "daily".to_string()
 }
 
 /// A service is a template id plus that template's params. This is the

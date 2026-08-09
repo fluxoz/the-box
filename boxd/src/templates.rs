@@ -32,6 +32,16 @@ pub trait Template: Send + Sync {
         let _ = (name, www_dir);
         Ok(())
     }
+
+    /// Absolute paths of this service's *persistent mutable state* — the data
+    /// that must be backed up (a database's data dir, uploaded files…). Empty
+    /// for stateless services whose content re-materializes from config (like
+    /// static-site). Backups derive their path set from this, so adding a
+    /// stateful service protects its data automatically. See [`crate::backup`].
+    fn state_dirs(&self, name: &str, params: &Value) -> Vec<std::path::PathBuf> {
+        let _ = (name, params);
+        Vec::new()
+    }
 }
 
 /// All templates known to this Box. The GUI catalog renders from this list.
