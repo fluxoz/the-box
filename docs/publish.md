@@ -63,7 +63,9 @@ Everything is on your **personal** account — the workflow uses
    - the domain-verification `TXT` from step 4 (host `_github-pages-challenge-<you>`);
    - **apex A records** (host `@`) to GitHub Pages:
      `185.199.108.153`, `185.199.109.153`, `185.199.110.153`, `185.199.111.153`;
-   - optional `CNAME` host `www` → `<you>.github.io`.
+   - **`CNAME` host `www` → `<you>.github.io`** — required, not optional: with
+     an apex custom domain GitHub Pages checks the `www` "alternate name" too,
+     and errors ("alternate name isn't configured right") until it resolves.
    Remove Namecheap's default parking/redirect records.
 6. **Release**: `git tag v0.1.0 && git push --tags`. The workflow builds,
    creates the Release, and deploys Pages.
