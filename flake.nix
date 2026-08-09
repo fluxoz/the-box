@@ -31,7 +31,7 @@
       # builds fine; a real install/update needs the true key.
       boxCache = {
         substituters = [ "https://fluxoz.cachix.org" ];
-        trustedPublicKeys = [ "fluxoz.cachix.org-1:REPLACE_WITH_CACHIX_PUBLIC_KEY=" ];
+        trustedPublicKeys = [ "fluxoz.cachix.org-1:yzuO7pZpCoHEIT6PQiYJ1eupby/rH3Ls3Q18+VA0Krc=" ];
       };
       # True once a real key is pasted above; gates both the initrd trim and the
       # installed box's update substituter, so nothing references a cache that

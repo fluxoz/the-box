@@ -26,6 +26,18 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@main
       # Optional: add a binary cache here later to speed builds.
 
+      # Don't ship a trimmed installer that can't reach its cache: if a real key
+      # is set (trim active) but there's no token to push the closure, fail fast.
+      - name: Guard — a real cache key needs CACHIX_AUTH_TOKEN
+        env:
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+        run: |
+          key=$(grep -A2 'boxCache = {' flake.nix | grep trustedPublicKeys || true)
+          if ! echo "$key" | grep -q REPLACE_WITH_CACHIX_PUBLIC_KEY && [ -z "$CACHIX_AUTH_TOKEN" ]; then
+            echo "::error::flake.nix has a real cache key (initrd trim active) but CACHIX_AUTH_TOKEN is unset — the trimmed installer would ship unable to fetch the Box OS closure. Add the secret (Settings → Secrets → Actions), then re-run."
+            exit 1
+          fi
+
       - name: Build the site bundle
         run: nix build .#site
 
