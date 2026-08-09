@@ -16,6 +16,9 @@ pub fn effective_orders(base: &Value, layout: &ResolvedLayout) -> Value {
         _ => serde_json::Map::new(),
     };
     obj.insert("erase_disk".into(), Value::Bool(true));
+    // The setup PIN guards only the live install wizard; it must not persist
+    // into the installed box's config.
+    obj.remove("setup_pin");
     if !obj.contains_key("hostname") {
         obj.insert("hostname".into(), Value::String("auto".into()));
     }

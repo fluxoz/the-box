@@ -339,8 +339,10 @@ async function loadDisks(){
     if(!r.disks.length){el.innerHTML='<p class="muted">No disks detected.</p>';return;}
     el.innerHTML=r.disks.map(d=>{
       const gb=Math.round(d.size_bytes/1e9);
-      const cls='disk'+(d.removable?' rm':'');
-      const tag=d.removable?'removable — never touched':(d.rotational?'HDD':'SSD');
+      const tooSmall=d.size_bytes<8e9;
+      const inelig=d.removable||tooSmall;
+      const cls='disk'+(inelig?' rm':'');
+      const tag=d.removable?'removable — never touched':(tooSmall?'too small — ignored':(d.rotational?'HDD':'SSD'));
       return `<div class="${cls}" data-name="${d.name}"><span>${d.path}</span><span>${gb} GB</span><span>${(d.model||'disk')}</span><span class="tag">${tag}</span></div>`;
     }).join('');
     plan();

@@ -51,6 +51,12 @@ enum Cmd {
         /// exit without writing, so the two never both drive an install.
         #[arg(long)]
         watch_commit: Option<String>,
+        /// Shown in the TUI so a person at the screen can finish in a browser.
+        #[arg(long)]
+        browser_url: Option<String>,
+        /// The setup PIN, shown alongside the browser URL.
+        #[arg(long)]
+        pin: Option<String>,
     },
 }
 
@@ -63,11 +69,14 @@ fn main() -> Result<()> {
             orders_out,
             disko_out,
             watch_commit,
+            browser_url,
+            pin,
         } => wizard::run(
             base_orders.as_deref(),
             &orders_out,
             &disko_out,
             watch_commit.as_deref(),
+            wizard::browser_hint(browser_url.as_deref(), pin.as_deref()),
         ),
     }
 }

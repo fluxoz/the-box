@@ -708,7 +708,12 @@ footer.foot b { color: var(--dim); }
     const mode = $("input[name=diskmode]:checked").value;
     show($("#disk-custom"), mode === "custom");
     const note = $("#disk-auto-note");
-    note.textContent = DISK_NOTES[mode] || DISK_NOTES.auto;
+    if (mode === "onbox") {
+      note.innerHTML = DISK_NOTES.onbox +
+        ' <b>Your setup PIN is ' + setupPin + '</b> — you\'ll type this into the setup page on the box to prove it\'s you.';
+    } else {
+      note.textContent = DISK_NOTES[mode] || DISK_NOTES.auto;
+    }
     note.style.display = mode === "custom" ? "none" : "";
     if (mode === "custom") $("#diskpath").focus();
     render();
@@ -844,7 +849,7 @@ footer.foot b { color: var(--dim); }
     if (diskMode === "custom") cfg.disk = $("#diskpath").value.trim();
     else if (diskMode === "mirror") cfg.storage = { layout: "mirror" };
     else if (diskMode === "pool") cfg.storage = { layout: "pool" };
-    else if (diskMode === "onbox") cfg.storage = { layout: "ask" };
+    else if (diskMode === "onbox") { cfg.storage = { layout: "ask" }; cfg.setup_pin = setupPin; }
     else cfg.disk = "auto";
 
     cfg.hostname = hostname || "auto";
@@ -912,6 +917,10 @@ footer.foot b { color: var(--dim); }
 
   let currentJSON = "";
   let enrollCode = null, enrollHash = null;
+  // Setup PIN for the "decide on box" flow: the operator sees it here and it
+  // rides in the orders, so they can prove it's them at the box's wizard —
+  // without needing the box's console.
+  const setupPin = String(100000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900000));
   function render() {
     // inline field errors
     const h = $("#hostname");

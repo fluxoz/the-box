@@ -29,6 +29,16 @@ const DIM: Color = Color::DarkGray;
 
 const LAYOUTS: [LayoutKind; 3] = [LayoutKind::Single, LayoutKind::Mirror, LayoutKind::Pool];
 
+/// The "finish in a browser" line shown in the TUI (so a person at the screen
+/// can read the URL + PIN and use their phone), or `None` when not networked.
+pub fn browser_hint(url: Option<&str>, pin: Option<&str>) -> Option<String> {
+    let url = url?;
+    Some(match pin {
+        Some(p) => format!("Prefer a browser? {url}  ·  PIN {p}"),
+        None => format!("Prefer a browser? {url}"),
+    })
+}
+
 enum Screen {
     Choose,
     Confirm,
@@ -53,6 +63,8 @@ struct App {
     idle_left: Option<u32>,
     /// If this path appears, the browser wizard committed — bow out.
     watch_commit: Option<std::path::PathBuf>,
+    /// "Finish in a browser" hint (URL + PIN) shown in the title.
+    browser_hint: Option<String>,
 }
 
 impl App {
@@ -70,6 +82,7 @@ pub fn run(
     orders_out: &str,
     disko_out: &str,
     watch_commit: Option<&str>,
+    browser_hint: Option<String>,
 ) -> Result<()> {
     let base = match base_orders {
         Some(path) => orders::load(path).with_context(|| format!("reading base orders {path}"))?,
@@ -86,6 +99,7 @@ pub fn run(
         base,
         idle_left: None,
         watch_commit: watch_commit.map(std::path::PathBuf::from),
+        browser_hint,
     };
 
     let mut terminal = ratatui::init();
@@ -200,7 +214,7 @@ fn draw(f: &mut Frame, app: &App) {
         ])
         .split(f.area());
 
-    title(f, chunks[0]);
+    title(f, chunks[0], app);
     match app.screen {
         Screen::Choose => choose_body(f, chunks[1], app),
         Screen::Confirm => confirm_body(f, chunks[1], app),
@@ -208,8 +222,8 @@ fn draw(f: &mut Frame, app: &App) {
     footer(f, chunks[2], app);
 }
 
-fn title(f: &mut Frame, area: Rect) {
-    let line = Line::from(vec![
+fn title(f: &mut Frame, area: Rect, app: &App) {
+    let mut lines = vec![Line::from(vec![
         Span::styled(
             "  THE BOX ",
             Style::default()
@@ -221,9 +235,15 @@ fn title(f: &mut Frame, area: Rect) {
             "  Set up storage",
             Style::default().fg(BRASS).add_modifier(Modifier::BOLD),
         ),
-    ]);
+    ])];
+    if let Some(hint) = &app.browser_hint {
+        lines.push(Line::styled(
+            format!("  {hint}"),
+            Style::default().fg(IRON),
+        ));
+    }
     f.render_widget(
-        Paragraph::new(line).block(
+        Paragraph::new(lines).block(
             Block::default()
                 .borders(Borders::BOTTOM)
                 .border_style(Style::default().fg(DIM)),
