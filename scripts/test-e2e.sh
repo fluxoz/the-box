@@ -151,6 +151,14 @@ else
     -H "authorization: Bearer $API2")"
   assert_contains "$CONN" "connect.thebox.build" "connect provision returns the coordinator"
   assert_contains "$CONN" "mock-authkey-bob" "connect provision returns an account-scoped key"
+  # Fleet: the minted key is tagged (one ACL policy governs the whole fleet).
+  assert_contains "$CONN" "tag:box" "connect key carries the fleet tag"
+
+  # The fleet ACL policy prints and parses (HuJSON -> strip // -> JSON).
+  POLICY="$("$BOX_CLOUD" --data "$CDATA" fleet-policy | grep -v '^\s*//')"
+  echo "$POLICY" | python3 -c 'import sys,json; d=json.load(sys.stdin); assert d["tagOwners"]["tag:box"]' \
+    && ok "fleet-policy emits valid JSON owning tag:box" \
+    || bad "fleet-policy did not emit valid tag:box policy"
 fi
 
 # --- summary -----------------------------------------------------------------
