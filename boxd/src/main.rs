@@ -93,6 +93,11 @@ enum Command {
         #[command(subcommand)]
         action: BackupCmd,
     },
+    /// Managed cloud services (optional, paid): link this Box to a cloud account.
+    Cloud {
+        #[command(subcommand)]
+        action: CloudCmd,
+    },
     /// Serve the browser install wizard inside the installer (pre-pairing, no
     /// auth). On commit it writes orders + a disko config for box-install to
     /// act on, and serves install progress read from --progress.
@@ -174,6 +179,22 @@ enum BackupCmd {
     },
     /// Verify repository integrity.
     Check,
+}
+
+#[derive(Subcommand)]
+enum CloudCmd {
+    /// Link this Box to a cloud account and turn on managed backup.
+    Enroll {
+        #[arg(long)]
+        server: String,
+        /// One-time enrollment token from your cloud account.
+        #[arg(long)]
+        token: String,
+    },
+    /// Re-fetch managed storage credentials (rotation / repair).
+    Provision,
+    /// Show managed backup usage.
+    Status,
 }
 
 #[derive(Subcommand)]
@@ -303,6 +324,24 @@ fn main() -> Result<()> {
         Command::Channel { action } => run_channel(&paths, action),
         Command::Auth { action } => run_auth(&paths, action),
         Command::Backup { action } => run_backup(&paths, action),
+        Command::Cloud { action } => match action {
+            CloudCmd::Enroll { server, token } => {
+                boxd::cloud::enroll(&paths, &server, &token)?;
+                println!("enrolled — managed backup is on. Reveal your recovery key with `boxd backup` in the dashboard.");
+                Ok(())
+            }
+            CloudCmd::Provision => {
+                boxd::cloud::provision(&paths)?;
+                println!("managed storage refreshed");
+                Ok(())
+            }
+            CloudCmd::Status => {
+                let u = boxd::cloud::usage(&paths)?;
+                let bytes = u.get("bytes").and_then(|v| v.as_u64()).unwrap_or(0);
+                println!("managed backup: {:.2} MiB stored", bytes as f64 / 1_048_576.0);
+                Ok(())
+            }
+        },
         Command::InstallWizard {
             listen,
             orders_out,
