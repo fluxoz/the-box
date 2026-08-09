@@ -310,3 +310,151 @@ pub fn status(paths: &Paths, bc: &BackupConfig) -> Status {
         },
     }
 }
+
+#[cfg(test)]
+mod tests {
+    //! Pure-logic tests for the two things that decide *where* bytes land and
+    //! *when* a backup runs — no restic, no network. A wrong repo URL silently
+    //! writes to the wrong place (or a plain-HTTP endpoint fails), and a wrong
+    //! due-check either skips backups or hammers the backend.
+    use super::*;
+    use crate::config::Retention;
+
+    fn backend(kind: &str) -> BackendConfig {
+        BackendConfig {
+            kind: kind.into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn repo_url_local() {
+        let mut b = backend("local");
+        b.path = Some("/srv/backups".into());
+        assert_eq!(repo_url(&b).unwrap(), "/srv/backups");
+    }
+
+    #[test]
+    fn repo_url_s3_keeps_endpoint_scheme_verbatim() {
+        // Backblaze-style HTTPS host: no scheme -> restic uses TLS.
+        let mut b = backend("s3");
+        b.endpoint = Some("s3.us-west-002.backblazeb2.com".into());
+        b.bucket = Some("mybucket".into());
+        assert_eq!(
+            repo_url(&b).unwrap(),
+            "s3:s3.us-west-002.backblazeb2.com/mybucket"
+        );
+
+        // Plain-HTTP MinIO/rclone: the http:// scheme MUST survive, or restic
+        // tries TLS against a plaintext port. This is the regression we fixed.
+        let mut b = backend("s3");
+        b.endpoint = Some("http://127.0.0.1:9000".into());
+        b.bucket = Some("box-backups".into());
+        b.prefix = Some("acct-alice".into());
+        assert_eq!(
+            repo_url(&b).unwrap(),
+            "s3:http://127.0.0.1:9000/box-backups/acct-alice"
+        );
+    }
+
+    #[test]
+    fn repo_url_s3_empty_prefix_omitted() {
+        let mut b = backend("s3");
+        b.endpoint = Some("host".into());
+        b.bucket = Some("bkt".into());
+        b.prefix = Some(String::new()); // empty -> no trailing slash
+        assert_eq!(repo_url(&b).unwrap(), "s3:host/bkt");
+    }
+
+    #[test]
+    fn repo_url_sftp_and_rest() {
+        let mut b = backend("sftp");
+        b.user = Some("box".into());
+        b.host = Some("nas.local".into());
+        b.path = Some("/backups/box".into());
+        assert_eq!(repo_url(&b).unwrap(), "sftp:box@nas.local:/backups/box");
+
+        let mut b = backend("rest");
+        b.url = Some("rest:https://user:pass@rest.example/box".into());
+        assert_eq!(repo_url(&b).unwrap(), "rest:https://user:pass@rest.example/box");
+    }
+
+    #[test]
+    fn repo_url_reports_missing_fields_and_unknown_kind() {
+        // s3 without an endpoint names the missing field and the backend.
+        let e = repo_url(&backend("s3")).unwrap_err().to_string();
+        assert!(e.contains("s3") && e.contains("endpoint"), "got: {e}");
+        // Unknown kind is rejected, not silently treated as local.
+        let e = repo_url(&backend("dropbox")).unwrap_err().to_string();
+        assert!(e.contains("dropbox"), "got: {e}");
+    }
+
+    fn bc(enabled: bool, schedule: &str) -> BackupConfig {
+        BackupConfig {
+            enabled,
+            schedule: schedule.into(),
+            retention: Retention::default(),
+            backend: backend("local"),
+            extra_paths: vec![],
+        }
+    }
+
+    fn snap_at(time: &str) -> Snapshot {
+        Snapshot {
+            id: "x".into(),
+            time: time.into(),
+            paths: vec![],
+            tags: vec![],
+        }
+    }
+
+    #[test]
+    fn is_due_respects_enabled_flag() {
+        assert!(!is_due(&bc(false, "daily"), None), "disabled -> never due");
+    }
+
+    #[test]
+    fn is_due_true_when_never_backed_up() {
+        assert!(is_due(&bc(true, "daily"), None));
+    }
+
+    #[test]
+    fn is_due_by_schedule_interval() {
+        let long_ago = "2000-01-01T00:00:00Z";
+        let now = chrono::Utc::now().to_rfc3339();
+        // Daily: an old snapshot is due, a fresh one is not.
+        assert!(is_due(&bc(true, "daily"), Some(&snap_at(long_ago))));
+        assert!(!is_due(&bc(true, "daily"), Some(&snap_at(&now))));
+
+        // Hourly is due after >1h; use a snapshot ~2h old.
+        let two_h_ago = (chrono::Utc::now() - chrono::Duration::hours(2)).to_rfc3339();
+        assert!(is_due(&bc(true, "hourly"), Some(&snap_at(&two_h_ago))));
+        // ...but the same 2h-old snapshot is NOT yet due on a weekly schedule.
+        assert!(!is_due(&bc(true, "weekly"), Some(&snap_at(&two_h_ago))));
+    }
+
+    #[test]
+    fn backup_paths_are_manifest_derived_and_pruned_to_existing() {
+        let dir = tempfile::tempdir().unwrap();
+        let data = dir.path().join("data");
+        std::fs::create_dir_all(&data).unwrap();
+        let extra_present = dir.path().join("present");
+        std::fs::create_dir_all(&extra_present).unwrap();
+
+        let paths = Paths::new(data.clone());
+        let config = BoxConfig::default(); // no services
+        let mut b = bc(true, "daily");
+        b.extra_paths = vec![
+            extra_present.display().to_string(),
+            "/nonexistent/definitely/not/here".into(), // dropped
+        ];
+
+        let got = backup_paths(&paths, &config, &b);
+        assert!(got.contains(&data), "always backs up the data dir");
+        assert!(got.contains(&extra_present), "includes existing extras");
+        assert!(
+            !got.iter().any(|p| p.to_string_lossy().contains("nonexistent")),
+            "drops paths that don't exist yet"
+        );
+    }
+}
