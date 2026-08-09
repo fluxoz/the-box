@@ -528,9 +528,12 @@ footer.foot b { color: var(--dim); }
       <section class="mod">
         <div class="h"><span class="num">05</span><span class="ttl">Target Disk</span><span class="hint">what gets erased</span></div>
         <div class="b">
-          <div class="seg" role="radiogroup" aria-label="Disk mode">
+          <div class="seg" role="radiogroup" aria-label="Disk layout">
             <label><input type="radio" name="diskmode" value="auto" checked><span>Auto</span></label>
-            <label><input type="radio" name="diskmode" value="custom"><span>Specify device</span></label>
+            <label><input type="radio" name="diskmode" value="mirror"><span>Mirror</span></label>
+            <label><input type="radio" name="diskmode" value="pool"><span>Pool</span></label>
+            <label><input type="radio" name="diskmode" value="custom"><span>Device</span></label>
+            <label><input type="radio" name="diskmode" value="onbox"><span>Decide on box</span></label>
           </div>
           <p class="field-note" id="disk-auto-note">Picks the largest internal (non-removable) disk. USB sticks are never touched — so the installer stick itself is safe.</p>
           <div id="disk-custom" class="collapse">
@@ -694,11 +697,20 @@ footer.foot b { color: var(--dim); }
     render();
   }));
   // disk
+  const DISK_NOTES = {
+    auto: "Picks the largest internal (non-removable) disk. USB sticks are never touched — so the installer stick itself is safe.",
+    mirror: "Keeps a live copy across two matched internal disks — one disk can fail without losing data. Refuses if there aren't two similar disks.",
+    pool: "Combines every internal disk into one big volume. No redundancy — if any one disk fails, all data is lost.",
+    custom: "Install onto one specific disk.",
+    onbox: "Leave storage undecided. You'll pick the layout on the box itself — at the screen or in a browser — with the real disks in front of you. Everything else (name, Wi-Fi, keys) still rides along."
+  };
   $$("input[name=diskmode]").forEach(r => r.addEventListener("change", () => {
-    const custom = $("input[name=diskmode]:checked").value === "custom";
-    show($("#disk-custom"), custom);
-    $("#disk-auto-note").style.display = custom ? "none" : "";
-    if (custom) $("#diskpath").focus();
+    const mode = $("input[name=diskmode]:checked").value;
+    show($("#disk-custom"), mode === "custom");
+    const note = $("#disk-auto-note");
+    note.textContent = DISK_NOTES[mode] || DISK_NOTES.auto;
+    note.style.display = mode === "custom" ? "none" : "";
+    if (mode === "custom") $("#diskpath").focus();
     render();
   }));
   // advanced
@@ -827,9 +839,13 @@ footer.foot b { color: var(--dim); }
     const hostname = nameMode === "auto" ? "auto" : $("#hostname").value.trim();
     const cfg = { erase_disk: true };
 
-    // disk
+    // disk / storage layout
     const diskMode = $("input[name=diskmode]:checked").value;
-    cfg.disk = diskMode === "auto" ? "auto" : $("#diskpath").value.trim();
+    if (diskMode === "custom") cfg.disk = $("#diskpath").value.trim();
+    else if (diskMode === "mirror") cfg.storage = { layout: "mirror" };
+    else if (diskMode === "pool") cfg.storage = { layout: "pool" };
+    else if (diskMode === "onbox") cfg.storage = { layout: "ask" };
+    else cfg.disk = "auto";
 
     cfg.hostname = hostname || "auto";
 
@@ -912,7 +928,10 @@ footer.foot b { color: var(--dim); }
     setV($("#m-net"), cfg.wifi ? `Wi-Fi · ${cfg.wifi.ssid}` : "Ethernet · DHCP", !cfg.wifi);
     setV($("#m-access"), keys.length ? `${keys.length} key${keys.length>1?"s":""} · SSH` : "0 keys · console only", !keys.length);
     setV($("#m-expose"), cfg.cloudflare_tunnel_token ? "Public · Cloudflare Tunnel" : "Private · LAN", !cfg.cloudflare_tunnel_token);
-    setV($("#m-disk"), cfg.disk === "auto" ? "Auto · largest internal" : cfg.disk, cfg.disk === "auto");
+    const diskLabel = cfg.storage
+      ? ({ mirror: "Mirror · RAID1", pool: "Pool · spanned", ask: "Decide on the box" }[cfg.storage.layout] || cfg.storage.layout)
+      : (cfg.disk === "auto" ? "Auto · largest internal" : cfg.disk);
+    setV($("#m-disk"), diskLabel, !cfg.storage && cfg.disk === "auto");
     setV($("#m-finish"), (cfg.finish === "poweroff" ? "Power off" : "Reboot") + (cfg.force ? " · force" : ""), false);
 
     // json view

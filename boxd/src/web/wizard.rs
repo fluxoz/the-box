@@ -15,6 +15,7 @@ use std::sync::Arc;
 
 use axum::{
     extract::State,
+    http::{HeaderMap, StatusCode},
     response::Html,
     routing::{get, post},
     Json, Router,
@@ -38,9 +39,47 @@ pub struct WizardCfg {
     pub progress: PathBuf,
     /// Touched by the installer at BOX INSTALL COMPLETE.
     pub done: PathBuf,
+    /// Base orders (name/wifi/key/pairing) when the operator deferred only the
+    /// storage choice — used unless the browser pastes its own setup code.
+    pub base_orders: Option<PathBuf>,
+    /// Setup PIN shown on the box console; when set, /api/* require it. Guards
+    /// the (destructive) setup window on an otherwise-open blank box.
+    pub pin: Option<String>,
 }
 
 type St = State<Arc<WizardCfg>>;
+
+/// `Some(403)` when a PIN is required and the request didn't present it.
+fn pin_reject(cfg: &WizardCfg, headers: &HeaderMap) -> Option<(StatusCode, Json<Value>)> {
+    let pin = cfg.pin.as_deref()?;
+    let given = headers.get("x-setup-pin").and_then(|v| v.to_str().ok());
+    if given == Some(pin) {
+        None
+    } else {
+        Some((
+            StatusCode::FORBIDDEN,
+            Json(json!({ "ok": false, "error": "setup PIN required" })),
+        ))
+    }
+}
+
+/// The base config to merge a layout into: the browser's pasted code wins, else
+/// the installer-provided base orders, else nothing.
+fn base_config(cfg: &WizardCfg, body: &Value) -> Value {
+    if let Some(v) = body.get("base") {
+        if !v.is_null() {
+            return v.clone();
+        }
+    }
+    if let Some(path) = &cfg.base_orders {
+        if let Ok(text) = std::fs::read_to_string(path) {
+            if let Ok(v) = serde_json::from_str::<Value>(&text) {
+                return v;
+            }
+        }
+    }
+    Value::Null
+}
 
 pub fn router(cfg: WizardCfg) -> Router {
     Router::new()
@@ -65,29 +104,36 @@ pub fn run(cfg: WizardCfg, listen: SocketAddr) -> anyhow::Result<()> {
 
 // ---- endpoints ----------------------------------------------------------
 
-async fn probe_disks() -> Json<Value> {
-    match probe::probe() {
-        Ok(disks) => Json(json!({ "ok": true, "disks": disks })),
-        Err(e) => Json(json!({ "ok": false, "error": e.to_string() })),
+async fn probe_disks(State(cfg): St, headers: HeaderMap) -> (StatusCode, Json<Value>) {
+    if let Some(r) = pin_reject(&cfg, &headers) {
+        return r;
     }
+    let body = match probe::probe() {
+        Ok(disks) => json!({ "ok": true, "disks": disks }),
+        Err(e) => json!({ "ok": false, "error": e.to_string() }),
+    };
+    (StatusCode::OK, Json(body))
 }
 
-async fn plan(Json(body): Json<Value>) -> Json<Value> {
+async fn plan(State(cfg): St, headers: HeaderMap, Json(body): Json<Value>) -> (StatusCode, Json<Value>) {
+    if let Some(r) = pin_reject(&cfg, &headers) {
+        return r;
+    }
     let Some(kind) = body.get("layout").and_then(Value::as_str).and_then(LayoutKind::parse) else {
-        return Json(json!({ "ok": false, "error": "unknown layout" }));
+        return (StatusCode::OK, Json(json!({ "ok": false, "error": "unknown layout" })));
     };
     let disks = match probe::probe() {
         Ok(d) => d,
-        Err(e) => return Json(json!({ "ok": false, "error": e.to_string() })),
+        Err(e) => return (StatusCode::OK, Json(json!({ "ok": false, "error": e.to_string() }))),
     };
-    match resolve::resolve(&disks, kind, &ResolveOpts::default()) {
+    let body = match resolve::resolve(&disks, kind, &ResolveOpts::default()) {
         Ok(layout) => {
             let devices: Vec<Value> = layout
                 .devices
                 .iter()
                 .map(|d| json!({ "path": d.path, "size_gb": d.size_gb(), "model": d.model, "kind": d.kind() }))
                 .collect();
-            Json(json!({
+            json!({
                 "ok": true,
                 "layout": layout.kind.as_str(),
                 "label": layout.kind.label(),
@@ -96,34 +142,38 @@ async fn plan(Json(body): Json<Value>) -> Json<Value> {
                 "raid": layout.raid,
                 "devices": devices,
                 "warnings": layout.warnings,
-            }))
+            })
         }
-        Err(e) => Json(json!({ "ok": false, "error": e.to_string() })),
-    }
+        Err(e) => json!({ "ok": false, "error": e.to_string() }),
+    };
+    (StatusCode::OK, Json(body))
 }
 
-async fn commit(State(cfg): St, Json(body): Json<Value>) -> Json<Value> {
+async fn commit(State(cfg): St, headers: HeaderMap, Json(body): Json<Value>) -> (StatusCode, Json<Value>) {
+    if let Some(r) = pin_reject(&cfg, &headers) {
+        return r;
+    }
     let Some(kind) = body.get("layout").and_then(Value::as_str).and_then(LayoutKind::parse) else {
-        return Json(json!({ "ok": false, "error": "unknown layout" }));
+        return (StatusCode::OK, Json(json!({ "ok": false, "error": "unknown layout" })));
     };
     let disks = match probe::probe() {
         Ok(d) => d,
-        Err(e) => return Json(json!({ "ok": false, "error": e.to_string() })),
+        Err(e) => return (StatusCode::OK, Json(json!({ "ok": false, "error": e.to_string() }))),
     };
     let layout = match resolve::resolve(&disks, kind, &ResolveOpts::default()) {
         Ok(l) => l,
-        Err(e) => return Json(json!({ "ok": false, "error": e.to_string() })),
+        Err(e) => return (StatusCode::OK, Json(json!({ "ok": false, "error": e.to_string() }))),
     };
-    // The pasted Configurator handoff arrives already decoded (the browser does
-    // atob + JSON.parse), or null for a blank box configured entirely here.
-    let base = body.get("base").cloned().unwrap_or(Value::Null);
+    // The pasted setup code (browser, already decoded) wins; else the installer-
+    // provided base orders; else null for a blank box configured entirely here.
+    let base = base_config(&cfg, &body);
     let effective = orders::effective_orders(&base, &layout);
 
     if let Err(e) = write_commit(&cfg, &effective, &layout) {
-        return Json(json!({ "ok": false, "error": format!("{e:#}") }));
+        return (StatusCode::OK, Json(json!({ "ok": false, "error": format!("{e:#}") })));
     }
     let host = effective.get("hostname").and_then(Value::as_str).unwrap_or("box");
-    Json(json!({ "ok": true, "hostname": host }))
+    (StatusCode::OK, Json(json!({ "ok": true, "hostname": host })))
 }
 
 fn write_commit(cfg: &WizardCfg, effective: &Value, layout: &box_core::ResolvedLayout) -> anyhow::Result<()> {
@@ -134,11 +184,14 @@ fn write_commit(cfg: &WizardCfg, effective: &Value, layout: &box_core::ResolvedL
     Ok(())
 }
 
-async fn status(State(cfg): St) -> Json<Value> {
+async fn status(State(cfg): St, headers: HeaderMap) -> (StatusCode, Json<Value>) {
+    if let Some(r) = pin_reject(&cfg, &headers) {
+        return r;
+    }
     let committed = cfg.commit_flag.exists();
     let done = cfg.done.exists();
     let log = tail(&cfg.progress, 6000);
-    Json(json!({ "committed": committed, "done": done, "log": log }))
+    (StatusCode::OK, Json(json!({ "committed": committed, "done": done, "log": log })))
 }
 
 /// Last `max` bytes of a file (best-effort), trimmed to whole lines.
@@ -178,9 +231,18 @@ async fn index() -> Html<String> {
                     span.brand { span.mark { "THE " b { "BOX" } } span.sub { "Set up storage" } }
                 }
                 main.wiz {
+                    section.card #pincard {
+                        h2 { "Setup PIN" }
+                        p.muted { "Enter the PIN shown on this box's screen, then Continue. If no PIN is shown, just click Continue." }
+                        div.eraserow {
+                            input #pin type="text" autocomplete="off" spellcheck="false" placeholder="PIN";
+                            button #pincont type="button" { "Continue" }
+                        }
+                        div #pinnote .codenote {}
+                    }
                     section.card {
                         h2 { "1 · This machine's disks" }
-                        div #disks .disks { p.muted { "Detecting disks…" } }
+                        div #disks .disks { p.muted { "Enter the setup PIN above to begin." } }
                     }
                     section.card {
                         h2 { "2 · Choose a layout" }
@@ -261,12 +323,18 @@ main.wiz{max-width:760px;margin:1.4rem auto;padding:0 1rem;display:flex;flex-dir
 const WIZ_JS: &str = r#"
 const $=s=>document.querySelector(s);
 const layout=()=>document.querySelector('input[name=layout]:checked').value;
+const pin=()=>$('#pin').value.trim();
+const H=()=>({'content-type':'application/json','X-Setup-Pin':pin()});
+const HG=()=>({'X-Setup-Pin':pin()});
 let planOk=false;
 
 async function loadDisks(){
+  const el=$('#disks'); const note=$('#pinnote');
   try{
-    const r=await (await fetch('/api/probe')).json();
-    const el=$('#disks');
+    const res=await fetch('/api/probe',{headers:HG()});
+    if(res.status===403){note.className='codenote bad';note.textContent='Setup PIN required or incorrect.';el.innerHTML='<p class="muted">Enter the setup PIN above to begin.</p>';return;}
+    note.className='codenote';note.textContent='';
+    const r=await res.json();
     if(!r.ok){el.innerHTML='<p class="warn">'+r.error+'</p>';return;}
     if(!r.disks.length){el.innerHTML='<p class="muted">No disks detected.</p>';return;}
     el.innerHTML=r.disks.map(d=>{
@@ -282,7 +350,7 @@ async function loadDisks(){
 async function plan(){
   const v=$('#verdict');
   try{
-    const r=await (await fetch('/api/plan',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({layout:layout()})})).json();
+    const r=await (await fetch('/api/plan',{method:'POST',headers:H(),body:JSON.stringify({layout:layout()})})).json();
     document.querySelectorAll('.disk').forEach(d=>d.classList.remove('pick'));
     if(!r.ok){planOk=false;v.className='verdict bad';v.innerHTML='<b>Not possible on this machine:</b><br>'+r.error;sync();return;}
     planOk=true;v.className='verdict';
@@ -318,7 +386,7 @@ function sync(){
 async function go(){
   const code=pendingBase(); if(!code.ok)return;
   $('#go').disabled=true;
-  const r=await (await fetch('/api/commit',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({layout:layout(),base:code.base})})).json();
+  const r=await (await fetch('/api/commit',{method:'POST',headers:H(),body:JSON.stringify({layout:layout(),base:code.base})})).json();
   if(!r.ok){$('#verdict').className='verdict bad';$('#verdict').innerHTML='<b>Could not start:</b><br>'+r.error;$('#go').disabled=false;return;}
   document.querySelectorAll('.card').forEach(c=>{ if(c.id!=='progress')c.classList.add('hidden'); });
   $('#progress').classList.remove('hidden');
@@ -328,7 +396,7 @@ async function go(){
 
 async function poll(){
   try{
-    const s=await (await fetch('/api/status')).json();
+    const s=await (await fetch('/api/status',{headers:HG()})).json();
     if(s.log)$('#log').textContent=s.log;
     $('#log').scrollTop=$('#log').scrollHeight;
     if(s.done){$('#progress-title').textContent='Installed — the box is rebooting into Box OS.';return;}
@@ -340,5 +408,7 @@ document.querySelectorAll('input[name=layout]').forEach(r=>r.addEventListener('c
 $('#erase').addEventListener('input',sync);
 $('#code').addEventListener('input',sync);
 $('#go').addEventListener('click',go);
+$('#pincont').addEventListener('click',loadDisks);
+$('#pin').addEventListener('keydown',e=>{ if(e.key==='Enter')loadDisks(); });
 loadDisks();
 "#;
