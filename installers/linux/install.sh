@@ -17,7 +17,12 @@
 # straight into the installer — no USB, no reboot menu.
 set -eu
 
-BASE="${BOX_BASE:-https://thebox.build}"       # where the netboot artifacts live
+BASE="${BOX_BASE:-https://thebox.build}"       # where this script + landing live
+# Where the heavy netboot artifacts live. Stamped in at publish time (e.g. a
+# GitHub Release), so thebox.build itself only serves the small script. Falls
+# back to $BASE/netboot when unstamped (a single all-in-one host).
+NETBOOT_BASE="${BOX_NETBOOT_BASE:-@NETBOOT_BASE@}"
+case "$NETBOOT_BASE" in *@*) NETBOOT_BASE="$BASE/netboot" ;; esac
 # tmpfs with room for the (large) netboot initrd; orders never touch a disk.
 WORK="${BOX_WORK:-/dev/shm/box-install}"
 
@@ -74,10 +79,10 @@ if [ "${BOX_YES:-}" != "1" ]; then
 fi
 
 mkdir -p "$WORK"
-say "fetching the Box installer (kernel + initrd) from $BASE ..."
-curl -fsSL "$BASE/netboot/bzImage"      -o "$WORK/bzImage"      || die "could not fetch the kernel from $BASE/netboot/."
-curl -fsSL "$BASE/netboot/initrd"       -o "$WORK/initrd"       || die "could not fetch the initrd."
-curl -fsSL "$BASE/netboot/netboot.ipxe" -o "$WORK/netboot.ipxe" || die "could not fetch boot parameters."
+say "fetching the Box installer (kernel + initrd) from $NETBOOT_BASE ..."
+curl -fsSL "$NETBOOT_BASE/bzImage"      -o "$WORK/bzImage"      || die "could not fetch the kernel from $NETBOOT_BASE."
+curl -fsSL "$NETBOOT_BASE/initrd"       -o "$WORK/initrd"       || die "could not fetch the initrd."
+curl -fsSL "$NETBOOT_BASE/netboot.ipxe" -o "$WORK/netboot.ipxe" || die "could not fetch boot parameters."
 
 # Verify the kernel + initrd against the hashes baked into this script before we
 # ever kexec into them. (netboot.ipxe only carries boot params, checked below.)
