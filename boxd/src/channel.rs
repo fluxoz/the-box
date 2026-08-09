@@ -24,7 +24,7 @@ use crate::paths::Paths;
 
 /// Our platform channel. A box overrides this in channel.toml to track a fork,
 /// a mirror, or a pinned revision.
-pub const DEFAULT_PLATFORM_REF: &str = "github:coyote-technology/the-box";
+pub const DEFAULT_PLATFORM_REF: &str = "github:fluxoz/the-box";
 
 fn default_platform_ref() -> String {
     DEFAULT_PLATFORM_REF.to_string()
