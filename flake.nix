@@ -24,6 +24,21 @@
         ];
       };
 
+      # The platform binary cache the trimmed installer (and installed boxes,
+      # for updates) pull the Box OS closure from, so it isn't compiled or
+      # embedded. Create it at cachix.org and paste its public key here + set
+      # CACHIX_AUTH_TOKEN in CI (see docs/publish.md). The placeholder key
+      # builds fine; a real install/update needs the true key.
+      boxCache = {
+        substituters = [ "https://fluxoz.cachix.org" ];
+        trustedPublicKeys = [ "fluxoz.cachix.org-1:REPLACE_WITH_CACHIX_PUBLIC_KEY=" ];
+      };
+      # True once a real key is pasted above; gates both the initrd trim and the
+      # installed box's update substituter, so nothing references a cache that
+      # isn't stood up yet.
+      cacheReady = !(nixpkgs.lib.any
+        (nixpkgs.lib.hasInfix "REPLACE_WITH_CACHIX_PUBLIC_KEY") boxCache.trustedPublicKeys);
+
       # The appliance system: one generic closure for every machine;
       # per-machine details arrive via the installer handoff file.
       boxOs = nixpkgs.lib.nixosSystem {
@@ -60,6 +75,7 @@
           diskoPkg = disko.packages.x86_64-linux.disko;
           boxInstaller = self.packages.x86_64-linux.box-installer;
           boxDaemon = self.packages.x86_64-linux.boxd;
+          inherit boxCache;
           nixpkgsSrc = nixpkgs;
         };
         modules = [
@@ -244,6 +260,12 @@
         imports = [ ./nix/module.nix ];
         services.the-box.package =
           lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.boxd;
+        # So a channel update downloads the prebuilt platform closure from the
+        # cache instead of compiling it on the box. Empty until a real key is set.
+        services.the-box.platform.substituters =
+          lib.mkDefault (lib.optionals cacheReady boxCache.substituters);
+        services.the-box.platform.trustedPublicKeys =
+          lib.mkDefault (lib.optionals cacheReady boxCache.trustedPublicKeys);
       };
 
       # The platform layer a per-box config composes on: the Box software
