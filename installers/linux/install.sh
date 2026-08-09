@@ -23,8 +23,12 @@ BASE="${BOX_BASE:-https://thebox.build}"       # where this script + landing liv
 # back to $BASE/netboot when unstamped (a single all-in-one host).
 NETBOOT_BASE="${BOX_NETBOOT_BASE:-@NETBOOT_BASE@}"
 case "$NETBOOT_BASE" in *@*) NETBOOT_BASE="$BASE/netboot" ;; esac
-# tmpfs with room for the (large) netboot initrd; orders never touch a disk.
-WORK="${BOX_WORK:-/dev/shm/box-install}"
+# Stage the (large) netboot artifacts on DISK, not tmpfs: kexec reserves memory
+# to load the ~1.4 GB initrd, so a tmpfs copy on top of that OOMs small boxes
+# (a 2-4 GB VPS). This disk is about to be wiped anyway; the secret orders still
+# never touch it (they stay in RAM and ride the kexec command line).
+WORK="${BOX_WORK:-/var/tmp/box-install}"
+ORDERS_RAM="/dev/shm/box-orders.json"          # tiny, RAM-only
 
 # Expected checksums of the netboot artifacts, stamped in when thebox.build
 # publishes this script (see the `site` build). Left as placeholders in the
@@ -50,11 +54,12 @@ done
 
 mkdir -p "$WORK"
 # Orders come from the Configurator: either encoded in the pasted command
-# (BOX_ORDERS_B64 — the normal path, no file to move) or a local file.
+# (BOX_ORDERS_B64 — the normal path, no file to move) or a local file. They hold
+# secrets, so keep them in RAM (never on the disk we stage artifacts to).
 if [ -n "${BOX_ORDERS_B64:-}" ]; then
-  printf '%s' "$BOX_ORDERS_B64" | base64 -d > "$WORK/box-install.json" 2>/dev/null \
+  printf '%s' "$BOX_ORDERS_B64" | base64 -d > "$ORDERS_RAM" 2>/dev/null \
     || die "could not decode the orders embedded in the command (BOX_ORDERS_B64)."
-  ORDERS="$WORK/box-install.json"
+  ORDERS="$ORDERS_RAM"
 else
   ORDERS="${BOX_ORDERS:-box-install.json}"
   [ -f "$ORDERS" ] || die "no orders. Paste the command from the Configurator (it embeds them), or place box-install.json here."
@@ -107,5 +112,8 @@ params=$(grep '^kernel' "$WORK/netboot.ipxe" \
 say "handing off to the Box installer via kexec — the machine will now wipe and install."
 say "it will come back up at ${name:-box}.local in a few minutes."
 kexec -l "$WORK/bzImage" --initrd="$WORK/initrd" --command-line="$params box.install-b64=$orders_b64"
+# kexec has loaded both into reserved memory — free the staging copies so the
+# peak footprint is just that reservation (helps small boxes clear the jump).
+rm -f "$WORK/bzImage" "$WORK/initrd"
 sync
 kexec -e
