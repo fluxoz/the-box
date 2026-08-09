@@ -48,8 +48,23 @@ verify_sha() { # <file> <expected-hash>
 }
 
 [ "$(id -u)" = 0 ] || die "run as root: pipe into 'sudo sh'."
-for c in kexec curl base64 sha256sum; do
-  command -v "$c" >/dev/null 2>&1 || die "$c not found (kexec needs kexec-tools; the rest are usually present)."
+
+# kexec is the one thing stock distros usually lack — install it for them.
+ensure_kexec() {
+  command -v kexec >/dev/null 2>&1 && return 0
+  say "kexec not found — installing kexec-tools ..."
+  if   command -v apt-get >/dev/null 2>&1; then DEBIAN_FRONTEND=noninteractive apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq kexec-tools
+  elif command -v dnf     >/dev/null 2>&1; then dnf install -y -q kexec-tools
+  elif command -v yum     >/dev/null 2>&1; then yum install -y -q kexec-tools
+  elif command -v zypper  >/dev/null 2>&1; then zypper -n install kexec-tools
+  elif command -v pacman  >/dev/null 2>&1; then pacman -Sy --noconfirm kexec-tools
+  elif command -v apk     >/dev/null 2>&1; then apk add kexec-tools
+  else return 1; fi
+  command -v kexec >/dev/null 2>&1
+}
+ensure_kexec || die "could not find or install kexec (needs kexec-tools). Install it and re-run."
+for c in curl base64 sha256sum; do
+  command -v "$c" >/dev/null 2>&1 || die "$c not found — it is usually preinstalled."
 done
 
 mkdir -p "$WORK"
