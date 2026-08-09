@@ -16,7 +16,17 @@ pub fn render(layout: &ResolvedLayout) -> String {
         .collect();
     match layout.kind {
         LayoutKind::Single => single(devs[0]),
-        LayoutKind::Mirror => mirror(&devs),
+        LayoutKind::Mirror => {
+            // Every RAID1 member must be the SAME size or mdadm prompts (and, in
+            // a non-interactive install, aborts). Size all members explicitly to
+            // the smallest disk minus the ESP and a GPT/alignment margin, so a
+            // few-percent disk-size difference never trips mdadm's 1% check.
+            const ESP_MIB: u64 = 1024; // matches the 1G ESP below
+            const MARGIN_MIB: u64 = 128;
+            let min_bytes = layout.devices.iter().map(|d| d.size_bytes).min().unwrap_or(0);
+            let raid_mib = (min_bytes / (1024 * 1024)).saturating_sub(ESP_MIB + MARGIN_MIB);
+            mirror(&devs, raid_mib)
+        }
         LayoutKind::Pool => pool(&devs),
     }
 }
@@ -68,11 +78,14 @@ fn single(dev: &str) -> String {
 /// RAID1 across the disks (mdadm), ext4 root on the array. The first disk
 /// carries the ESP; every disk contributes its remaining space to the array,
 /// so a single disk failure never loses data.
-fn mirror(devs: &[&str]) -> String {
-    let raid_part = r#"raid = {
-            size = "100%";
-            content = { type = "mdraid"; name = "boxroot"; };
-          };"#;
+fn mirror(devs: &[&str], raid_mib: u64) -> String {
+    let raid_part = format!(
+        r#"raid = {{
+            size = "{raid_mib}M";
+            content = {{ type = "mdraid"; name = "boxroot"; }};
+          }};"#
+    );
+    let raid_part = raid_part.as_str();
 
     let mut disk_entries = String::new();
     for (i, dev) in devs.iter().enumerate() {
@@ -229,6 +242,10 @@ mod tests {
         assert!(nix.contains(r#"device = "/dev/disk/by-id/nvme-b""#));
         // exactly one ESP (on the first disk)
         assert_eq!(nix.matches("BOX-ESP").count(), 1);
+        // both disks contribute an equal-sized raid member (no 100%, so mdadm
+        // never sees a size mismatch and never prompts)
+        assert_eq!(nix.matches(r#"type = "mdraid""#).count(), 2);
+        assert!(!nix.contains(r#"size = "100%""#));
     }
 
     #[test]

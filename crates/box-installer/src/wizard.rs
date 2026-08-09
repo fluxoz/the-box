@@ -103,7 +103,7 @@ fn event_loop(terminal: &mut DefaultTerminal, app: &mut App) -> Result<Outcome> 
     // Auto-cancel if nobody ever responds — a headless boot that reached the
     // wizard with no orders must neither hang nor be wiped. The clock stops the
     // moment an operator touches a key.
-    const IDLE_LIMIT: u32 = 120;
+    const IDLE_LIMIT: u32 = 300;
     let mut seen_input = false;
     let mut idle: u32 = 0;
 
