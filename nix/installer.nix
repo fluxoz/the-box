@@ -1,14 +1,22 @@
-# The Box automated installer: boots entirely into RAM, finds a handoff file
-# (its consent + configuration), wipes the chosen disk with disko and installs
-# the embedded Box OS closure fully offline, then reboots into Box OS.
+# The Box automated installer: boots entirely into RAM, obtains its orders
+# (consent + configuration) and a storage layout, wipes the chosen disk(s) with
+# disko and installs the embedded Box OS closure fully offline, then reboots.
+#
+# Two doors, one binary:
+#   * orders present  -> box-installer resolves their storage policy (single /
+#     mirror / pool) to a disko config; install proceeds unattended.
+#   * no orders        -> box-installer runs the console wizard so an operator at
+#     the screen picks a layout; if nobody responds it refuses and touches
+#     nothing.
 #
 # The same module backs the ISO/USB image, the PXE netboot image, and the
-# Windows-staged install — only the delivery of kernel/initrd/handoff differs.
-{ config, lib, pkgs, modulesPath, boxSystem, diskoPkg, nixpkgsSrc, ... }:
+# Windows-staged install — only the delivery of kernel/initrd/orders differs.
+{ config, lib, pkgs, modulesPath, boxSystem, diskoPkg, boxInstaller, nixpkgsSrc, ... }:
 let
   installScript = pkgs.writeShellApplication {
     name = "box-install";
     runtimeInputs = [
+      boxInstaller
       diskoPkg
       pkgs.coreutils
       pkgs.curl
@@ -21,10 +29,12 @@ let
     text = ''
       log() { echo "[box-install] $*"; }
 
-      # ---- 1. Locate the handoff file (consent + config) -------------------
-      # The handoff is always copied to RAM before anything touches a disk:
-      # in the staged-from-Windows flow it lives on the very disk being wiped.
+      # ---- 1. Locate the orders (consent + config) ------------------------
+      # Orders are always copied to RAM before anything touches a disk; in the
+      # staged-from-Windows flow they live on the very disk being wiped.
       handoff=""
+      diskocfg=""
+
       # Orders passed on the kernel command line (the curl|sh takeover): base64,
       # RAM-only, and survives the initramfs -> installer switch-root (files
       # injected into the initramfs do NOT — NixOS drops them at switch-root).
@@ -39,7 +49,7 @@ let
       fi
       url=$(tr ' ' '\n' < /proc/cmdline | sed -n 's/^box\.install-url=//p' | head -n1)
       if [ -z "$handoff" ] && [ -n "$url" ]; then
-        log "fetching handoff from $url"
+        log "fetching orders from $url"
         if curl -fsSL "$url" -o /tmp/box-install.json; then
           handoff=/tmp/box-install.json
         else
@@ -55,15 +65,15 @@ let
         fi
         umount /run/box-handoff || true
       fi
-      # Staged installs (e.g. launched from Windows): scan every partition
-      # for box-installer/box-install.json.
+      # Staged installs (e.g. launched from Windows): scan every partition for
+      # box-installer/box-install.json.
       if [ -z "$handoff" ] && grep -q 'box\.install-scan' /proc/cmdline; then
         mkdir -p /run/box-scan
         while read -r name type; do
           if [ "$type" != "part" ]; then continue; fi
           if mount -o ro "/dev/$name" /run/box-scan 2>/dev/null; then
             if [ -f /run/box-scan/box-installer/box-install.json ]; then
-              log "found staged handoff on /dev/$name"
+              log "found staged orders on /dev/$name"
               cp /run/box-scan/box-installer/box-install.json /tmp/box-install.json
               handoff=/tmp/box-install.json
             fi
@@ -72,70 +82,54 @@ let
           if [ -n "$handoff" ]; then break; fi
         done < <(lsblk -rno NAME,TYPE)
       fi
+
+      # ---- 2. No orders -> the console wizard (Door 2), else refuse --------
+      # The wizard writes its own effective orders + disko config. It exits
+      # non-zero if the operator cancels, or on its own if nobody responds
+      # within a couple of minutes (headless boot with no orders) — so an
+      # unattended machine that reached here by accident is never wiped.
       if [ -z "$handoff" ]; then
-        log "no handoff found (volume labeled BOX-INSTALL containing box-install.json,"
-        log "box.install-url=<http url>, or a staged box-installer/ directory)."
-        log "refusing to touch any disk. This machine is unchanged."
+        log "no orders found — starting the setup wizard (refusing if no operator responds)."
+        wtty=/dev/tty1; [ -c "$wtty" ] || wtty=/dev/console
+        if box-installer wizard \
+             --orders-out /tmp/box-install.json \
+             --disko-out /tmp/box-disko.nix <> "$wtty" >&0 2>&0; then
+          handoff=/tmp/box-install.json
+          diskocfg=/tmp/box-disko.nix
+        fi
+      fi
+      if [ -z "$handoff" ]; then
+        log "no orders (BOX-INSTALL volume, box.install-url=, box.install-b64=, staged dir)"
+        log "and no console setup completed. Refusing to touch any disk. Machine unchanged."
         exit 0
       fi
-      log "using handoff: $handoff"
-      jq . "$handoff" > /dev/null || { log "handoff is not valid JSON"; exit 1; }
+
+      log "using orders: $handoff"
+      jq . "$handoff" > /dev/null || { log "orders are not valid JSON"; exit 1; }
 
       erase=$(jq -r '.erase_disk // false' "$handoff")
       if [ "$erase" != "true" ]; then
-        log "handoff does not set \"erase_disk\": true — refusing to wipe anything."
+        log "orders do not set \"erase_disk\": true — refusing to wipe anything."
         exit 1
       fi
 
-      # ---- 2. Resolve the target disk --------------------------------------
-      choice=$(jq -r '.disk // "auto"' "$handoff")
-      min_gb=$(jq -r '.min_disk_gb // 8' "$handoff")
-
-      if [ "$choice" = "auto" ]; then
-        # Policy: largest internal (non-removable) disk of at least
-        # min_disk_gb. Removable media (USB installer sticks) are never
-        # candidates. Ambiguity is resolved toward the largest disk; pass an
-        # explicit /dev/disk/by-id/... in the handoff for precise control.
-        target=""
-        best=0
-        min_bytes=$((min_gb * 1024 * 1024 * 1024))
-        while read -r name size rm type; do
-          if [ "$type" != "disk" ] || [ "$rm" != "0" ]; then continue; fi
-          if [ "$size" -lt "$min_bytes" ]; then continue; fi
-          if [ "$size" -gt "$best" ]; then
-            best=$size
-            target="/dev/$name"
-          fi
-        done < <(lsblk -dnb -o NAME,SIZE,RM,TYPE)
-        if [ -z "$target" ]; then
-          log "auto disk selection found no eligible disk (internal, >= ''${min_gb}G)."
-          exit 1
-        fi
-      else
-        target=$(readlink -f "$choice")
-        if [ ! -b "$target" ]; then
-          log "requested disk $choice does not exist on this machine."
+      # ---- 3. Resolve the storage layout to a disko config ----------------
+      # (The wizard already produced one; the pre-baked-orders path resolves the
+      # storage policy — single / mirror / pool — against the real disks here.)
+      if [ -z "$diskocfg" ]; then
+        diskocfg=/tmp/box-disko.nix
+        if ! box-installer plan --orders "$handoff" --out "$diskocfg"; then
+          log "could not resolve a storage layout from the orders (see message above)."
           exit 1
         fi
       fi
-      log "target disk: $target ($(lsblk -dno SIZE "$target"))"
 
-      # ---- 3. Reinstall guard ----------------------------------------------
-      force=$(jq -r '.force // false' "$handoff")
-      if [ "$force" != "true" ] && lsblk -rno LABEL "$target" | grep -qx box-root; then
-        log "$target already contains a Box OS install; set \"force\": true to reinstall."
-        log "doing nothing."
-        exit 0
-      fi
-
-      # ---- 4. Partition + format via disko ---------------------------------
-      log "partitioning $target with disko (this ERASES the disk)"
-      echo "import /etc/box/disko-template.nix { device = \"$target\"; }" \
-        > /tmp/box-disko.nix
+      # ---- 4. Partition + format via disko --------------------------------
+      log "partitioning with disko (this ERASES the target disk(s))"
       disko --mode destroy,format,mount --yes-wipe-all-disks \
-        --root-mountpoint /mnt /tmp/box-disko.nix
+        --root-mountpoint /mnt "$diskocfg"
 
-      # ---- 5. Install the embedded Box OS closure (offline) ----------------
+      # ---- 5. Install the embedded Box OS closure (offline) ---------------
       system=$(cat /etc/box/system-store-path)
       log "installing Box OS from $system"
       mkdir -p /mnt/etc/box
@@ -143,7 +137,7 @@ let
       nixos-install --system "$system" --no-root-passwd --no-channel-copy
       log "BOX INSTALL COMPLETE"
 
-      # ---- 6. Finish --------------------------------------------------------
+      # ---- 6. Finish ------------------------------------------------------
       finish=$(jq -r '.finish // "reboot"' "$handoff")
       umount -R /mnt || true
       case "$finish" in
@@ -159,14 +153,18 @@ in
   # ttyS0 last = primary console, so installer progress is visible over serial.
   boot.kernelParams = [ "console=tty0" "console=ttyS0,115200" ];
 
-  # The Box OS closure rides inside the installer image so installation
-  # needs no network at all.
-  environment.etc."box/system-store-path".text = "${boxSystem}";
-  environment.etc."box/disko-template.nix".source = ./disko-template.nix;
-  environment.systemPackages = [ installScript diskoPkg pkgs.jq ];
+  # Free tty1 so the setup wizard owns the screen (Door 2). Serial stays the
+  # log/primary console; the wizard only appears where there's a monitor.
+  systemd.services."getty@tty1".enable = lib.mkForce false;
+  systemd.services."autovt@tty1".enable = lib.mkForce false;
 
-  # disko evaluates its config at runtime; bake nixpkgs in so that also
-  # works offline.
+  # The Box OS closure rides inside the installer image so installation needs
+  # no network at all.
+  environment.etc."box/system-store-path".text = "${boxSystem}";
+  environment.systemPackages = [ installScript boxInstaller diskoPkg pkgs.jq ];
+
+  # disko evaluates its config at runtime; bake nixpkgs in so that also works
+  # offline.
   nix.nixPath = [ "nixpkgs=${nixpkgsSrc}" ];
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
 

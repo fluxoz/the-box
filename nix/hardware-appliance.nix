@@ -29,8 +29,26 @@
     "virtio_pci"
     "virtio_scsi"
     "xhci_pci"
+    # Multi-disk layouts: assemble RAID (mirror) and map LVM (pool) in initrd.
+    "dm_mod"
+    "md_mod"
+    "raid0"
+    "raid1"
+    "raid10"
   ];
   hardware.enableRedistributableFirmware = true;
+
+  # One generic closure installs every layout the wizard/resolver can pick
+  # (single ext4, mirror = mdadm RAID1, pool = LVM linear), so the boot path
+  # must handle all three without knowing which was chosen. systemd in the
+  # initrd lets udev incrementally assemble md arrays and autoactivate LVM as
+  # devices appear; root is then found by its box-root label, exactly as the
+  # single-disk case. swraid pulls mdadm + its udev rules into the initrd.
+  boot.initrd.systemd.enable = true;
+  boot.swraid.enable = true;
+  # Appliance has no MTA; give mdadm a sink so the monitor can't crash for want
+  # of a mail address. Disk-failure signalling is surfaced through boxd health.
+  boot.swraid.mdadmConf = "MAILADDR root";
 
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
