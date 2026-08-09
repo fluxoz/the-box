@@ -147,7 +147,12 @@ enum BackupCmd {
     /// restore, and cannot be recovered.
     Init,
     /// Take a backup now.
-    Run,
+    Run {
+        /// Only run if enabled and the schedule interval has elapsed. The
+        /// systemd timer uses this; a manual `run` always backs up.
+        #[arg(long)]
+        if_due: bool,
+    },
     /// List snapshots.
     Snapshots,
     /// Show backup status (reachability, last snapshot).
@@ -335,13 +340,36 @@ fn run_backup(paths: &Paths, action: BackupCmd) -> Result<()> {
     }
 
     let config = boxd::config::BoxConfig::load(paths)?;
+
+    // The timer's `run --if-due` must be a quiet no-op when backup isn't set up.
+    if let BackupCmd::Run { if_due: true } = &action {
+        match &config.backup {
+            None => {
+                eprintln!("backup not configured — nothing to do");
+                return Ok(());
+            }
+            Some(bc) if !bc.enabled => {
+                eprintln!("backup disabled — nothing to do");
+                return Ok(());
+            }
+            _ => {}
+        }
+    }
+
     let bc = config.backup.clone().ok_or_else(|| {
         anyhow::anyhow!("no [backup] backend configured — add one to box.toml or the dashboard")
     })?;
 
     match action {
         BackupCmd::Init => unreachable!(),
-        BackupCmd::Run => {
+        BackupCmd::Run { if_due } => {
+            if if_due {
+                let st = backup::status(paths, &bc);
+                if !backup::is_due(&bc, st.last.as_ref()) {
+                    println!("backup not due yet");
+                    return Ok(());
+                }
+            }
             backup::run(paths, &config, &bc)?;
             println!("backup complete");
             Ok(())

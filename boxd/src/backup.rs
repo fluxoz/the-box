@@ -100,10 +100,10 @@ fn repo_url(b: &BackendConfig) -> Result<String> {
     Ok(match b.kind.as_str() {
         "local" => req(&b.path, "path")?,
         "s3" => {
+            // Keep the endpoint verbatim: restic infers TLS from it —
+            // "s3.us-west-002.backblazeb2.com" (https) vs "http://host:9000"
+            // (a plain-HTTP MinIO). Stripping the scheme breaks the latter.
             let ep = req(&b.endpoint, "endpoint")?;
-            let ep = ep
-                .trim_start_matches("https://")
-                .trim_start_matches("http://");
             let mut u = format!("s3:{ep}/{}", req(&b.bucket, "bucket")?);
             if let Some(prefix) = b.prefix.as_deref().filter(|p| !p.is_empty()) {
                 u.push('/');
@@ -255,6 +255,24 @@ pub struct Status {
     pub reachable: bool,
     pub count: usize,
     pub last: Option<Snapshot>,
+}
+
+/// Whether a scheduled backup should run now: enabled, and either no snapshot
+/// yet or the schedule interval has elapsed since the last one. Unknown/cron
+/// schedules fall back to daily (the heartbeat timer runs hourly regardless).
+pub fn is_due(bc: &BackupConfig, last: Option<&Snapshot>) -> bool {
+    if !bc.enabled {
+        return false;
+    }
+    let interval = match bc.schedule.as_str() {
+        "hourly" => chrono::Duration::hours(1),
+        "weekly" => chrono::Duration::weeks(1),
+        _ => chrono::Duration::days(1),
+    };
+    match last.and_then(|s| chrono::DateTime::parse_from_rfc3339(&s.time).ok()) {
+        None => true,
+        Some(t) => chrono::Utc::now().signed_duration_since(t.with_timezone(&chrono::Utc)) >= interval,
+    }
 }
 
 /// Best-effort status — reachability + newest snapshot. Never errors (the

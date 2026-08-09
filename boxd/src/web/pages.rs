@@ -92,6 +92,7 @@ fn layout(title: &str, flash: &Flash, body: Markup) -> Html<String> {
                     a.active[title == "Generations"] href="/generations" { "Generations" }
                     a.active[title == "System"] href="/system" { "System" }
                     a.active[title == "Fleet"] href="/fleet" { "Fleet" }
+                    a.active[title == "Backup"] href="/backup" { "Backup" }
                     a.active[title == "Networking"] href="/network" { "Networking" }
                     a.btn.active[title == "Deploy"] href="/services/new" { "+ Deploy" }
                 }
@@ -496,6 +497,293 @@ pub async fn configure_cloudflare(
 pub async fn disable_cloudflare(State(state): State<SharedState>) -> Redirect {
     let result = state.tunnel.configure(None, false).map(|_| ());
     network_redirect(result, "Cloudflare tunnel disabled")
+}
+
+// ---- Backup ---------------------------------------------------------------
+
+fn backup_redirect(result: anyhow::Result<()>, ok_msg: &str) -> Redirect {
+    match result {
+        Ok(()) => Redirect::to(&format!("/backup?ok={}", urlencoding::encode(ok_msg))),
+        Err(err) => Redirect::to(&format!(
+            "/backup?err={}",
+            urlencoding::encode(&format!("{err:#}"))
+        )),
+    }
+}
+
+fn backup_form(config: &BoxConfig, submit: &str) -> Markup {
+    let b = config.backup.as_ref().map(|c| &c.backend);
+    let val = |f: fn(&crate::config::BackendConfig) -> Option<String>| -> String {
+        b.and_then(|bk| f(bk)).unwrap_or_default()
+    };
+    let kind = b.map(|bk| bk.kind.clone()).unwrap_or_default();
+    let sched = config
+        .backup
+        .as_ref()
+        .map(|c| c.schedule.clone())
+        .unwrap_or_else(|| "daily".into());
+    html! {
+        form.stack method="post" action="/backup/configure" {
+            div.row2 {
+                label { "Backend"
+                    select name="kind" {
+                        @for k in ["local", "s3", "sftp", "rest"] {
+                            option value=(k) selected[kind == k] { (k) }
+                        }
+                    }
+                }
+                label { "Schedule"
+                    select name="schedule" {
+                        @for s in ["hourly", "daily", "weekly"] {
+                            option value=(s) selected[sched == s] { (s) }
+                        }
+                    }
+                }
+            }
+            p.field-note { "Fill the fields for your chosen backend; leave the rest blank." }
+            label { "Path " span.muted { "(local dir, or SFTP remote path)" }
+                input type="text" name="path" value=(val(|b| b.path.clone())) placeholder="/mnt/usb/box-backups";
+            }
+            div.row2 {
+                label { "S3 endpoint" input type="text" name="endpoint" value=(val(|b| b.endpoint.clone())) placeholder="s3.us-west-002.backblazeb2.com"; }
+                label { "S3 bucket" input type="text" name="bucket" value=(val(|b| b.bucket.clone())) placeholder="my-box-backups"; }
+            }
+            div.row2 {
+                label { "S3 prefix" input type="text" name="prefix" value=(val(|b| b.prefix.clone())) placeholder="box-1"; }
+                label { "S3 access key" input type="password" name="access_key" placeholder="•••••• (keep current)"; }
+            }
+            label { "S3 secret key" input type="password" name="secret_key" placeholder="•••••• (keep current)"; }
+            div.row2 {
+                label { "SFTP host" input type="text" name="host" value=(val(|b| b.host.clone())); }
+                label { "SFTP user" input type="text" name="user" value=(val(|b| b.user.clone())); }
+            }
+            div.row2 {
+                label { "SFTP port" input type="text" name="port" value=(b.and_then(|bk| bk.port).map(|p| p.to_string()).unwrap_or_default()) placeholder="22"; }
+                label { "REST url" input type="text" name="url" value=(val(|b| b.url.clone())); }
+            }
+            button.btn type="submit" { (submit) }
+        }
+    }
+}
+
+pub async fn backup(State(state): State<SharedState>, Query(flash): Query<Flash>) -> Html<String> {
+    let config = BoxConfig::load(&state.paths).unwrap_or_default();
+    let has_key = crate::backup::has_key(&state.paths);
+    let bc = config.backup.clone();
+    let ready = has_key && bc.as_ref().is_some_and(|c| !c.backend.kind.is_empty());
+
+    let (status, snaps) = if ready {
+        let bc = bc.as_ref().unwrap();
+        (
+            Some(crate::backup::status(&state.paths, bc)),
+            crate::backup::snapshots(&state.paths, bc).unwrap_or_default(),
+        )
+    } else {
+        (None, Vec::new())
+    };
+
+    let body = html! {
+        h2 { "Backup" }
+        p.muted {
+            "Client-side encrypted backups to a destination you own — your S3/Backblaze bucket, "
+            "an SFTP server, another Box, or a USB disk. The key is generated here and never leaves "
+            "this Box, so we (and your storage provider) can't read a backup. What gets backed up is "
+            "derived from your services automatically; the OS rebuilds from config."
+        }
+
+        @if ready {
+            @let st = status.as_ref().unwrap();
+            section.cards {
+                div.card { h3 { "Last backup" }
+                    p.big { (st.last.as_ref().map(|s| s.time.split('T').next().unwrap_or(&s.time).to_string()).unwrap_or_else(|| "never".into())) } }
+                div.card { h3 { "Snapshots" } p.big { (st.count) } }
+                div.card { h3 { "Destination" } p.big { (bc.as_ref().unwrap().backend.kind.clone()) } }
+                div.card { h3 { "Repository" }
+                    p.big { @if st.reachable { span.badge.on { "reachable" } } @else { span.badge { "unreachable" } } } }
+            }
+            form method="post" action="/backup/run" style="margin:.5rem 0 1.5rem" {
+                button.btn type="submit" { "Back up now" }
+            }
+
+            section {
+                h2 { "Snapshots" }
+                @if snaps.is_empty() { p.muted { "No snapshots yet — run a backup." } }
+                @else {
+                    table.gen {
+                        thead { tr { th { "id" } th { "time" } th { "paths" } } }
+                        tbody { @for s in &snaps {
+                            tr { td { code { (s.id.chars().take(8).collect::<String>()) } }
+                                 td { (s.time.replace('T', " ").chars().take(19).collect::<String>()) }
+                                 td.muted { (s.paths.join(" ")) } }
+                        } }
+                    }
+                }
+            }
+
+            section {
+                h2 { "Restore" }
+                p.field-note { "Writes files back in place. Restoring the whole snapshot on a live Box overwrites its config — usually you restore a single service, or restore everything onto a fresh Box." }
+                form.stack method="post" action="/backup/restore" {
+                    div.row2 {
+                        label { "Snapshot"
+                            select name="snapshot" {
+                                option value="latest" { "latest" }
+                                @for s in &snaps { option value=(s.id) { (s.time.replace('T', " ").chars().take(19).collect::<String>()) } }
+                            }
+                        }
+                        label { "What"
+                            select name="scope" {
+                                option value="config" { "Config only" }
+                                option value="all" { "Everything" }
+                                @for svc in &config.services { option value=(svc.name) { "Service: " (svc.name) } }
+                            }
+                        }
+                    }
+                    button.danger type="submit" { "Restore" }
+                }
+            }
+
+            details style="margin-top:1.5rem" {
+                summary { "Reveal recovery key" }
+                p.field-note { "Save this off the Box. Without it your backups cannot be restored — we cannot recover it for you." }
+                @match crate::secrets::get(&state.paths, crate::backup::PW_SECRET) {
+                    Ok(Some(key)) => code.mono { (key) },
+                    _ => p.muted { "no key" },
+                }
+            }
+            details style="margin-top:1rem" {
+                summary { "Change destination" }
+                div style="margin-top:.75rem" { (backup_form(&config, "Save destination")) }
+            }
+        } @else {
+            section {
+                h2 { "Set up a destination" }
+                p.muted { "Pick where encrypted backups go. A recovery key is generated on save — write it down." }
+                (backup_form(&config, "Save & enable"))
+            }
+        }
+    };
+    layout("Backup", &flash, body)
+}
+
+#[derive(Deserialize)]
+pub struct BackupForm {
+    kind: String,
+    #[serde(default)]
+    schedule: Option<String>,
+    #[serde(default)]
+    path: Option<String>,
+    #[serde(default)]
+    endpoint: Option<String>,
+    #[serde(default)]
+    bucket: Option<String>,
+    #[serde(default)]
+    prefix: Option<String>,
+    #[serde(default)]
+    host: Option<String>,
+    #[serde(default)]
+    port: Option<String>,
+    #[serde(default)]
+    user: Option<String>,
+    #[serde(default)]
+    url: Option<String>,
+    #[serde(default)]
+    access_key: Option<String>,
+    #[serde(default)]
+    secret_key: Option<String>,
+}
+
+pub async fn configure_backup(
+    State(state): State<SharedState>,
+    Form(f): Form<BackupForm>,
+) -> Redirect {
+    let result = (|| -> anyhow::Result<()> {
+        let mut config = BoxConfig::load(&state.paths)?;
+        let backend = crate::config::BackendConfig {
+            kind: f.kind.clone(),
+            path: none_if_empty(f.path),
+            endpoint: none_if_empty(f.endpoint),
+            bucket: none_if_empty(f.bucket),
+            prefix: none_if_empty(f.prefix),
+            host: none_if_empty(f.host),
+            user: none_if_empty(f.user),
+            port: none_if_empty(f.port).and_then(|p| p.parse().ok()),
+            url: none_if_empty(f.url),
+        };
+        let retention = config
+            .backup
+            .as_ref()
+            .map(|c| c.retention.clone())
+            .unwrap_or_default();
+        config.backup = Some(crate::config::BackupConfig {
+            enabled: true,
+            schedule: f.schedule.filter(|s| !s.is_empty()).unwrap_or_else(|| "daily".into()),
+            retention,
+            backend,
+            extra_paths: Vec::new(),
+        });
+        config.save(&state.paths)?;
+        if let Some(k) = none_if_empty(f.access_key) {
+            crate::secrets::set(&state.paths, "backup-s3-access-key", &k)?;
+        }
+        if let Some(s) = none_if_empty(f.secret_key) {
+            crate::secrets::set(&state.paths, "backup-s3-secret-key", &s)?;
+        }
+        if !crate::backup::has_key(&state.paths) {
+            crate::backup::init_key(&state.paths)?;
+        }
+        Ok(())
+    })();
+    backup_redirect(result, "Backup destination saved — reveal and save your recovery key below")
+}
+
+pub async fn run_backup_now(State(state): State<SharedState>) -> Redirect {
+    let paths = state.paths.clone();
+    tokio::spawn(async move {
+        let _ = crate::web::blocking(move || {
+            let config = BoxConfig::load(&paths)?;
+            let bc = config
+                .backup
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("no backup configured"))?;
+            crate::backup::run(&paths, &config, &bc)
+        })
+        .await;
+    });
+    backup_redirect(Ok(()), "Backup started — snapshots update when it finishes")
+}
+
+#[derive(Deserialize)]
+pub struct RestoreForm {
+    snapshot: String,
+    #[serde(default)]
+    scope: String,
+}
+
+pub async fn restore_backup(
+    State(state): State<SharedState>,
+    Form(f): Form<RestoreForm>,
+) -> Redirect {
+    let paths = state.paths.clone();
+    let snap = f.snapshot.clone();
+    let scope = f.scope.clone();
+    tokio::spawn(async move {
+        let _ = crate::web::blocking(move || {
+            let config = BoxConfig::load(&paths)?;
+            let bc = config
+                .backup
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("no backup configured"))?;
+            let includes = match scope.as_str() {
+                "all" => Vec::new(),
+                "config" => crate::backup::config_includes(&paths),
+                svc => crate::backup::service_includes(&config, svc),
+            };
+            crate::backup::restore(&paths, &bc, &snap, std::path::Path::new("/"), &includes)
+        })
+        .await;
+    });
+    backup_redirect(Ok(()), &format!("Restore of {} started", f.snapshot))
 }
 
 pub async fn system(
