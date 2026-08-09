@@ -124,6 +124,12 @@ fat/embedded and works offline. To turn it on:
 (If the cache name isn't `fluxoz`, update it in both `flake.nix` and the
 `cachix push` step in `.github/workflows/publish.yml`.)
 
+**Cache size:** CI pushes only the paths `cache.nixos.org` doesn't already have
+— i.e. *our* paths (boxd, the box-os config), **~85 MB uncompressed / ~50 MB
+stored per release** (measured: 55 of the closure's 654 paths). The nixpkgs
+bulk (~1.3 GB) stays on cache.nixos.org, which the installer also uses. A free
+5 GB cachix cache holds ~100 releases (more, with cross-release dedup).
+
 The deeper win: with the closure on a cache, hosting the netboot artifacts gets
 cheap and even "a Box hosts thebox.build" becomes realistic.
 
