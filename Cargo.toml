@@ -1,0 +1,9 @@
+[workspace]
+resolver = "2"
+members = ["boxd", "crates/box-core", "crates/box-installer"]
+
+# Shared release profile for the appliance binaries: small and quiet.
+[profile.release]
+opt-level = "s"
+lto = "thin"
+strip = true

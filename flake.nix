@@ -12,6 +12,18 @@
       systems = [ "x86_64-linux" "aarch64-linux" ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
 
+      # The Rust workspace source, filtered to just the crates + lockfile so the
+      # (multi-GB) ISOs and web assets alongside them never enter the build.
+      rustSrc = nixpkgs.lib.fileset.toSource {
+        root = ./.;
+        fileset = nixpkgs.lib.fileset.unions [
+          ./Cargo.toml
+          ./Cargo.lock
+          ./boxd
+          ./crates
+        ];
+      };
+
       # The appliance system: one generic closure for every machine;
       # per-machine details arrive via the installer handoff file.
       boxOs = nixpkgs.lib.nixosSystem {
@@ -46,6 +58,7 @@
         specialArgs = {
           boxSystem = boxOs.config.system.build.toplevel;
           diskoPkg = disko.packages.x86_64-linux.disko;
+          boxInstaller = self.packages.x86_64-linux.box-installer;
           nixpkgsSrc = nixpkgs;
         };
         modules = [
@@ -53,18 +66,30 @@
           ./nix/installer.nix
         ];
       };
+
+      # Build one workspace crate as its own package from the filtered source.
+      mkCrate = pkgs: crate: extra: pkgs.rustPlatform.buildRustPackage ({
+        pname = crate;
+        version = "0.1.0";
+        src = rustSrc;
+        cargoLock.lockFile = ./Cargo.lock;
+        cargoBuildFlags = [ "-p" crate ];
+        cargoTestFlags = [ "-p" crate ];
+      } // extra);
     in
     {
       packages = nixpkgs.lib.recursiveUpdate
         (forAllSystems (pkgs: rec {
-          boxd = pkgs.rustPlatform.buildRustPackage {
-            pname = "boxd";
-            version = "0.1.0";
-            src = ./boxd;
-            cargoLock.lockFile = ./boxd/Cargo.lock;
+          boxd = mkCrate pkgs "boxd" {
             meta = {
               description = "The Box daemon: declarative service management, dashboard and agent API";
               mainProgram = "boxd";
+            };
+          };
+          box-installer = mkCrate pkgs "box-installer" {
+            meta = {
+              description = "The Box installer: disk probe, storage-layout wizard (TUI) and plan";
+              mainProgram = "box-installer";
             };
           };
           default = boxd;
