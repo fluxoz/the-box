@@ -7,6 +7,7 @@
 pub mod auth;
 pub mod backup;
 pub mod channel;
+pub mod cloud;
 pub mod config;
 pub mod fleet;
 pub mod history;
