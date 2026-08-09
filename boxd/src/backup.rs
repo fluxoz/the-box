@@ -188,7 +188,23 @@ pub fn run(paths: &Paths, config: &BoxConfig, bc: &BackupConfig) -> Result<()> {
     if !c.status()?.success() {
         bail!("restic backup failed");
     }
+    // Cheap marker so health can report backup freshness without shelling out
+    // to restic on every (public, frequent) /health poll.
+    let _ = std::fs::write(last_backup_marker(paths), chrono::Utc::now().to_rfc3339());
     prune(paths, bc)
+}
+
+/// Path of the "last successful backup" timestamp marker.
+pub fn last_backup_marker(paths: &Paths) -> PathBuf {
+    paths.data_dir.join("last-backup")
+}
+
+/// Age of the last successful backup, read from the marker (cheap). `None` if
+/// never backed up.
+pub fn last_backup_age(paths: &Paths) -> Option<chrono::Duration> {
+    let ts = std::fs::read_to_string(last_backup_marker(paths)).ok()?;
+    let t = chrono::DateTime::parse_from_rfc3339(ts.trim()).ok()?;
+    Some(chrono::Utc::now().signed_duration_since(t.with_timezone(&chrono::Utc)))
 }
 
 pub fn prune(paths: &Paths, bc: &BackupConfig) -> Result<()> {

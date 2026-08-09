@@ -194,6 +194,7 @@ mod tests {
                 public: true,
                 created_at: Utc::now(),
             }],
+            ..Default::default()
         }
     }
 
