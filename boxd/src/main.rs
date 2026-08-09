@@ -104,6 +104,12 @@ enum Command {
         progress: PathBuf,
         #[arg(long)]
         done: PathBuf,
+        /// Base orders (name/wifi/key/pairing) when only storage is deferred.
+        #[arg(long)]
+        base_orders: Option<PathBuf>,
+        /// Setup PIN shown on the console; when set, guards the API.
+        #[arg(long)]
+        pin: Option<String>,
     },
 }
 
@@ -263,6 +269,8 @@ fn main() -> Result<()> {
             commit_flag,
             progress,
             done,
+            base_orders,
+            pin,
         } => web::wizard::run(
             web::wizard::WizardCfg {
                 orders_out,
@@ -270,6 +278,8 @@ fn main() -> Result<()> {
                 commit_flag,
                 progress,
                 done,
+                base_orders,
+                pin,
             },
             listen,
         ),

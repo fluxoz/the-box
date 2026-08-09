@@ -33,6 +33,46 @@ let
       PROG=/tmp/box-install-progress.log
       log() { echo "[box-install] $*"; echo "[box-install] $*" >> "$PROG" 2>/dev/null || true; }
 
+      # Run both Door-2 wizards (browser + console) until one commits, then set
+      # $handoff/$diskocfg from their output. $1 = optional base orders file
+      # (name/wifi/key/pairing) to merge the layout into, for the "decide
+      # storage on the box" flow. Either wizard exits the other via the commit
+      # flag; the console wizard also self-cancels if nobody responds.
+      run_wizards() {
+        base_arg=""
+        if [ -n "''${1:-}" ] && [ -f "''${1:-}" ]; then
+          cp "$1" /tmp/box-base.json; base_arg=/tmp/box-base.json
+        fi
+        : > "$PROG"
+        rm -f /tmp/box-wizard.commit /tmp/box-wizard.done /tmp/box-install.json /tmp/box-disko.nix
+        # Setup PIN guards the LAN setup window on an otherwise-open blank box.
+        pin=$(printf '%06d' $(( (RANDOM * 30000 + RANDOM) % 1000000 )))
+        echo "" > /dev/console
+        echo "  ===== THE BOX — finish setup in a browser =====" > /dev/console
+        echo "   open  http://<this box's address>:2693" > /dev/console
+        echo "   setup PIN:  $pin" > /dev/console
+        echo "  ===============================================" > /dev/console
+        # shellcheck disable=SC2086
+        boxd install-wizard --listen 0.0.0.0:2693 \
+          --orders-out /tmp/box-install.json --disko-out /tmp/box-disko.nix \
+          --commit-flag /tmp/box-wizard.commit --progress "$PROG" --done /tmp/box-wizard.done \
+          --pin "$pin" ''${base_arg:+--base-orders "$base_arg"} &
+        wtty=/dev/tty1; [ -c "$wtty" ] || wtty=/dev/console
+        # shellcheck disable=SC2086
+        TERM=linux setsid -w -c box-installer wizard \
+          --orders-out /tmp/box-install.json --disko-out /tmp/box-disko.nix \
+          --watch-commit /tmp/box-wizard.commit ''${base_arg:+--base-orders "$base_arg"} \
+          <> "$wtty" >&0 2>&0 || true
+        for _ in 1 2 3 4 5; do
+          [ -f /tmp/box-install.json ] && [ -f /tmp/box-disko.nix ] && break
+          sleep 1
+        done
+        if [ -f /tmp/box-install.json ] && [ -f /tmp/box-disko.nix ]; then
+          handoff=/tmp/box-install.json
+          diskocfg=/tmp/box-disko.nix
+        fi
+      }
+
       # ---- 1. Locate the orders (consent + config) ------------------------
       # Orders are always copied to RAM before anything touches a disk; in the
       # staged-from-Windows flow they live on the very disk being wiped.
@@ -94,33 +134,7 @@ let
       # unattended machine that reached here by accident is never wiped.
       if [ -z "$handoff" ]; then
         log "no orders found — starting setup (screen + browser); refusing if no operator responds."
-        : > "$PROG"; rm -f /tmp/box-wizard.commit /tmp/box-wizard.done
-        # Door 2, networked: the browser wizard on the LAN. Same box-core
-        # pipeline; on commit it writes the orders + disko and the commit flag.
-        boxd install-wizard \
-          --listen 0.0.0.0:2693 \
-          --orders-out /tmp/box-install.json \
-          --disko-out /tmp/box-disko.nix \
-          --commit-flag /tmp/box-wizard.commit \
-          --progress "$PROG" \
-          --done /tmp/box-wizard.done &
-        # Door 2, on-screen: the console TUI. setsid -c gives it the VT as its
-        # controlling terminal so the kernel routes keystrokes to it; it exits
-        # on its own if the browser commits first (--watch-commit).
-        wtty=/dev/tty1; [ -c "$wtty" ] || wtty=/dev/console
-        TERM=linux setsid -w -c box-installer wizard \
-          --orders-out /tmp/box-install.json \
-          --disko-out /tmp/box-disko.nix \
-          --watch-commit /tmp/box-wizard.commit <> "$wtty" >&0 2>&0 || true
-        # Whoever won, wait briefly for the files to land, then proceed.
-        for _ in 1 2 3 4 5; do
-          [ -f /tmp/box-install.json ] && [ -f /tmp/box-disko.nix ] && break
-          sleep 1
-        done
-        if [ -f /tmp/box-install.json ] && [ -f /tmp/box-disko.nix ]; then
-          handoff=/tmp/box-install.json
-          diskocfg=/tmp/box-disko.nix
-        fi
+        run_wizards ""
       fi
       if [ -z "$handoff" ]; then
         log "no orders (BOX-INSTALL volume, box.install-url=, box.install-b64=, staged dir)"
@@ -135,6 +149,18 @@ let
       if [ "$erase" != "true" ]; then
         log "orders do not set \"erase_disk\": true — refusing to wipe anything."
         exit 1
+      fi
+
+      # Orders present but storage deferred ("decide on the box"): run the
+      # wizards with this box's identity preloaded, so the operator picks only
+      # the disk layout. The wizard rewrites $handoff with the merged orders.
+      if [ "$(jq -r '.storage.layout // ""' "$handoff")" = "ask" ]; then
+        log "orders defer storage to the box — starting setup with your identity preloaded."
+        run_wizards "$handoff"
+        if [ ! -f /tmp/box-disko.nix ]; then
+          log "storage was not chosen — refusing to touch any disk. Machine unchanged."
+          exit 0
+        fi
       fi
 
       # ---- 3. Resolve the storage layout to a disko config ----------------
