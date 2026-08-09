@@ -52,7 +52,12 @@ Everything is on your **personal** account — the workflow uses
 
 1. **Push this repo to GitHub** (personal account is fine), e.g.
    `git remote add origin git@github.com:<you>/the-box.git && git push -u origin main`.
-2. **Enable Pages**: repo → Settings → Pages → *Source: GitHub Actions*.
+2. **Enable Pages**: repo → Settings → Pages → *Source: GitHub Actions*. Then
+   Settings → Environments → `github-pages` → *Deployment branches and tags* →
+   set *No restriction* or add a **Tag** rule `v*` — the auto-created
+   environment only allows the default branch by default, so a tag-triggered
+   deploy otherwise fails with "not allowed to deploy ... environment
+   protection rules".
 3. **Set the custom domain**: repo → Settings → Pages → *Custom domain* →
    `thebox.build` (the workflow also writes a `CNAME` file). Leave *Enforce
    HTTPS* on once DNS resolves.
