@@ -43,7 +43,16 @@ jobs:
           nix profile install nixpkgs#cachix
           cachix authtoken "$CACHIX_AUTH_TOKEN"
           sys=$(nix build .#nixosConfigurations.box-os.config.system.build.toplevel --no-link --print-out-paths)
-          cachix push fluxoz "$sys"
+          # Only push OUR paths, not the nixpkgs deps: the installer and boxes
+          # also use cache.nixos.org, so pushing paths it already has just wastes
+          # the cache's storage. This keeps fluxoz to ~hundreds of MB.
+          nix-store -qR "$sys" | sort -u > /tmp/closure
+          : > /tmp/on_upstream
+          while read -r p; do
+            nix path-info --store https://cache.nixos.org "$p" >/dev/null 2>&1 && echo "$p" >> /tmp/on_upstream
+          done < /tmp/closure
+          comm -23 /tmp/closure <(sort -u /tmp/on_upstream) | cachix push fluxoz
+          echo "pushed $(comm -23 /tmp/closure <(sort -u /tmp/on_upstream) | wc -l) box-specific paths (nixpkgs deps left to cache.nixos.org)"
 
       - name: Stage the bundle + stamp the Release URL into install.sh
         run: |
