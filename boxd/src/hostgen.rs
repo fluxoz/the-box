@@ -205,7 +205,7 @@ mod tests {
         let out = tmp.path().join("repo");
         let spec = HostSpec::new(
             "demo-box",
-            "github:coyote-technology/the-box",
+            "github:fluxoz/the-box",
             "x86_64-linux",
         );
 
@@ -215,7 +215,7 @@ mod tests {
         assert!(flake.contains(r#"nixosConfigurations."demo-box""#));
         assert!(flake.contains("the-box.nixosModules.platform"));
         assert!(flake.contains("the-box.nixosModules.hardwareAppliance"));
-        assert!(flake.contains(r#"inputs.the-box.url = "github:coyote-technology/the-box""#));
+        assert!(flake.contains(r#"inputs.the-box.url = "github:fluxoz/the-box""#));
 
         let host = std::fs::read_to_string(out.join("nodes/hosts/demo-box/default.nix")).unwrap();
         assert!(host.contains(r#"networking.hostName = "demo-box""#));
