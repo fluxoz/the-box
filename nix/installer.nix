@@ -21,6 +21,7 @@ let
       pkgs.coreutils
       pkgs.curl
       pkgs.jq
+      pkgs.kmod # modprobe, for disko's mdadm/lvm module loading
       pkgs.nix
       pkgs.nixos-install-tools
       pkgs.systemd
@@ -91,7 +92,11 @@ let
       if [ -z "$handoff" ]; then
         log "no orders found — starting the setup wizard (refusing if no operator responds)."
         wtty=/dev/tty1; [ -c "$wtty" ] || wtty=/dev/console
-        if box-installer wizard \
+        # setsid -c makes the wizard the session leader with $wtty as its
+        # controlling terminal, so the kernel actually routes keystrokes to it
+        # (a plain redirect leaves it as a background process the VT ignores);
+        # -w waits and propagates its exit status.
+        if TERM=linux setsid -w -c box-installer wizard \
              --orders-out /tmp/box-install.json \
              --disko-out /tmp/box-disko.nix <> "$wtty" >&0 2>&0; then
           handoff=/tmp/box-install.json
@@ -152,6 +157,10 @@ in
   networking.hostName = "box-installer";
   # ttyS0 last = primary console, so installer progress is visible over serial.
   boot.kernelParams = [ "console=tty0" "console=ttyS0,115200" ];
+  # Load RAID/device-mapper modules in the installer so disko can *build* a
+  # mirror (mdadm) or pool (LVM) at install time — separate from the installed
+  # OS assembling them at boot (see hardware-appliance.nix).
+  boot.kernelModules = [ "md_mod" "dm_mod" "raid0" "raid1" "raid10" ];
 
   # Free tty1 so the setup wizard owns the screen (Door 2). Serial stays the
   # log/primary console; the wizard only appears where there's a monitor.
