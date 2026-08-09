@@ -88,6 +88,11 @@ enum Command {
         #[command(subcommand)]
         action: AuthCmd,
     },
+    /// Client-side-encrypted backups to your own backend (restic).
+    Backup {
+        #[command(subcommand)]
+        action: BackupCmd,
+    },
     /// Serve the browser install wizard inside the installer (pre-pairing, no
     /// auth). On commit it writes orders + a disko config for box-install to
     /// act on, and serves install progress read from --progress.
@@ -134,6 +139,36 @@ enum AuthCmd {
         #[arg(long, default_value = "enrollment")]
         label: String,
     },
+}
+
+#[derive(Subcommand)]
+enum BackupCmd {
+    /// Generate the backup key and print it once. SAVE IT — it's required to
+    /// restore, and cannot be recovered.
+    Init,
+    /// Take a backup now.
+    Run,
+    /// List snapshots.
+    Snapshots,
+    /// Show backup status (reachability, last snapshot).
+    Status,
+    /// Restore. Default: everything; scope with --service or --config-only.
+    Restore {
+        /// Snapshot id (default: latest).
+        #[arg(long, default_value = "latest")]
+        snapshot: String,
+        /// Restore only this service's data.
+        #[arg(long)]
+        service: Option<String>,
+        /// Restore only the Box's config/secrets/auth.
+        #[arg(long)]
+        config_only: bool,
+        /// Where to write the restored files.
+        #[arg(long, default_value = "/")]
+        target: PathBuf,
+    },
+    /// Verify repository integrity.
+    Check,
 }
 
 #[derive(Subcommand)]
@@ -262,6 +297,7 @@ fn main() -> Result<()> {
         }
         Command::Channel { action } => run_channel(&paths, action),
         Command::Auth { action } => run_auth(&paths, action),
+        Command::Backup { action } => run_backup(&paths, action),
         Command::InstallWizard {
             listen,
             orders_out,
@@ -283,6 +319,72 @@ fn main() -> Result<()> {
             },
             listen,
         ),
+    }
+}
+
+fn run_backup(paths: &Paths, action: BackupCmd) -> Result<()> {
+    use boxd::backup;
+    if let BackupCmd::Init = action {
+        let key = backup::init_key(paths)?;
+        eprintln!(
+            "Backup recovery key — SAVE THIS. It is required to restore your\n\
+             backups and cannot be recovered. It never leaves this Box."
+        );
+        println!("{key}");
+        return Ok(());
+    }
+
+    let config = boxd::config::BoxConfig::load(paths)?;
+    let bc = config.backup.clone().ok_or_else(|| {
+        anyhow::anyhow!("no [backup] backend configured — add one to box.toml or the dashboard")
+    })?;
+
+    match action {
+        BackupCmd::Init => unreachable!(),
+        BackupCmd::Run => {
+            backup::run(paths, &config, &bc)?;
+            println!("backup complete");
+            Ok(())
+        }
+        BackupCmd::Snapshots => {
+            for s in backup::snapshots(paths, &bc)? {
+                let id = &s.id[..8.min(s.id.len())];
+                println!("{id}\t{}\t{}", s.time, s.paths.join(" "));
+            }
+            Ok(())
+        }
+        BackupCmd::Status => {
+            let st = backup::status(paths, &bc);
+            println!(
+                "reachable: {}  snapshots: {}  last: {}",
+                st.reachable,
+                st.count,
+                st.last.map(|l| l.time).as_deref().unwrap_or("never")
+            );
+            Ok(())
+        }
+        BackupCmd::Restore {
+            snapshot,
+            service,
+            config_only,
+            target,
+        } => {
+            let includes = if config_only {
+                backup::config_includes(paths)
+            } else if let Some(name) = service {
+                backup::service_includes(&config, &name)
+            } else {
+                Vec::new() // everything in the snapshot
+            };
+            backup::restore(paths, &bc, &snapshot, &target, &includes)?;
+            println!("restore complete");
+            Ok(())
+        }
+        BackupCmd::Check => {
+            backup::check(paths, &bc)?;
+            println!("repository OK");
+            Ok(())
+        }
     }
 }
 

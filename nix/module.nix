@@ -127,7 +127,8 @@ in
       # operator who SSHes in can just run `boxd auth enroll`, `boxd status`,
       # etc. — no wrapper, no --data-dir. (Auth writes chown to the data dir
       # owner so a code minted by root is readable by the boxd service.)
-      environment.systemPackages = [ cfg.package ];
+      # restic backs the `boxd backup` client-side-encrypted backups.
+      environment.systemPackages = [ cfg.package pkgs.restic ];
       environment.variables.BOXD_DATA_DIR = "${cfg.dataDir}";
 
       # Advertise this Box on the LAN so peers can discover it (the fleet view).

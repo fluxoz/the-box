@@ -5,6 +5,7 @@
 //! local dashboard, JSON API and deployed static sites.
 
 pub mod auth;
+pub mod backup;
 pub mod channel;
 pub mod config;
 pub mod fleet;
