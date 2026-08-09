@@ -172,6 +172,36 @@
                 touch $out/box-marker
                 cp ${./installers/windows/stage.ps1} $out/stage.ps1
               '';
+
+            # The publishable thebox.build bundle: netboot artifacts, the curl|sh
+            # installer with real checksums stamped in, the Windows one-liner,
+            # the landing page, and SHA256SUMS over everything.
+            site =
+              let
+                pkgs = nixpkgs.legacyPackages.x86_64-linux;
+                netboot = self.packages.x86_64-linux.installer-netboot;
+              in
+              pkgs.runCommand "thebox-site" { } ''
+                mkdir -p $out/netboot
+                cp ${netboot}/bzImage      $out/netboot/bzImage
+                cp ${netboot}/initrd       $out/netboot/initrd
+                cp ${netboot}/netboot.ipxe $out/netboot/netboot.ipxe
+
+                # Stamp the real artifact hashes into the published installer so
+                # it verifies what it fetches before kexec.
+                bz=$(sha256sum $out/netboot/bzImage | cut -d' ' -f1)
+                ir=$(sha256sum $out/netboot/initrd  | cut -d' ' -f1)
+                substitute ${./installers/linux/install.sh} $out/install.sh \
+                  --replace @BZIMAGE_SHA256@ "$bz" --replace @INITRD_SHA256@ "$ir"
+                chmod +x $out/install.sh
+
+                cp ${./installers/windows/install.ps1} $out/install.ps1
+                cp ${./installers/macos/README.md}     $out/mac.txt
+                cp ${./site/index.html}                $out/index.html
+
+                ( cd $out && find . -type f ! -name SHA256SUMS -print0 \
+                    | sort -z | xargs -0 sha256sum > SHA256SUMS )
+              '';
           };
         };
 
