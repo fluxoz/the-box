@@ -21,12 +21,26 @@ BASE="${BOX_BASE:-https://thebox.build}"       # where the netboot artifacts liv
 # tmpfs with room for the (large) netboot initrd; orders never touch a disk.
 WORK="${BOX_WORK:-/dev/shm/box-install}"
 
+# Expected checksums of the netboot artifacts, stamped in when thebox.build
+# publishes this script (see the `site` build). Left as placeholders in the
+# repo, where verification is skipped. The published script carries the real
+# hashes and is served over TLS, so a compromised mirror cannot feed you a
+# different kernel/initrd to kexec into — this script WIPES DISKS.
+BZIMAGE_SHA256="@BZIMAGE_SHA256@"
+INITRD_SHA256="@INITRD_SHA256@"
+
 say() { printf '\033[1;33m[box]\033[0m %s\n' "$*" >&2; }
 die() { printf '\033[1;31m[box] error:\033[0m %s\n' "$*" >&2; exit 1; }
 
+verify_sha() { # <file> <expected-hash>
+  case "$2" in *@*) return 0 ;; esac  # unsubstituted placeholder (dev/local BASE) — skip
+  got=$(sha256sum "$1" | cut -d' ' -f1) || die "sha256sum failed for $1."
+  [ "$got" = "$2" ] || die "checksum mismatch on $(basename "$1") — refusing to boot a possibly-tampered image."
+}
+
 [ "$(id -u)" = 0 ] || die "run as root: pipe into 'sudo sh'."
-for c in kexec curl base64; do
-  command -v "$c" >/dev/null 2>&1 || die "$c not found (kexec needs kexec-tools; base64 is usually present)."
+for c in kexec curl base64 sha256sum; do
+  command -v "$c" >/dev/null 2>&1 || die "$c not found (kexec needs kexec-tools; the rest are usually present)."
 done
 
 mkdir -p "$WORK"
@@ -64,6 +78,11 @@ say "fetching the Box installer (kernel + initrd) from $BASE ..."
 curl -fsSL "$BASE/netboot/bzImage"      -o "$WORK/bzImage"      || die "could not fetch the kernel from $BASE/netboot/."
 curl -fsSL "$BASE/netboot/initrd"       -o "$WORK/initrd"       || die "could not fetch the initrd."
 curl -fsSL "$BASE/netboot/netboot.ipxe" -o "$WORK/netboot.ipxe" || die "could not fetch boot parameters."
+
+# Verify the kernel + initrd against the hashes baked into this script before we
+# ever kexec into them. (netboot.ipxe only carries boot params, checked below.)
+verify_sha "$WORK/bzImage" "$BZIMAGE_SHA256"
+verify_sha "$WORK/initrd"  "$INITRD_SHA256"
 
 # Inject the orders into the kexec initrd so they ride into the installer in RAM
 # and never touch a disk (nor depend on the disk layout). The kernel unpacks all
