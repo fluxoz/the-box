@@ -148,3 +148,39 @@ jobs:
           done < /tmp/aclosure
           comm -23 /tmp/aclosure <(sort -u /tmp/aupstream) | cachix push fluxoz
           echo "pushed $(comm -23 /tmp/aclosure <(sort -u /tmp/aupstream) | wc -l) aarch64 box paths"
+
+  # Build ready-to-flash Raspberry Pi images and attach them to the Release, so a
+  # user downloads a .img.xz and flashes it (Raspberry Pi Imager / dd) instead of
+  # building one with Nix. Native ARM runner + the flake's declared caches keep
+  # the vendor kernel a download, not an emulated compile. Parallel with build/
+  # deploy so it never delays the Pages deploy.
+  pi-images:
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+      - name: Build + compress pi3/4/5 SD images
+        run: |
+          set -euo pipefail
+          mkdir -p pi
+          for m in 3 4 5; do
+            echo "::group::pi${m}-image"
+            out=$(nix build ".#packages.aarch64-linux.pi${m}-image" --no-link --print-out-paths)
+            img=$(echo "$out"/sd-image/*.img)
+            # .xz is the format Raspberry Pi Imager and `dd` users expect; the
+            # image is mostly empty so it shrinks a lot.
+            xz -T0 -6 -c "$img" > "pi/thebox-pi${m}.img.xz"
+            echo "::endgroup::"
+          done
+          ( cd pi && sha256sum *.img.xz > SHA256SUMS.pi )
+          ls -la pi/
+      - name: Attach Pi images to the Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            pi/thebox-pi3.img.xz
+            pi/thebox-pi4.img.xz
+            pi/thebox-pi5.img.xz
+            pi/SHA256SUMS.pi
+          fail_on_unmatched_files: true

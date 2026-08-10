@@ -21,29 +21,46 @@
   <p class="eyebrow">Guide</p>
   <h1>Raspberry Pi</h1>
   <p class="lede">A Raspberry Pi 3, 4, or 5 makes a great Box: cheap, silent, low-power. A Pi is
-  <strong>flashed</strong>, not taken over: you build a ready-to-run image and write it to an SD card.</p>
+  <strong>flashed</strong>, not taken over. Download a ready-to-run image and write it to an SD card. No
+  Nix, no build.</p>
 
   <div class="note">The <code>curl | sh</code> takeover is a PC/x86 thing (it kexecs into the installer,
-  which the Pi can't do). Flashing is how everything installs on a Pi. This is the Pi's normal path, and
-  it's fully supported.</div>
+  which the Pi can't do). Flashing is the Pi's normal path, and it's fully supported.</div>
 
-  <h2 id="build">Build the image</h2>
-  <p>With <a href="https://nixos.org/download">Nix</a> installed, build the image for your model
-  (<code>pi3-image</code>, <code>pi4-image</code>, or <code>pi5-image</code>):</p>
-  <pre><code>nix build github:fluxoz/the-box#pi5-image</code></pre>
-  <p>boxd and the Pi's vendor kernel come prebuilt from a binary cache, so this is mostly downloads: a few
-  minutes, not a from-scratch compile. The result is a raw <code>.img</code> under <code>./result/sd-image/</code>.</p>
+  <h2 id="download">Download the image</h2>
+  <p>Grab the image for your model from the
+  <a href="https://github.com/fluxoz/the-box/releases/latest">latest release</a>:</p>
+  <table class="tbl">
+    <thead><tr><th>Model</th><th>Image</th></tr></thead>
+    <tbody>
+      <tr><td>Pi 5</td><td><a href="https://github.com/fluxoz/the-box/releases/latest/download/thebox-pi5.img.xz"><code>thebox-pi5.img.xz</code></a></td></tr>
+      <tr><td>Pi 4</td><td><a href="https://github.com/fluxoz/the-box/releases/latest/download/thebox-pi4.img.xz"><code>thebox-pi4.img.xz</code></a></td></tr>
+      <tr><td>Pi 3</td><td><a href="https://github.com/fluxoz/the-box/releases/latest/download/thebox-pi3.img.xz"><code>thebox-pi3.img.xz</code></a></td></tr>
+    </tbody>
+  </table>
+  <p>Checksums are in <a href="https://github.com/fluxoz/the-box/releases/latest/download/SHA256SUMS.pi"><code>SHA256SUMS.pi</code></a> on the same release.</p>
 
   <h2 id="flash">Flash it</h2>
-  <pre><code>sudo dd if=./result/sd-image/*.img of=/dev/sdX bs=4M status=progress conv=fsync</code></pre>
-  <div class="warn"><b>Check <code>/dev/sdX</code>.</b> Point it at the SD card, not a system disk, because <code>dd</code>
-  overwrites whatever you give it. On macOS use <code>/dev/rdiskN</code>; the Raspberry Pi Imager can also
-  write a custom <code>.img</code>.</div>
+  <p>Easiest: <a href="https://www.raspberrypi.com/software/">Raspberry Pi Imager</a>, choose
+  <em>Use custom image</em>, pick the <code>.img.xz</code>, select the SD card, and write. It handles the
+  decompression.</p>
+  <p>Or from a terminal:</p>
+  <pre><code>xz -dc thebox-pi5.img.xz | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync</code></pre>
+  <div class="warn"><b>Check <code>/dev/sdX</code>.</b> Point it at the SD card, not a system disk, because
+  <code>dd</code> overwrites whatever you give it. On macOS use <code>/dev/rdiskN</code>.</div>
 
   <h2 id="boot">Boot &amp; pair</h2>
   <p>Put the card in the Pi and power on. On first boot it expands the filesystem to fill the card and comes
   up as a Box on your LAN at <code>box.local:2693</code>. From there it's the same as any Box:
   <a href="first-steps.html">pair your browser and go</a>.</p>
+
+  <h2 id="build">Build it yourself (advanced)</h2>
+  <p>Prefer to build from source, or want to change the config first? With
+  <a href="https://nixos.org/download">Nix</a>:</p>
+  <pre><code>nix build github:fluxoz/the-box#pi5-image</code></pre>
+  <p>The flake declares the binary caches, so boxd and the Pi's vendor kernel are downloads, not a
+  from-scratch compile. The result is a raw <code>.img</code> under <code>./result/sd-image/</code>. Flash
+  it the same way.</p>
 
   <div class="pager">
     <span><a href="install.html">← Install</a></span>
