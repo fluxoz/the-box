@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agents — The Box docs</title>
+<link rel="stylesheet" href="../docs.css">
+</head>
+<body>
+<div class="top">
+  <a class="brand" href="/">THE <b>BOX</b> <span class="sub">docs</span></a>
+  <nav>
+    <a href="./">Docs</a>
+    <a href="install.html">Install</a>
+    <a href="first-steps.html">First steps</a>
+    <a href="fleet.html">Fleet</a>
+    <a href="concepts.html">How it works</a>
+  </nav>
+</div>
+<main>
+  <p class="eyebrow">Guide</p>
+  <h1>Agents</h1>
+  <p class="lede">Plug a spare machine into your network and have an agent turn it into a Box and run
+  it for you — provision, configure, maintain — hands-off. A Box is built to be driven by software,
+  not just a browser.</p>
+
+  <h2 id="provision">Provision: bare machine → Box</h2>
+  <p>If the spare machine has an OS you can SSH into, one command turns it into a Box:</p>
+  <pre><code>boxd provision root@192.168.1.42 --ssh-key ~/.ssh/id_ed25519.pub</code></pre>
+  <p>That single command:</p>
+  <ol>
+    <li>mints the machine's identity — a hostname, your SSH key, and a one-time pairing code (only its
+      <em>hash</em> ever leaves the command);</li>
+    <li>ships it over SSH as install orders and runs the takeover installer, which wipes the disk and
+      boots the Box OS;</li>
+    <li>waits for the machine to come back up as a Box;</li>
+    <li>redeems the pairing code for a <strong>session token</strong> and prints it.</li>
+  </ol>
+  <div class="warn"><b>Takeover wipes the disk.</b> The orders carry explicit <code>erase_disk</code>
+  consent and the installer refuses to touch a disk without it — but point <code>provision</code> at a
+  machine you intend to convert, not your daily driver.</div>
+  <p>For a machine with no OS (bare metal, blank disk), there's nothing to SSH into yet — flash the
+  installer or boot it over the network first (see <a href="install.html#bare-metal">Install → bare
+  metal</a> and <a href="raspberry-pi.html">Raspberry Pi</a>). Once it's a Box, everything below is the
+  same.</p>
+
+  <h3 id="provision-json">Machine-readable output</h3>
+  <p>Add <code>--json</code> and the command prints exactly what an agent needs to take over:</p>
+  <pre><code>boxd provision root@192.168.1.42 --ssh-key ~/.ssh/id_ed25519.pub --json
+{
+  "address": "192.168.1.42:2693",
+  "token": "…",
+  "mcp_url": "http://192.168.1.42:2693/mcp",
+  "dashboard": "http://192.168.1.42:2693/"
+}</code></pre>
+  <p>Useful flags: <code>--hostname</code> (defaults to a stable per-machine name), <code>--layout
+  single|mirror|pool</code>, <code>--reach-host</code> (if the Box's address differs from the SSH
+  target), <code>--ssh-opt</code> (passed through to <code>ssh</code>, e.g. <code>-p 2222</code>).</p>
+
+  <h2 id="mcp">Configure &amp; maintain over MCP</h2>
+  <p>Every Box runs an <a href="https://modelcontextprotocol.io">MCP</a> server at <code>/mcp</code>
+  (JSON-RPC 2.0 over HTTP). It's the same declarative surface the dashboard and CLI write, so an agent
+  manages a Box the same way you would. Authenticate with the session token as a Bearer header:</p>
+  <pre><code>Authorization: Bearer &lt;token&gt;</code></pre>
+  <p>The tools an agent can call:</p>
+  <table class="tbl">
+    <thead><tr><th>Area</th><th>Tools</th></tr></thead>
+    <tbody>
+      <tr><td>Deploy</td><td><code>list_templates</code>, <code>deploy</code>, <code>deploy_static_site</code>, <code>delete_service</code></td></tr>
+      <tr><td>Inspect</td><td><code>get_status</code>, <code>list_services</code>, <code>list_generations</code>, <code>list_history</code></td></tr>
+      <tr><td>Maintain</td><td><code>rollback</code>, <code>channel_status</code>, <code>channel_check</code></td></tr>
+      <tr><td>Backups</td><td><code>backup_status</code>, <code>backup_snapshots</code>, <code>backup_now</code>, <code>backup_restore</code></td></tr>
+    </tbody>
+  </table>
+  <div class="note">Deploys are atomic Nix generations, and any generation can be rolled back — so an
+  agent can change things confidently: a bad deploy is one <code>rollback</code> away, and a failed
+  platform update rolls itself back. See <a href="concepts.html#generations">How it works</a>.</div>
+
+  <h2 id="trust">Who the agent is</h2>
+  <p>An agent is just another operator device. Its token is a normal session: it appears in the Box's
+  <strong>Devices</strong> list and you can revoke it there at any time. The Box trusts <em>you</em> (and
+  the keys and codes you hand it) — never another machine on its own authority. Give an agent its own
+  SSH key and its own session so you can retire it independently.</p>
+  <div class="tip">Already have a Box and want to hand an agent a session without provisioning? Run
+  <code>boxd auth mint --label agent</code> on the Box and give the agent the printed token.</div>
+
+  <div class="pager">
+    <span><a href="fleet.html">← Fleet</a></span>
+    <span><a href="concepts.html">How it works →</a></span>
+  </div>
+</main>
+<footer>
+  <span>The Box — a personal server you actually own.</span>
+  <span><a href="https://github.com/fluxoz/the-box">Source on GitHub</a></span>
+</footer>
+</body>
+</html>
