@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Fleet — The Box docs</title>
+<title>Fleet | The Box docs</title>
 <link rel="stylesheet" href="../docs.css">
 </head>
 <body>
@@ -20,30 +20,30 @@
 <main>
   <p class="eyebrow">Guide</p>
   <h1>Running a fleet</h1>
-  <p class="lede">More than one Box? They find each other and you manage them from one place — with no
+  <p class="lede">More than one Box? They find each other and you manage them from one place, with no
   central controller and no box trusting another. There's only one thing every Box trusts: <strong>you</strong>.</p>
 
   <h2 id="discover">Discovery</h2>
-  <p>Every Box announces itself, and each Box discovers the others directly and reads their coarse health —
-  <em>peer-federated</em>, no registry. Two planes:</p>
+  <p>Every Box announces itself, and each Box discovers the others directly and reads their coarse health
+  (<em>peer-federated</em>, no registry). Two planes:</p>
   <ul>
-    <li><strong>LAN</strong> — over mDNS, for Boxes on the same network. Zero config.</li>
-    <li><strong>Mesh</strong> — over a shared <a href="connect.html">Box Connect</a> tailnet, so a fleet
-      spans sites, not just one LAN.</li>
+    <li><strong>LAN</strong>: over mDNS, for Boxes on the same network. Zero config.</li>
+    <li><strong>Mesh</strong>: over a shared <a href="connect.html">Box Connect</a> tailnet, so a fleet
+      spans sites, not one LAN.</li>
   </ul>
   <p>Open any Box's dashboard → <strong>Fleet</strong> to see the others and their health. Discovery is not
   authorization: seeing a Box reveals only a coarse health summary.</p>
 
   <h2 id="manage">Manage the fleet</h2>
   <p>The Fleet view links straight into each peer's dashboard. Because Boxes trust <em>you</em> and not each
-  other, you pair (or SSH-tunnel) with each Box you manage — there's no box acting on another's behalf, so
+  other, you pair (or SSH-tunnel) with each Box you manage. No box acts on another's behalf, so
   a compromised Box can't reach into its neighbours.</p>
   <div class="note">A Box's session is scoped to that Box. Pair each one from your browser; revoke any device
   from a Box's <strong>Devices</strong> page.</div>
 
   <h2 id="batch">Batch installs</h2>
-  <p>Because one generic image serves every machine — identity arrives at first boot — provisioning many
-  Boxes is just handing each a different <a href="install.html#configurator">orders</a> file: per-machine
+  <p>One generic image serves every machine, and identity arrives at first boot. So provisioning many
+  Boxes means handing each a different <a href="install.html#configurator">orders</a> file: per-machine
   hostname, your SSH key, and a one-time pairing code. Install them the same way you install one.</p>
 
   <div class="pager">
@@ -52,7 +52,7 @@
   </div>
 </main>
 <footer>
-  <span>The Box — a personal server you actually own.</span>
+  <span>The Box. A personal server you actually own.</span>
   <span><a href="https://github.com/fluxoz/the-box">Source on GitHub</a></span>
 </footer>
 </body>

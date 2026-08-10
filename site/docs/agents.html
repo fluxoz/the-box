@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Agents — The Box docs</title>
+<title>Agents | The Box docs</title>
 <link rel="stylesheet" href="../docs.css">
 </head>
 <body>
@@ -21,11 +21,11 @@
   <p class="eyebrow">Guide</p>
   <h1>Agents</h1>
   <p class="lede">Plug a spare machine into your network and have an agent turn it into a Box and run
-  it for you — provision, configure, maintain — hands-off. A Box is built to be driven by software,
-  not just a browser.</p>
+  it for you: provision, configure, maintain, all hands-off. A Box is built to be driven by software,
+  not only a browser.</p>
 
   <div class="tip">Point your agent at <a href="/llms.txt"><code>thebox.build/llms.txt</code></a> and it
-  has everything below as an executable runbook — no docs-reading required. The complete machine
+  has everything below as an executable runbook, no docs-reading required. The complete machine
   reference (orders schema + every MCP tool) is at <a href="/llms-full.txt"><code>/llms-full.txt</code></a>.</div>
 
   <h2 id="provision">Provision: bare machine → Box</h2>
@@ -33,7 +33,7 @@
   <pre><code>boxd provision root@192.168.1.42 --ssh-key ~/.ssh/id_ed25519.pub</code></pre>
   <p>That single command:</p>
   <ol>
-    <li>mints the machine's identity — a hostname, your SSH key, and a one-time pairing code (only its
+    <li>mints the machine's identity: a hostname, your SSH key, and a one-time pairing code (only its
       <em>hash</em> ever leaves the command);</li>
     <li>ships it over SSH as install orders and runs the takeover installer, which wipes the disk and
       boots the Box OS;</li>
@@ -41,15 +41,15 @@
     <li>redeems the pairing code for a <strong>session token</strong> and prints it.</li>
   </ol>
   <div class="warn"><b>Takeover wipes the disk.</b> The orders carry explicit <code>erase_disk</code>
-  consent and the installer refuses to touch a disk without it — but point <code>provision</code> at a
+  consent and the installer refuses to touch a disk without it. But point <code>provision</code> at a
   machine you intend to convert, not your daily driver.</div>
-  <p>For a machine with no OS (bare metal, blank disk), there's nothing to SSH into yet — a human
+  <p>For a machine with no OS (bare metal, blank disk), there's nothing to SSH into yet, so a human
   flashes the installer or netboots it once (see <a href="install.html#bare-metal">Install → bare
   metal</a> and <a href="raspberry-pi.html">Raspberry Pi</a>). From there it's agent-drivable on the
   LAN: while it sits in setup it <strong>beacons over mDNS</strong> as an unclaimed Box installer
   (<code>_thebox-setup._tcp</code>), and its setup API is PIN-gated (the PIN is shown on the machine's
-  screen, or set in the Configurator). An agent discovers it, pushes orders, and commits the install —
-  then, once it's a Box, everything below is the same. The runbook is in
+  screen, or set in the Configurator). An agent discovers it, pushes orders, and commits the install.
+  Then, once it's a Box, everything below is the same. The runbook is in
   <a href="/llms-full.txt"><code>/llms-full.txt</code></a> (§2b).</p>
 
   <h3 id="provision-json">Machine-readable output</h3>
@@ -80,14 +80,14 @@
       <tr><td>Backups</td><td><code>backup_status</code>, <code>backup_snapshots</code>, <code>backup_now</code>, <code>backup_restore</code></td></tr>
     </tbody>
   </table>
-  <div class="note">Deploys are atomic Nix generations, and any generation can be rolled back — so an
+  <div class="note">Deploys are atomic Nix generations, and any generation can be rolled back, so an
   agent can change things confidently: a bad deploy is one <code>rollback</code> away, and a failed
   platform update rolls itself back. See <a href="concepts.html#generations">How it works</a>.</div>
 
   <h2 id="trust">Who the agent is</h2>
   <p>An agent is just another operator device. Its token is a normal session: it appears in the Box's
   <strong>Devices</strong> list and you can revoke it there at any time. The Box trusts <em>you</em> (and
-  the keys and codes you hand it) — never another machine on its own authority. Give an agent its own
+  the keys and codes you hand it), never another machine on its own authority. Give an agent its own
   SSH key and its own session so you can retire it independently.</p>
   <div class="tip">Already have a Box and want to hand an agent a session without provisioning? Run
   <code>boxd auth mint --label agent</code> on the Box and give the agent the printed token.</div>
@@ -98,7 +98,7 @@
   </div>
 </main>
 <footer>
-  <span>The Box — a personal server you actually own.</span>
+  <span>The Box. A personal server you actually own.</span>
   <span><a href="https://github.com/fluxoz/the-box">Source on GitHub</a></span>
 </footer>
 </body>

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>How it works — The Box docs</title>
+<title>How it works | The Box docs</title>
 <link rel="stylesheet" href="../docs.css">
 </head>
 <body>
@@ -25,13 +25,13 @@
   by construction.</p>
 
   <h2 id="appliance">The appliance model</h2>
-  <p>There is one generic Box OS image. It carries no machine-specific state — no hostname, keys, or disk
+  <p>There is one generic Box OS image. It carries no machine-specific state: no hostname, keys, or disk
   layout baked in. That state arrives at first boot as a small handoff (from the Configurator or the console
-  wizard). So the same image installs every machine, and "provision a hundred Boxes" is just "hand out a
-  hundred handoffs." Installing wipes the disk and takes the machine over — no dual-boot, no drift.</p>
+  wizard). So the same image installs every machine, and "provision a hundred Boxes" means "hand out a
+  hundred handoffs." Installing wipes the disk and takes the machine over. No dual-boot, no drift.</p>
 
   <h2 id="generations">Atomic generations</h2>
-  <p>Every change — adding a service, a platform update — is built into a new, complete system
+  <p>Every change (adding a service, a platform update) is built into a new, complete system
   <em>generation</em> and switched to atomically. Nothing is edited in place. That means you can roll back to
   any previous generation instantly, and a change that doesn't come up healthy rolls itself back. Config is
   the source of truth; the running system is derived from it, reproducibly.</p>
@@ -39,15 +39,15 @@
   <h2 id="reconciler">Self-reconcile</h2>
   <p>A Box builds its running system from its declarative config: the config compiles to a system definition,
   which builds a generation, which the Box switches to and health-checks. A platform update is the same loop
-  with a newer channel pin. There's no central controller pushing changes — each Box pulls its channel and
+  with a newer channel pin. There's no central controller pushing changes. Each Box pulls its channel and
   reconciles itself.</p>
 
   <h2 id="sovereign">Sovereign by default</h2>
   <p>No account, no phone-home. Your keys and secrets are generated in your browser or on your Box and never
-  leave: the pairing code, SSH keys, and the backup key are yours alone — which is also why only you can
+  leave: the pairing code, SSH keys, and the backup key are yours alone, which is also why only you can
   recover them. Backups are client-side encrypted, so storage providers see only ciphertext. Remote access is
   a mesh <em>you</em> control, or a tunnel <em>you</em> bring. The paid tiers are operated services (offsite
-  storage, a managed relay), never a gate on the software — all of which is free and open.</p>
+  storage, a managed relay), never a gate on the software. The software is all free and open.</p>
 
   <div class="pager">
     <span><a href="updates.html">← Updates &amp; rollback</a></span>
@@ -55,7 +55,7 @@
   </div>
 </main>
 <footer>
-  <span>The Box — a personal server you actually own.</span>
+  <span>The Box. A personal server you actually own.</span>
   <span><a href="https://github.com/fluxoz/the-box">Source on GitHub</a></span>
 </footer>
 </body>

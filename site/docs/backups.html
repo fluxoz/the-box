@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Backups — The Box docs</title>
+<title>Backups | The Box docs</title>
 <link rel="stylesheet" href="../docs.css">
 </head>
 <body>
@@ -21,14 +21,14 @@
   <p class="eyebrow">Guide</p>
   <h1>Backups</h1>
   <p class="lede">Box Backup is <strong>client-side encrypted</strong> and points at storage <strong>you
-  own</strong>. Everything is encrypted on the Box before it leaves, so your storage provider — and we —
+  own</strong>. Everything is encrypted on the Box before it leaves, so your storage provider (and we)
   only ever see ciphertext.</p>
 
   <h2 id="what">What gets backed up</h2>
   <p>The backup set is derived from your Box's manifest, not a list you maintain: your config, secrets,
   and auth, plus each service's declared <em>state directory</em>. Add a stateful service and its data is
   protected automatically.</p>
-  <div class="note">The Nix store and past generations are <b>deliberately not</b> backed up — they rebuild
+  <div class="note">The Nix store and past generations are <b>deliberately not</b> backed up. They rebuild
   from the (backed-up) config. Backups stay small and are about your <em>data</em>, not the OS.</div>
 
   <h2 id="backends">Bring your own backend</h2>
@@ -45,7 +45,7 @@
   <ol>
     <li>Dashboard → <strong>Backup</strong> → choose a backend and enter its details.</li>
     <li>The Box generates your <strong>backup key</strong> and shows it <strong>once</strong>.
-      <strong>Save it</strong> — it's the encryption key, it never leaves the Box, and without it a backup
+      <strong>Save it.</strong> It's the encryption key, it never leaves the Box, and without it a backup
       can't be restored by anyone.</li>
     <li>Pick a schedule (e.g. daily). An hourly heartbeat runs a backup when one is due.</li>
   </ol>
@@ -59,7 +59,7 @@
 
   <h2 id="managed">Managed offsite (optional)</h2>
   <p>Don't want to run storage? The managed tier gives you metered, encrypted-in-flight-and-at-rest offsite
-  storage in one command — still zero-knowledge, the key still never leaves your Box:</p>
+  storage in one command. It's still zero-knowledge, and the key still never leaves your Box:</p>
   <pre><code>boxd cloud enroll --server &lt;url&gt; --token &lt;one-time-token&gt;</code></pre>
   <p>It links the Box to a cloud account, provisions scoped storage, and points Box Backup at it. The
   software is free; only the operated storage is paid.</p>
@@ -70,7 +70,7 @@
   </div>
 </main>
 <footer>
-  <span>The Box — a personal server you actually own.</span>
+  <span>The Box. A personal server you actually own.</span>
   <span><a href="https://github.com/fluxoz/the-box">Source on GitHub</a></span>
 </footer>
 </body>

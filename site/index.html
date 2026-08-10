@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>The Box — turn a spare computer into a server you own</title>
-<meta name="description" content="Point a spare laptop, mini-PC, or cheap VPS at one command. It wipes the old OS and turns the machine into a private server you run from your browser — or that your agent runs for you.">
+<title>The Box: turn a spare computer into a server you own</title>
+<meta name="description" content="Point a spare laptop, mini-PC, or cheap VPS at one command. It wipes the old OS and turns the machine into a private server you run from your browser, or that your agent runs for you.">
 <style>
   :root{
     --bg:#14110c; --panel:#1b170f; --panel2:#221d13; --line:#322b1f; --line2:#4a4030;
@@ -106,20 +106,20 @@
     <nav><a href="/docs/">Docs</a> <a href="https://github.com/fluxoz/the-box">GitHub</a></nav>
   </div>
 
-  <!-- WHY — the 10-second pitch -->
+  <!-- why: the 10-second pitch -->
   <h1>Turn a spare computer<br>into a server you <b>own</b>.</h1>
-  <p class="lede">That old laptop, a mini-PC, or a $5 VPS — <b>one command</b> wipes it and turns the
-  machine into a <b>Box</b>: a private server you run from your browser. No account, no monthly rent.
-  And it updates itself like a phone, so you basically <b>can't brick it</b>.</p>
+  <p class="lede">That old laptop, a mini-PC, or a $5 VPS. <b>One command</b> wipes it and turns the
+  machine into a <b>Box</b>, a private server you run from your browser. No account. No monthly rent.
+  It updates itself like a phone, so you basically <b>can't brick it</b>.</p>
 
-  <!-- HOW — dead simple -->
+  <!-- how: dead simple -->
   <div class="install">
     <div class="tabs" role="tablist" aria-label="Install method">
       <button class="tab" role="tab" aria-selected="true"  id="t-linux"   aria-controls="p-linux"   data-os="linux">Linux / VPS</button>
       <button class="tab" role="tab" aria-selected="false" id="t-windows" aria-controls="p-windows" data-os="windows">Windows</button>
       <button class="tab" role="tab" aria-selected="false" id="t-pi"      aria-controls="p-pi"      data-os="pi">Raspberry Pi</button>
       <button class="tab" role="tab" aria-selected="false" id="t-usb"     aria-controls="p-usb"     data-os="usb">Bare metal</button>
-      <button class="tab" role="tab" aria-selected="false" id="t-mac"     aria-controls="p-mac"     data-os="mac">macOS</button>
+      <button class="tab" role="tab" aria-selected="false" id="t-mac"     aria-controls="p-mac"     data-os="mac">Mac</button>
     </div>
 
     <div class="panel" id="p-linux" role="tabpanel" aria-labelledby="t-linux">
@@ -128,7 +128,7 @@
         <code id="cmd-linux">curl -fsSL https://thebox.build/install.sh | sudo sh</code>
         <button type="button" data-copy="cmd-linux">copy</button>
       </div>
-      <p>Run it on a spare Linux machine or a cheap VPS. No USB, no reboot menu — it takes over in place.</p>
+      <p>Run it on a spare Linux machine or a cheap VPS. No USB and no reboot menu. It takes over in place.</p>
     </div>
 
     <div class="panel" id="p-windows" role="tabpanel" aria-labelledby="t-windows" hidden>
@@ -146,7 +146,7 @@
         <code id="cmd-pi">nix build github:fluxoz/the-box#pi5-image</code>
         <button type="button" data-copy="cmd-pi">copy</button>
       </div>
-      <p>A Raspberry Pi 3/4/5 makes a great Box — build the image and flash it to an SD card.</p>
+      <p>A Raspberry Pi 3/4/5 makes a great Box. Build the image and flash it to an SD card.</p>
     </div>
 
     <div class="panel" id="p-usb" role="tabpanel" aria-labelledby="t-usb" hidden>
@@ -155,48 +155,48 @@
     </div>
 
     <div class="panel" id="p-mac" role="tabpanel" aria-labelledby="t-mac" hidden>
-      <p>A Mac can't be taken over in place. Run a Box in a local VM or a cheap VPS instead — same one command, inside it.</p>
-      <p class="note">Details in the <a href="/docs/install.html#mac">macOS guide</a>.</p>
+      <p>Any Mac that runs Linux can become a Box. Intel Macs take the Linux one-liner above or a USB install, like any PC. Apple Silicon (M1/M2) runs Linux through Asahi; install that first, then convert the machine in place.</p>
+      <p class="note">Details in the <a href="/docs/install.html#mac">Mac guide</a>.</p>
     </div>
   </div>
 
   <div class="agent">
-    <b>Rather not touch a terminal?</b> Hand it to your agent — point it at
+    <b>Rather not touch a terminal?</b> Hand it to your agent. Point it at
     <a href="/llms.txt"><code>thebox.build/llms.txt</code></a> and it provisions the Box and runs it
-    for you, hands-off. The Box is built to be agent-first.
+    for you. The Box is built to be agent-first.
   </div>
 
   <p class="eyebrow">What happens</p>
   <h2>One command, then three minutes of watching.</h2>
   <ol class="steps">
-    <li><span class="txt"><b>Run the command.</b> The machine erases its old OS and installs Box&nbsp;OS — with your explicit consent; nothing is touched before that.</span></li>
+    <li><span class="txt"><b>Run the command.</b> The machine erases its old OS and installs Box&nbsp;OS. Nothing is touched until you give explicit consent.</span></li>
     <li><span class="txt"><b>It comes back as a Box.</b> It reboots and appears on your network as <code>box.local</code>, already running.</span></li>
     <li><span class="txt"><b>Open it and pair once.</b> Go to <code>box.local:2693</code> in your browser, pair your device, and start deploying. That's it.</span></li>
   </ol>
   <p class="stepnote">~10 minutes · one machine · nothing to hand-configure</p>
 
-  <!-- WHY, deeper — the proof -->
+  <!-- why, deeper: the proof -->
   <p class="eyebrow">Why a Box</p>
   <h2>The hard part isn't running a server. It's making it safe to change.</h2>
   <div class="pillars">
     <div class="pillar">
       <h3>You can't brick it</h3>
-      <p>Every change is a snapshot, like a phone update. A bad one undoes itself; a failed update rolls
-      back on its own. Worst case, it reverts to what worked — you (or your agent) can't paint yourself into a corner.</p>
+      <p>Every change is a snapshot, like a phone update. A bad one undoes itself, and a failed update rolls
+      back on its own. Worst case it reverts to what worked, so you (or your agent) can't paint yourself into a corner.</p>
     </div>
     <div class="pillar">
       <h3>It's yours, end to end</h3>
-      <p>Your data on your hardware. No account, no phone-home; your keys and secrets never leave the Box.
-      If our servers vanished tomorrow, your Box keeps running — it just stops getting updates.</p>
+      <p>Your data on your hardware. No account, no phone-home, and your keys and secrets never leave the Box.
+      If our servers vanished tomorrow, your Box keeps running. It just stops getting updates.</p>
     </div>
     <div class="pillar">
       <h3>Old hardware, new life</h3>
-      <p>One generic image installs any machine — laptop, mini-PC, Raspberry&nbsp;Pi, VPS. Nobody cares
-      about the Windows install on a 2015 ThinkPad; give it a second life as a server.</p>
+      <p>One generic image installs any machine: a laptop, a mini-PC, a Raspberry&nbsp;Pi, a VPS. Nobody cares
+      about the Windows install on a 2015 ThinkPad, so give it a second life as a server.</p>
     </div>
     <div class="pillar">
       <h3>Agent-first</h3>
-      <p>Everything the dashboard does, an agent can do over a simple interface — provision a machine,
+      <p>Everything the dashboard does, an agent can do too: provision a machine,
       deploy a service, take a backup, roll back. Point yours at <a href="/llms.txt">/llms.txt</a>.</p>
     </div>
   </div>
@@ -205,7 +205,7 @@
   <h2>Your websites, your backups, your remote access.</h2>
   <p class="uses">Deploy a <b>website</b>, back it up to <b>storage you own</b>, reach it <b>privately from
   anywhere</b>, or run a <b>whole fleet</b> of Boxes that find each other. All the software is free and
-  open — do it from the dashboard, or tell your agent. Paid tiers (offsite backups, a managed relay) are
+  open. Run it from the dashboard, or tell your agent. The paid tiers (offsite backups, a managed relay) are
   optional conveniences, never a gate on your own Box.</p>
 
   <div class="start">
@@ -220,7 +220,7 @@
   </footer>
 </main>
 <script>
-  // Tabbed installer — self-contained, no dependencies.
+  // Tabbed installer: self-contained, no dependencies.
   const tabs = [...document.querySelectorAll('.tab')];
   function select(os){
     tabs.forEach(t=>{
