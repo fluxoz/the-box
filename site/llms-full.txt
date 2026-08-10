@@ -1,11 +1,11 @@
-# The Box — full machine reference for agents
+# The Box: full machine reference for agents
 
 This is the complete reference for provisioning and managing a Box programmatically.
 For the short runbook, see https://thebox.build/llms.txt
 
 The Box is a self-managing appliance OS. One generic image installs any machine;
 per-machine identity (hostname, keys, pairing code, disk layout) arrives at first
-boot as an "orders" handoff. Every change — a service, a platform update — is built
+boot as an "orders" handoff. Every change (a service, a platform update) is built
 into a new atomic Nix generation and switched to with a health check; any generation
 can be rolled back. There is no central controller and no phone-home: a Box trusts
 its operator (you) and the keys/codes you hand it, never another machine.
@@ -17,21 +17,21 @@ Management endpoints all live on TCP port 2693.
 
 The install handoff. JSON. Fields:
 
-- erase_disk (bool, REQUIRED) — explicit consent to wipe the target disk. The
+- erase_disk (bool, REQUIRED): explicit consent to wipe the target disk. The
   installer refuses to touch any disk unless this is true.
-- hostname (string) — the new Box's hostname. "auto" (default) derives a stable
+- hostname (string): the new Box's hostname. "auto" (default) derives a stable
   per-machine name, which is what you want for batch/agent installs.
-- ssh_authorized_keys (array of string) — SSH public keys authorized on the Box
+- ssh_authorized_keys (array of string): SSH public keys authorized on the Box
   (user `murphy`, passwordless sudo). Put the agent's/operator's public key here
   so you can SSH back in after takeover.
-- enrollment_code_hash (string) — lowercase hex SHA-256 of a one-time pairing
+- enrollment_code_hash (string): lowercase hex SHA-256 of a one-time pairing
   code. Seeded into the Box's auth store at first boot so the Box is pairable
   from first boot with no SSH: redeem the plaintext code (§4) for a session token.
-- wifi (object, optional) — { "ssid": "...", "password": "..." } for Wi-Fi.
-- storage (object, optional) — { "layout": "single" | "mirror" | "pool",
+- wifi (object, optional): { "ssid": "...", "password": "..." } for Wi-Fi.
+- storage (object, optional): { "layout": "single" | "mirror" | "pool",
   "min_disk_gb": N }. Default: single, largest internal disk. You may instead set
   "disk": "/dev/disk/by-id/..." to name an explicit device.
-- cloudflare_tunnel_token (string, optional) — a Cloudflare Tunnel token to bring
+- cloudflare_tunnel_token (string, optional): a Cloudflare Tunnel token to bring
   up public access at first boot.
 
 Minimal orders for an agent provision:
@@ -44,14 +44,14 @@ Minimal orders for an agent provision:
 
 ## 2. The installer (install.sh)
 
-https://thebox.build/install.sh — an x86_64 in-place takeover. It fetches the
+https://thebox.build/install.sh is an x86_64 in-place takeover. It fetches the
 Box netboot kernel+initrd, stages your orders in RAM, and kexecs straight into
 the Box installer, which wipes the disk and installs NixOS as a Box. No USB, no
 reboot menu. Orders never touch the disk (they ride in RAM across the kexec).
 
 Supply orders one of two ways:
 
-- BOX_ORDERS_B64=<base64 of box-install.json>  (env var — the normal agent path)
+- BOX_ORDERS_B64=<base64 of box-install.json>  (env var, the normal agent path)
 - BOX_ORDERS=/path/to/box-install.json         (a file on the target)
 
 Run as root, or via sudo. Examples:
@@ -59,22 +59,22 @@ Run as root, or via sudo. Examples:
     # over SSH, orders embedded (no file on the target):
     ssh root@TARGET "curl -fsSL https://thebox.build/install.sh | sudo BOX_ORDERS_B64=$B64 sh"
 
-The installer kexecs near the end, so an SSH invocation's connection will drop —
-that is success, not failure. The authoritative "it worked" signal is the Box
+The installer kexecs near the end, so an SSH invocation's connection will drop.
+That is success, not failure. The authoritative "it worked" signal is the Box
 answering on port 2693 (§3).
 
-Bare metal with no OS (blank disk) cannot be reached by SSH — there is nothing to
+Bare metal with no OS (blank disk) cannot be reached by SSH, so there is nothing to
 run install.sh. A human flashes the SD/USB image or netboots the installer once
 (https://thebox.build/docs/install.html#bare-metal , and for Raspberry Pi,
 https://thebox.build/docs/raspberry-pi.html). From there the machine is agent-
-drivable on the LAN — see §2b. Once it is a Box, everything from §3 on applies
+drivable on the LAN (see §2b). Once it is a Box, everything from §3 on applies
 unchanged.
 
 
 ## 2b. The installer beacon (bare-metal, no SSH)
 
 A machine sitting in the installer's setup wizard advertises itself over mDNS so
-an agent can discover and finish it without a screen — the LAN-native analog of
+an agent can discover and finish it without a screen: the LAN-native analog of
 SSH. This is how you provision a machine that has no OS to SSH into.
 
 Discovery: it advertises the DNS-SD service type `_thebox-setup._tcp` on port
@@ -84,7 +84,7 @@ pin=required. Browse for it and read the address from the record:
     avahi-browse -rpt _thebox-setup._tcp | grep '^=' | grep IPv4
     # (or: dns-sd -B _thebox-setup._tcp)
 
-Identity: GET http://IP:2693/api/hello — unauthenticated. Returns
+Identity: GET http://IP:2693/api/hello (unauthenticated). Returns
 { "thebox":"installer", "role":"installer", "state":"unclaimed"|"installing"|"done",
 "pin_required":bool, "port":2693, "version":"..." }. Use it to confirm you found a
 Box installer and whether a setup PIN is needed, before touching anything.
@@ -92,7 +92,7 @@ Box installer and whether a setup PIN is needed, before touching anything.
 Setup PIN: the destructive endpoints are gated by a PIN presented in the
 `X-Setup-Pin` header. The PIN is shown on the machine's own screen, or set in the
 Configurator (rides in as `setup_pin`); you supply it out of band. This is the
-physical-security gate — the pre-install analog of the enrollment code — so a
+physical-security gate (the pre-install analog of the enrollment code), so a
 random host on the LAN can't claim a booting machine with its own keys.
 
 The setup API (all under http://IP:2693, all PIN-gated except /api/hello):
@@ -101,7 +101,7 @@ The setup API (all under http://IP:2693, all PIN-gated except /api/hello):
 - POST /api/commit { "layout": "...", "base": <orders> } → writes the effective
   orders + disko config and starts the install. `base` is the orders object from
   §1 (hostname, ssh_authorized_keys, enrollment_code_hash, wifi); the chosen
-  layout is merged into it. This is the commit — it wipes and installs.
+  layout is merged into it. This is the commit. It wipes and installs.
 - GET  /api/status → { committed, done, log } (install progress)
 
 Agent flow: browse → /api/hello → (build orders as in §1) → POST /api/commit with
@@ -117,16 +117,16 @@ dashboard}`. Flags: --hostname, --ssh-key (repeatable; literal key or .pub path)
 
 ## 3. Readiness
 
-GET http://BOX:2693/api/v1/health — public (no auth), returns a coarse-health
+GET http://BOX:2693/api/v1/health is public (no auth) and returns a coarse-health
 JSON object once boxd is up. Poll it to know the Box has finished installing and
 booting:
 
     until curl -fsS http://BOX:2693/api/v1/health >/dev/null; do sleep 5; done
 
 
-## 4. Pairing — get a session token
+## 4. Pairing: get a session token
 
-POST http://BOX:2693/pair/redeem — public path. Body: form-encoded `code=<code>`.
+POST http://BOX:2693/pair/redeem (public path). Body: form-encoded `code=<code>`.
 The one-time code is consumed on use (single-use; replays fail).
 
 - With `Accept: application/json` → responds `{"token":"...","label":"agent"}`.
@@ -157,7 +157,7 @@ operator can list and revoke.
 
 ## 6. MCP server
 
-POST http://BOX:2693/mcp — JSON-RPC 2.0 over HTTP, authenticated as in §5.
+POST http://BOX:2693/mcp is JSON-RPC 2.0 over HTTP, authenticated as in §5.
 Stateless (no SSE session required). Standard methods:
 
 - initialize → returns protocolVersion + serverInfo {name:"the-box"}.
@@ -180,36 +180,36 @@ Call example (deploy):
 
 Deploy / change (each activates a new atomic generation):
 
-- deploy_static_site — create/update a static site. args: name (required; 1–32
+- deploy_static_site: create/update a static site. args: name (required; 1–32
   chars a-z 0-9 '-'), index_html (single-page HTML) OR source_path (a directory
   on the Box to copy as the site root), domain (optional public domain for tunnel
   traffic, e.g. site.example.com).
-- deploy — create/update a service from any template. args: name (required),
+- deploy: create/update a service from any template. args: name (required),
   template (required; an id from list_templates, e.g. "static-site"), params
   (object; template-specific), domain (optional), public (bool, optional).
-- delete_service — remove a service. args: name (required). Previous generation
+- delete_service: remove a service. args: name (required). Previous generation
   stays available for rollback.
-- rollback — switch back to a previous generation. args: generation (required,
+- rollback: switch back to a previous generation. args: generation (required,
   number from list_generations).
 
 Inspect (read-only):
 
-- get_status — active generation, declared services, build backend.
-- list_services — services with template, domain, URL, active state.
-- list_templates — deployable templates (id, title, description). Call before
+- get_status: active generation, declared services, build backend.
+- list_services: services with template, domain, URL, active state.
+- list_templates: deployable templates (id, title, description). Call before
   `deploy` to get valid template ids and their params.
-- list_generations — all generations, newest last, current one marked.
-- list_history — git history of the Box's declarative config, newest first.
-- channel_status — running platform release, configured channel, pinned revision.
-- channel_check — whether a newer platform than the pinned one is available.
+- list_generations: all generations, newest last, current one marked.
+- list_history: git history of the Box's declarative config, newest first.
+- channel_status: running platform release, configured channel, pinned revision.
+- channel_check: whether a newer platform than the pinned one is available.
   (Applying an update is done by the Box's root updater, not via MCP.)
 
 Backups:
 
-- backup_status — destination reachability, snapshot count, last-run time.
-- backup_snapshots — list snapshots (id, time, paths), newest last.
-- backup_now — take a snapshot now (e.g. before a risky change); blocks until done.
-- backup_restore — restore in place (DESTRUCTIVE). args: snapshot ("latest"
+- backup_status: destination reachability, snapshot count, last-run time.
+- backup_snapshots: list snapshots (id, time, paths), newest last.
+- backup_now: take a snapshot now (e.g. before a risky change); blocks until done.
+- backup_restore: restore in place (DESTRUCTIVE). args: snapshot ("latest"
   default), scope ("config" default | "all" | a service name).
 
 A typical agent session: initialize → list_templates → deploy/deploy_static_site
@@ -219,8 +219,8 @@ rollback if needed.
 
 ## 7. Ports & networking
 
-- 2693/tcp — dashboard, JSON API (/api/v1), MCP (/mcp), pairing (/pair).
-- 22/tcp — SSH (keys from ssh_authorized_keys). Loopback HTTP is trusted, so an
+- 2693/tcp: dashboard, JSON API (/api/v1), MCP (/mcp), pairing (/pair).
+- 22/tcp: SSH (keys from ssh_authorized_keys). Loopback HTTP is trusted, so an
   SSH tunnel to 2693 reaches management without a token.
 - Deployed services with a domain are served publicly via a tunnel (Box Connect
   or a BYO Cloudflare tunnel), routed by Host header. The dashboard is never
@@ -233,4 +233,4 @@ A Box trusts its operator, not other machines. Sessions are per-Box and revocabl
 Give each agent its own SSH key and its own session token so it can be retired
 independently. No account, no phone-home; keys, pairing codes, and the backup key
 are generated on the Box or by you and never leave it. Backups are client-side
-encrypted — storage providers only ever hold ciphertext.
+encrypted, so storage providers only ever hold ciphertext.

@@ -8,9 +8,14 @@
     # Purpose-built Raspberry Pi 5 support (vendor kernel + firmware + boot),
     # with a binary cache for the kernel. Brings its own nixpkgs.
     nixos-raspberrypi.url = "github:nvmd/nixos-raspberrypi/main";
+    # Linux on Apple Silicon Macs (M1/M2) via the Asahi project. Brings the
+    # Asahi kernel + GPU support as a NixOS module. Experimental Box target: a
+    # Mac boots this through Asahi (there is no blow-away Apple-Silicon image;
+    # peripheral firmware must be extracted from the target Mac).
+    apple-silicon.url = "github:nix-community/nixos-apple-silicon";
   };
 
-  outputs = { self, nixpkgs, disko, nixos-raspberrypi }:
+  outputs = { self, nixpkgs, disko, nixos-raspberrypi, apple-silicon }:
     let
       systems = [ "x86_64-linux" "aarch64-linux" ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
@@ -75,6 +80,22 @@
         ];
       };
       boxPis = nixpkgs.lib.genAttrs [ "3" "4" "5" ] mkPiBox;
+
+      # EXPERIMENTAL: a Box for Apple Silicon Macs (M1/M2), riding on the Asahi
+      # project's kernel/GPU support. Unlike the Pi there is no flashable image:
+      # Apple Silicon can't boot an arbitrary USB image and keeps a small macOS
+      # firmware stub, so the flow is "install Asahi Linux, then switch the
+      # system to this config" (the OS-tier reconciler path, same as any Box
+      # update). Peripheral firmware (Wi-Fi/BT) is extracted from the target
+      # Mac; extraction is off here so the config evaluates without hardware.
+      macBox = nixpkgs.lib.nixosSystem {
+        system = "aarch64-linux";
+        modules = [
+          apple-silicon.nixosModules.default
+          self.nixosModules.platform
+          ./nix/mac.nix
+        ];
+      };
 
       # A per-box config composes the reusable platform (boxd + Box software)
       # with a hardware layer and its own host/service modules — the OS tier of
@@ -267,6 +288,7 @@
 
       nixosConfigurations = {
         box-os = boxOs;
+        box-os-mac = macBox; # experimental: Apple Silicon (M1/M2) via Asahi
         box-installer-iso = installerWith
           "${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix";
         box-installer-netboot = installerWith
