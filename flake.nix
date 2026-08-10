@@ -54,10 +54,10 @@
 
       # A Box for a given Raspberry Pi model, on nixos-raspberrypi's per-model
       # base (vendor kernel + firmware + boot method) — the generic aarch64 image
-      # does not boot a Pi. This SAME system closure is both the flashable SD
-      # image (config.system.build.sdImage) and what the live-convert installs
-      # onto an existing Pi: flash and convert are two deliveries of one Box.
-      # Pis are a common appliance, so 3/4/5 are all first-class.
+      # does not boot a Pi. Delivered as a flashable SD/USB image; that is the Pi
+      # install path (live in-place conversion of a running Raspberry Pi OS is not
+      # viable on this hardware — kexec is blocked by the RPi OS kernel). Pis are
+      # a common appliance, so 3/4/5 are all first-class.
       mkPiBox = model: nixos-raspberrypi.lib.nixosSystemFull {
         specialArgs = { inherit nixos-raspberrypi; };
         modules = [
@@ -75,30 +75,6 @@
         ];
       };
       boxPis = nixpkgs.lib.genAttrs [ "3" "4" "5" ] mkPiBox;
-
-      # The live-convert target: the SAME Box, but installed onto an EXISTING
-      # Raspberry Pi OS disk instead of shipped as an image — so no sd-image
-      # module, and fileSystems point at the running Pi's partitions (Raspberry
-      # Pi OS labels them `bootfs` vfat + `rootfs` ext4). convert.sh installs
-      # this closure in place and reboots; the Pi firmware boots it. No kexec.
-      mkPiConvert = model: nixos-raspberrypi.lib.nixosSystemFull {
-        specialArgs = { inherit nixos-raspberrypi; };
-        modules = [
-          {
-            imports = [
-              nixos-raspberrypi.nixosModules.trusted-nix-caches
-              nixos-raspberrypi.nixosModules."raspberry-pi-${model}".base
-            ];
-          }
-          self.nixosModules.platform
-          ./nix/pi.nix
-          {
-            fileSystems."/" = { device = "/dev/disk/by-label/rootfs"; fsType = "ext4"; };
-            fileSystems."/boot/firmware" = { device = "/dev/disk/by-label/bootfs"; fsType = "vfat"; };
-          }
-        ];
-      };
-      boxPiConverts = nixpkgs.lib.genAttrs [ "3" "4" "5" ] mkPiConvert;
 
       # A per-box config composes the reusable platform (boxd + Box software)
       # with a hardware layer and its own host/service modules — the OS tier of
@@ -163,18 +139,12 @@
           default = boxd;
         }))
         {
-          # Per-model Pi outputs: flashable images (pi{3,4,5}-image, raw .img)
-          # and live-convert system closures (convert-pi{3,4,5}-system) that
-          # convert.sh installs onto an existing Raspberry Pi OS.
-          aarch64-linux =
-            (nixpkgs.lib.mapAttrs'
-              (m: cfg: nixpkgs.lib.nameValuePair "pi${m}-image"
-                cfg.config.system.build.sdImage)
-              boxPis)
-            // (nixpkgs.lib.mapAttrs'
-              (m: cfg: nixpkgs.lib.nameValuePair "convert-pi${m}-system"
-                cfg.config.system.build.toplevel)
-              boxPiConverts);
+          # Per-model Pi appliance images (raw .img, dd to SD/USB): pi3-image,
+          # pi4-image, pi5-image.
+          aarch64-linux = nixpkgs.lib.mapAttrs'
+            (m: cfg: nixpkgs.lib.nameValuePair "pi${m}-image"
+              cfg.config.system.build.sdImage)
+            boxPis;
 
           x86_64-linux = {
             installer-iso =
@@ -293,9 +263,7 @@
           "${nixpkgs}/nixos/modules/installer/netboot/netboot-minimal.nix";
       } // boxHosts
         // (nixpkgs.lib.mapAttrs'
-             (m: cfg: nixpkgs.lib.nameValuePair "box-os-pi${m}" cfg) boxPis)
-        // (nixpkgs.lib.mapAttrs'
-             (m: cfg: nixpkgs.lib.nameValuePair "box-convert-pi${m}" cfg) boxPiConverts);
+             (m: cfg: nixpkgs.lib.nameValuePair "box-os-pi${m}" cfg) boxPis);
 
       # Live VM proof that the OS-tier switch + system rollback work on a
       # booted Box (exercises the exact command sequence ostier.rs drives).
