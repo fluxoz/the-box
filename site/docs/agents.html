@@ -43,10 +43,14 @@
   <div class="warn"><b>Takeover wipes the disk.</b> The orders carry explicit <code>erase_disk</code>
   consent and the installer refuses to touch a disk without it — but point <code>provision</code> at a
   machine you intend to convert, not your daily driver.</div>
-  <p>For a machine with no OS (bare metal, blank disk), there's nothing to SSH into yet — flash the
-  installer or boot it over the network first (see <a href="install.html#bare-metal">Install → bare
-  metal</a> and <a href="raspberry-pi.html">Raspberry Pi</a>). Once it's a Box, everything below is the
-  same.</p>
+  <p>For a machine with no OS (bare metal, blank disk), there's nothing to SSH into yet — a human
+  flashes the installer or netboots it once (see <a href="install.html#bare-metal">Install → bare
+  metal</a> and <a href="raspberry-pi.html">Raspberry Pi</a>). From there it's agent-drivable on the
+  LAN: while it sits in setup it <strong>beacons over mDNS</strong> as an unclaimed Box installer
+  (<code>_thebox-setup._tcp</code>), and its setup API is PIN-gated (the PIN is shown on the machine's
+  screen, or set in the Configurator). An agent discovers it, pushes orders, and commits the install —
+  then, once it's a Box, everything below is the same. The runbook is in
+  <a href="/llms-full.txt"><code>/llms-full.txt</code></a> (§2b).</p>
 
   <h3 id="provision-json">Machine-readable output</h3>
   <p>Add <code>--json</code> and the command prints exactly what an agent needs to take over:</p>

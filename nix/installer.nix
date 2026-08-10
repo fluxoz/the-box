@@ -26,6 +26,7 @@ let
       boxInstaller
       boxDaemon
       diskoPkg
+      pkgs.avahi # avahi-publish-service — the LAN beacon for unclaimed installers
       pkgs.coreutils
       pkgs.curl
       pkgs.iproute2 # `ip` — the box's address for the browser-wizard hint
@@ -75,6 +76,18 @@ let
         echo "   open  $url" > /dev/console
         echo "   setup PIN:  $pin" > /dev/console
         echo "  ===============================================" > /dev/console
+        # Beacon: announce this unclaimed machine on the LAN over mDNS so an
+        # agent (or another Box's dashboard) can discover and finish it without
+        # a screen — the LAN-native analog of SSH for bare metal. A per-boot
+        # suffix keeps a fleet of blank machines from colliding on one name.
+        # PIN-gated setup still guards the destructive endpoints; the beacon
+        # only advertises "an unclaimed Box installer is here", never the PIN.
+        # Bound to the wizard's lifetime: killed the moment setup commits below.
+        sfx=$(printf '%04x' $((RANDOM % 65536)))
+        avahi-publish-service "box-setup-$sfx · The Box" _thebox-setup._tcp 2693 \
+          "vendor=thebox" "role=installer" "state=unclaimed" "pin=required" \
+          >/dev/null 2>&1 &
+        beacon_pid=$!
         # shellcheck disable=SC2086
         boxd install-wizard --listen 0.0.0.0:2693 \
           --orders-out /tmp/box-install.json --disko-out /tmp/box-disko.nix \
@@ -91,6 +104,8 @@ let
           [ -f /tmp/box-install.json ] && [ -f /tmp/box-disko.nix ] && break
           sleep 1
         done
+        # Setup is committing (or was cancelled) — stop advertising as unclaimed.
+        kill "''${beacon_pid:-}" 2>/dev/null || true
         if [ -f /tmp/box-install.json ] && [ -f /tmp/box-disko.nix ]; then
           handoff=/tmp/box-install.json
           diskocfg=/tmp/box-disko.nix
@@ -229,6 +244,17 @@ in
   # reach the pre-pairing setup (the installer firewall otherwise allows only
   # SSH). Transient installer environment only.
   networking.firewall.allowedTCPPorts = [ 2693 ];
+  # mDNS so the blank-boot beacon (avahi-publish-service, run_wizards) can
+  # advertise this unclaimed installer for agent discovery. userServices lets
+  # the beacon register over avahi's D-Bus API; openFirewall (default) opens
+  # 5353/udp. Transient installer environment only.
+  services.avahi = {
+    enable = true;
+    publish = {
+      enable = true;
+      userServices = true;
+    };
+  };
   # ttyS0 last = primary console, so installer progress is visible over serial.
   boot.kernelParams = [ "console=tty0" "console=ttyS0,115200" ];
   # Load RAID/device-mapper modules in the installer so disko can *build* a

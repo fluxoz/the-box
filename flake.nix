@@ -301,6 +301,10 @@
         inherit self nixpkgs;
         system = "x86_64-linux";
       };
+      checks.x86_64-linux.installer-beacon = import ./nix/tests/installer-beacon.nix {
+        inherit self nixpkgs;
+        system = "x86_64-linux";
+      };
 
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
