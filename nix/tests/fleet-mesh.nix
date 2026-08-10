@@ -11,7 +11,7 @@ let
   # ACL so tag:box preauth keys are accepted (the fleet user owns the tag) and
   # peers can reach each other — the shaped-mesh shipped policy, minimised.
   acl = pkgs.writeText "acl.hujson" (builtins.toJSON {
-    tagOwners."tag:box" = [ "fleet" ];
+    tagOwners."tag:box" = [ "fleet@" ];
     acls = [{ action = "accept"; src = [ "*" ]; dst = [ "*:*" ]; }];
   });
 
@@ -35,12 +35,20 @@ pkgs.testers.runNixOSTest {
       settings = {
         server_url = "http://coordinator:8080";
         # Embedded DERP so nodes can coordinate/relay even before a direct path.
-        derp.server = {
-          enable = true;
-          region_id = 999;
-          region_code = "test";
-          region_name = "test";
-          stun_listen_addr = "0.0.0.0:3478";
+        # urls=[] + no auto-update: DON'T fetch the public DERPMap from
+        # controlplane.tailscale.com (no internet in the test → headscale would
+        # crash-loop). The embedded DERP (region 999) is the only relay.
+        derp = {
+          urls = [ ];
+          auto_update_enabled = false;
+          server = {
+            enabled = true; # headscale's yaml key is `enabled`, not `enable`
+            region_id = 999;
+            region_code = "test";
+            region_name = "test";
+            stun_listen_addr = "0.0.0.0:3478";
+            automatically_add_embedded_derp_region = true; # -> non-empty DERPMap
+          };
         };
         # Required by headscale's config assertions; unused here — the Boxes join
         # with `tailscale up --accept-dns=false`, so tailnet DNS never applies.
@@ -65,7 +73,9 @@ pkgs.testers.runNixOSTest {
 
     start_all()
     coordinator.wait_for_unit("headscale.service")
-    coordinator.wait_until_succeeds("headscale users create fleet", timeout=90)
+    # Wait until the gRPC socket actually serves (idempotent), then create once.
+    coordinator.wait_until_succeeds("headscale users list", timeout=120)
+    coordinator.succeed("headscale users create fleet")
 
     users = json.loads(coordinator.succeed("headscale users list -o json"))
     users = users["users"] if isinstance(users, dict) else users
