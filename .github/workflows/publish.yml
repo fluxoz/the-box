@@ -92,11 +92,15 @@ jobs:
             pub/SHA256SUMS
           fail_on_unmatched_files: true
 
-      - name: Assemble Pages content (small — script + landing only)
+      - name: Assemble Pages content (everything but heavy netboot artifacts)
         run: |
           set -euo pipefail
           mkdir -p site_out
-          cp pub/install.sh pub/install.ps1 pub/index.html pub/mac.txt pub/SHA256SUMS site_out/
+          # Serve the whole site (landing, docs, configurator, installers,
+          # checksums) — everything except the heavy netboot images, which
+          # come from the Release.
+          cp -r pub/. site_out/
+          rm -rf site_out/netboot
           echo 'thebox.build' > site_out/CNAME
 
       - uses: actions/upload-pages-artifact@v3

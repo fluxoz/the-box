@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Remote access — The Box docs</title>
+<link rel="stylesheet" href="../docs.css">
+</head>
+<body>
+<div class="top">
+  <a class="brand" href="/">THE <b>BOX</b> <span class="sub">docs</span></a>
+  <nav>
+    <a href="./">Docs</a>
+    <a href="install.html">Install</a>
+    <a href="first-steps.html">First steps</a>
+    <a href="backups.html">Backups</a>
+    <a href="fleet.html">Fleet</a>
+  </nav>
+</div>
+<main>
+  <p class="eyebrow">Guide</p>
+  <h1>Remote access</h1>
+  <p class="lede">Two ways to reach a Box that isn't on your LAN: <strong>Box Connect</strong> for private
+  access over an encrypted mesh (just you), and a <strong>Cloudflare tunnel</strong> for making a service
+  public — no open ports either way.</p>
+
+  <h2 id="connect">Box Connect — private mesh</h2>
+  <p>Box Connect joins your Box to a <strong>WireGuard mesh</strong> (via Tailscale/Headscale). You get
+  mutually-authenticated, encrypted L3 reachability to <em>any</em> service on the Box — not just the
+  dashboard — from anywhere, with NAT traversal and relay fallback. Nothing is exposed to the public
+  internet.</p>
+
+  <h3>Free — your own coordinator</h3>
+  <p>Run your own <a href="https://github.com/juanfont/headscale">Headscale</a>, mint a pre-auth key, and
+  join:</p>
+  <pre><code>boxd connect enroll --server https://your-headscale --authkey &lt;key&gt;
+boxd connect status        # show the mesh
+boxd connect down          # leave</code></pre>
+
+  <h3>Managed — we run the coordinator</h3>
+  <p>Don't want to run Headscale + relays? The managed tier provisions a mesh key and joins in one step:</p>
+  <pre><code>boxd cloud connect</code></pre>
+  <p>It mints an ephemeral, tagged key from the control plane and joins. Box Connect rides on the same
+  operator identity as pairing — the mesh is <em>yours</em>.</p>
+
+  <h2 id="cloudflare">Public access — Cloudflare tunnel</h2>
+  <p>To make a service reachable to <em>anyone</em> (a public site), bring your own Cloudflare tunnel: paste
+  a tunnel token on the dashboard's <strong>Network</strong> page (or in the Configurator at install), and
+  point the tunnel's hostname at <code>localhost:2693</code>. The Box comes online reachable from the
+  internet with no open inbound ports, and no traffic through us.</p>
+  <div class="note"><b>Private vs public.</b> Box Connect is <em>you</em> reaching your Box privately. A
+  Cloudflare tunnel is the <em>world</em> reaching a service you choose to publish. Use whichever fits.</div>
+
+  <div class="pager">
+    <span><a href="backups.html">← Backups</a></span>
+    <span><a href="fleet.html">Fleet →</a></span>
+  </div>
+</main>
+<footer>
+  <span>The Box — a personal server you actually own.</span>
+  <span><a href="https://github.com/fluxoz/the-box">Source on GitHub</a></span>
+</footer>
+</body>
+</html>

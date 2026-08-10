@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>First steps — The Box docs</title>
+<link rel="stylesheet" href="../docs.css">
+</head>
+<body>
+<div class="top">
+  <a class="brand" href="/">THE <b>BOX</b> <span class="sub">docs</span></a>
+  <nav>
+    <a href="./">Docs</a>
+    <a href="install.html">Install</a>
+    <a href="backups.html">Backups</a>
+    <a href="connect.html">Remote access</a>
+    <a href="fleet.html">Fleet</a>
+  </nav>
+</div>
+<main>
+  <p class="eyebrow">Guide</p>
+  <h1>First steps</h1>
+  <p class="lede">Your Box is installed. Now: find it, pair your browser, deploy something, and save your
+  recovery kit. No account, and — if you used the Configurator — no SSH.</p>
+
+  <h2 id="find">Find your Box</h2>
+  <p>A Box advertises itself on the LAN. Reach its dashboard at:</p>
+  <pre><code>http://&lt;hostname&gt;.local:2693</code></pre>
+  <p>The dashboard listens on port <strong>2693</strong>. If <code>.local</code> (mDNS) doesn't resolve on
+  your network, use the Box's IP from your router's lease table.</p>
+
+  <h2 id="pair">Pair your browser</h2>
+  <p>Management "answers to you" — every action needs a session, and a session comes from a one-time
+  <strong>pairing code</strong>. The <em>coarse health</em> of a Box is public (that's how discovery
+  works), but nothing else is.</p>
+  <ol>
+    <li>Open <code>http://&lt;box&gt;.local:2693</code> — you're sent to <strong>Pair</strong>.</li>
+    <li>Enter the pairing code from your <a href="#recovery">recovery kit</a> (the Configurator generated
+      it, and first boot installed its hash). Your browser gets a session; the code is now spent.</li>
+  </ol>
+  <p>Didn't use the Configurator? SSH in with your key and mint a code:</p>
+  <pre><code>ssh &lt;you&gt;@&lt;box&gt;.local
+boxd auth enroll            # prints a code, valid 15 min, single use</code></pre>
+  <div class="tip">Access over an SSH tunnel (<code>ssh -L 2693:localhost:2693 &lt;box&gt;</code>) is trusted
+  as local — you can manage the Box without pairing a browser at all.</div>
+
+  <h2 id="dashboard">The dashboard</h2>
+  <p>Everything is here, and every change is an atomic generation you can roll back:</p>
+  <table class="tbl">
+    <tr><th>Section</th><th>What it does</th></tr>
+    <tr><td>Services</td><td>Add and remove services from templates. Each change builds a new generation.</td></tr>
+    <tr><td>Generations</td><td>The history. Roll back to any previous generation in one click.</td></tr>
+    <tr><td>System</td><td>What platform you're running, and <a href="updates.html">updates</a>.</td></tr>
+    <tr><td>Backup</td><td>Configure, run, and restore <a href="backups.html">backups</a>.</td></tr>
+    <tr><td>Network</td><td>Public access via your own Cloudflare tunnel.</td></tr>
+    <tr><td>Fleet</td><td>Other Boxes on the network, and a link into each one's dashboard.</td></tr>
+    <tr><td>Devices</td><td>Your paired browsers/agents — add or revoke them.</td></tr>
+  </table>
+
+  <h2 id="deploy">Deploy your first service</h2>
+  <p>Go to <strong>Services → New</strong>, pick a template, fill in its options, and apply. The Box
+  generates the config, builds a new generation, switches to it, and health-checks — rolling back
+  automatically if it doesn't come up. There's a matching JSON/MCP API, so an agent can do the same.</p>
+
+  <h2 id="recovery">Your recovery kit</h2>
+  <p>Keep these somewhere safe (a password manager). They're generated in your browser and never sent to
+  anyone — which also means <strong>only you have them</strong>:</p>
+  <ul>
+    <li><strong>Pairing code</strong> — pairs your first browser with no SSH.</li>
+    <li><strong>SSH private key</strong> — if the Configurator generated one for you.</li>
+    <li><strong>Backup key</strong> — shown once when you turn on <a href="backups.html">backups</a>;
+      without it, backups can't be restored, by you or anyone.</li>
+  </ul>
+
+  <div class="pager">
+    <span><a href="install.html">← Install</a></span>
+    <span><a href="backups.html">Backups →</a></span>
+  </div>
+</main>
+<footer>
+  <span>The Box — a personal server you actually own.</span>
+  <span><a href="https://github.com/fluxoz/the-box">Source on GitHub</a></span>
+</footer>
+</body>
+</html>

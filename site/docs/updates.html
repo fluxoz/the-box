@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Updates &amp; rollback — The Box docs</title>
+<link rel="stylesheet" href="../docs.css">
+</head>
+<body>
+<div class="top">
+  <a class="brand" href="/">THE <b>BOX</b> <span class="sub">docs</span></a>
+  <nav>
+    <a href="./">Docs</a>
+    <a href="install.html">Install</a>
+    <a href="first-steps.html">First steps</a>
+    <a href="backups.html">Backups</a>
+    <a href="fleet.html">Fleet</a>
+  </nav>
+</div>
+<main>
+  <p class="eyebrow">Guide</p>
+  <h1>Updates &amp; rollback</h1>
+  <p class="lede">The whole platform — boxd, the base OS, the template library — is one tracked channel. An
+  update is just another atomic generation, and a failed one <strong>rolls itself back</strong>.</p>
+
+  <h2 id="update">Update</h2>
+  <p>Dashboard → <strong>System</strong>:</p>
+  <ul>
+    <li><strong>Check for updates</strong> — compares your pinned platform to the channel.</li>
+    <li><strong>Update now</strong> — rebuilds the system on the new release, switches, and health-checks.</li>
+  </ul>
+  <p>Or from the CLI over SSH:</p>
+  <pre><code>boxd channel check      # is there a new release?
+boxd channel update     # apply it (no-op if already current)</code></pre>
+  <p>Turn on <strong>auto-update</strong> and a timer does the same on a schedule.</p>
+
+  <h2 id="rollback">Health-checked rollback</h2>
+  <p>Every update builds a new generation and switches to it, then checks the Box came up healthy. If it
+  didn't, the Box <strong>rolls back automatically</strong> and restores the previous pin — so a bad release
+  doesn't strand your Box, and doesn't get retried next time. You can also roll back any generation by hand
+  from <strong>Generations</strong>.</p>
+  <div class="note">This is the same mechanism your own service changes use — nothing about a platform update
+  is special. It's a generation, and generations are reversible.</div>
+
+  <h2 id="channel">Track a fork or a pin</h2>
+  <p>By default a Box tracks the official platform (<code>github:fluxoz/the-box</code>). Point it at a fork, a
+  mirror, or a pinned revision instead with <code>boxd channel set</code> — useful if you want to review
+  releases before they reach your fleet.</p>
+
+  <div class="pager">
+    <span><a href="fleet.html">← Fleet</a></span>
+    <span><a href="concepts.html">How it works →</a></span>
+  </div>
+</main>
+<footer>
+  <span>The Box — a personal server you actually own.</span>
+  <span><a href="https://github.com/fluxoz/the-box">Source on GitHub</a></span>
+</footer>
+</body>
+</html>

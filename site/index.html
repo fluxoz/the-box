@@ -23,29 +23,37 @@
     -webkit-mask-image:radial-gradient(ellipse 130% 80% at 50% 0%,#000 24%,transparent 76%);
     mask-image:radial-gradient(ellipse 130% 80% at 50% 0%,#000 24%,transparent 76%);}
   main{position:relative;z-index:1;max-width:760px;margin:0 auto;padding:12vh 1.25rem 6rem;}
+  .topbar{display:flex;align-items:baseline;gap:.6rem;}
   .brand{display:flex;align-items:baseline;gap:.6rem;font-weight:800;letter-spacing:.14em;font-size:1.05rem;}
   .brand .sub{font-weight:600;color:var(--dim);letter-spacing:.22em;text-transform:uppercase;font-size:.7rem;}
+  .topbar nav{margin-left:auto;display:flex;gap:1.1rem;font-size:.82rem;letter-spacing:.04em;}
   h1{font-size:clamp(2rem,6vw,3.2rem);line-height:1.08;margin:2.2rem 0 .6rem;text-wrap:balance;letter-spacing:-.01em;}
   h1 b{color:var(--brass2);}
-  .lede{color:var(--dim);font-size:1.15rem;max-width:52ch;margin:0 0 2.4rem;}
-  .cmd{display:flex;align-items:center;gap:.75rem;background:var(--panel);border:1px solid var(--line2);
-    border-radius:8px;padding:.85rem 1rem;font-family:var(--mono);font-size:.9rem;overflow-x:auto;box-shadow:inset 3px 0 0 var(--brass);}
+  .lede{color:var(--dim);font-size:1.15rem;max-width:52ch;margin:0 0 2.2rem;}
+  /* install tabs */
+  .install{background:var(--panel);border:1px solid var(--line2);border-radius:10px;overflow:hidden;box-shadow:inset 3px 0 0 var(--brass);}
+  .tabs{display:flex;gap:.15rem;border-bottom:1px solid var(--line);padding:.35rem .35rem 0;flex-wrap:wrap;}
+  .tab{background:transparent;color:var(--dim);border:0;border-bottom:2px solid transparent;
+    padding:.5rem .8rem;font:inherit;font-size:.82rem;letter-spacing:.04em;cursor:pointer;border-radius:6px 6px 0 0;}
+  .tab:hover{color:var(--ink);}
+  .tab[aria-selected=true]{color:var(--brass2);border-bottom-color:var(--brass);}
+  .panel{padding:1rem 1.1rem 1.15rem;}
+  .panel[hidden]{display:none;}
+  .cmd{display:flex;align-items:center;gap:.75rem;background:var(--bg);border:1px solid var(--line);
+    border-radius:8px;padding:.8rem .95rem;font-family:var(--mono);font-size:.9rem;overflow-x:auto;}
   .cmd .prompt{color:var(--brass);flex:none;}
   .cmd code{white-space:nowrap;color:var(--ink);}
   .cmd button{margin-left:auto;flex:none;background:transparent;color:var(--dim);border:1px solid var(--line2);
     border-radius:6px;padding:.3rem .6rem;font-size:.75rem;cursor:pointer;}
   .cmd button:hover{color:var(--ink);border-color:var(--brass);}
-  .note{color:var(--faint);font-size:.82rem;margin:.6rem 0 0;}
-  .grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:3.2rem 0;}
+  .panel p{margin:.7rem 0 0;color:var(--dim);font-size:.9rem;}
+  .panel p.note{color:var(--faint);font-size:.82rem;}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:2.8rem 0 2.4rem;}
   @media (max-width:560px){.grid{grid-template-columns:1fr;}}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:1rem 1.1rem;}
   .card h3{margin:.1rem 0 .35rem;font-size:.82rem;letter-spacing:.08em;text-transform:uppercase;color:var(--brass2);}
   .card p{margin:0;color:var(--dim);font-size:.92rem;}
-  .ways{margin:2.4rem 0;}
-  .ways h2{font-size:.8rem;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 .8rem;}
-  .ways ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:.55rem;}
-  .ways li{display:flex;gap:.7rem;align-items:baseline;color:var(--dim);font-size:.95rem;}
-  .ways li b{color:var(--ink);font-weight:600;min-width:8.5rem;flex:none;}
+  .next{margin:2.4rem 0;color:var(--dim);font-size:.95rem;}
   a{color:var(--brass2);text-decoration:none;border-bottom:1px solid transparent;}
   a:hover{border-bottom-color:var(--brass);}
   footer{margin-top:4rem;padding-top:1.4rem;border-top:1px solid var(--line);color:var(--faint);
@@ -54,20 +62,65 @@
 </head>
 <body>
 <main>
-  <div class="brand">THE <b style="color:var(--brass2)">BOX</b> <span class="sub">personal server platform</span></div>
+  <div class="topbar">
+    <div class="brand">THE <b style="color:var(--brass2)">BOX</b> <span class="sub">personal server platform</span></div>
+    <nav><a href="/docs/">Docs</a> <a href="https://github.com/fluxoz/the-box">GitHub</a></nav>
+  </div>
 
   <h1>A server you <b>own</b>,<br>not one you rent.</h1>
   <p class="lede">Point a spare machine or a cheap VPS at one command. It wipes itself,
   installs a self-managing appliance OS, and comes back as a Box you run from your browser —
   declarative, atomic, and yours.</p>
 
-  <div class="cmd">
-    <span class="prompt">$</span>
-    <code id="oneliner">curl -fsSL https://thebox.build/install.sh | sudo sh</code>
-    <button type="button" onclick="navigator.clipboard.writeText(document.getElementById('oneliner').textContent);this.textContent='copied'">copy</button>
+  <div class="install">
+    <div class="tabs" role="tablist" aria-label="Install method">
+      <button class="tab" role="tab" aria-selected="true"  id="t-linux"   aria-controls="p-linux"   data-os="linux">Linux</button>
+      <button class="tab" role="tab" aria-selected="false" id="t-windows" aria-controls="p-windows" data-os="windows">Windows</button>
+      <button class="tab" role="tab" aria-selected="false" id="t-mac"     aria-controls="p-mac"     data-os="mac">macOS</button>
+      <button class="tab" role="tab" aria-selected="false" id="t-usb"     aria-controls="p-usb"     data-os="usb">USB / bare metal</button>
+      <button class="tab" role="tab" aria-selected="false" id="t-pi"      aria-controls="p-pi"      data-os="pi">Raspberry Pi</button>
+    </div>
+
+    <div class="panel" id="p-linux" role="tabpanel" aria-labelledby="t-linux">
+      <div class="cmd">
+        <span class="prompt">$</span>
+        <code id="cmd-linux">curl -fsSL https://thebox.build/install.sh | sudo sh</code>
+        <button type="button" data-copy="cmd-linux">copy</button>
+      </div>
+      <p>On a running Linux box or VPS. It kexecs into the installer — no reboot menu.</p>
+      <p class="note">Wipes every disk and installs Box OS. Bring settings from the <a href="/docs/install.html#configurator">Configurator</a>, or decide on the box.</p>
+    </div>
+
+    <div class="panel" id="p-windows" role="tabpanel" aria-labelledby="t-windows" hidden>
+      <div class="cmd">
+        <span class="prompt">&gt;</span>
+        <code id="cmd-windows">irm https://thebox.build/install.ps1 | iex</code>
+        <button type="button" data-copy="cmd-windows">copy</button>
+      </div>
+      <p>In an elevated PowerShell. Stages the installer from Windows and takes the machine over.</p>
+      <p class="note">Wipes every disk. See the <a href="/docs/install.html#windows">Windows guide</a>.</p>
+    </div>
+
+    <div class="panel" id="p-mac" role="tabpanel" aria-labelledby="t-mac" hidden>
+      <p>macOS can't be taken over in place. Run a Box in a local VM or a cheap VPS instead — same one command, inside the VM.</p>
+      <p class="note">Details in the <a href="/docs/install.html#mac">macOS guide</a>.</p>
+    </div>
+
+    <div class="panel" id="p-usb" role="tabpanel" aria-labelledby="t-usb" hidden>
+      <p>No running OS to take over? Boot the installer over the network (PXE) or from an ISO, then wipe and install on the machine itself.</p>
+      <p class="note">Step-by-step in the <a href="/docs/install.html#bare-metal">bare-metal guide</a>.</p>
+    </div>
+
+    <div class="panel" id="p-pi" role="tabpanel" aria-labelledby="t-pi" hidden>
+      <div class="cmd">
+        <span class="prompt">$</span>
+        <code id="cmd-pi">nix build github:fluxoz/the-box#pi5-image</code>
+        <button type="button" data-copy="cmd-pi">copy</button>
+      </div>
+      <p>Raspberry Pi 3/4/5 run as a Box — build the image and flash it to an SD card.</p>
+      <p class="note">Full walkthrough in the <a href="/docs/raspberry-pi.html">Raspberry Pi guide</a>.</p>
+    </div>
   </div>
-  <p class="note">Wipes every disk and installs Box OS. Bring your settings from the Configurator, or decide on the box.
-  Prefer a stick? There's a bootable image. New to this? Start at the Configurator.</p>
 
   <div class="grid">
     <div class="card"><h3>Blow-away install</h3><p>No dual-boot, no cruft. One generic image; your machine's identity arrives at first boot.</p></div>
@@ -76,20 +129,32 @@
     <div class="card"><h3>Sovereign by default</h3><p>Your keys and secrets never leave your browser or your box. No account, no phone-home.</p></div>
   </div>
 
-  <div class="ways">
-    <h2>Ways in</h2>
-    <ul>
-      <li><b>Running Linux</b><span>the one-liner above — kexecs into the installer, no reboot menu.</span></li>
-      <li><b>Bare machine</b><span>write the <a href="/netboot/">netboot image</a> to a USB stick and boot it.</span></li>
-      <li><b>From Windows</b><span><code style="font-family:var(--mono)">irm https://thebox.build/install.ps1 | iex</code></span></li>
-      <li><b>On a Mac</b><span>run a Box in a local VM or a VPS — <a href="/mac.txt">why</a>.</span></li>
-    </ul>
-  </div>
+  <p class="next">New here? Start with <a href="/docs/">the docs</a> — <a href="/docs/install.html">install</a>,
+  <a href="/docs/first-steps.html">first steps</a>, <a href="/docs/backups.html">backups</a>,
+  <a href="/docs/connect.html">remote access</a>, and <a href="/docs/fleet.html">running a fleet</a>.</p>
 
   <footer>
     <span>Verified: every artifact is checksummed in <a href="/SHA256SUMS">SHA256SUMS</a>.</span>
     <span>The installer refuses to touch a disk without your explicit consent.</span>
   </footer>
 </main>
+<script>
+  // Tabbed installer — self-contained, no dependencies.
+  const tabs = [...document.querySelectorAll('.tab')];
+  function select(os){
+    tabs.forEach(t=>{
+      const on = t.dataset.os===os;
+      t.setAttribute('aria-selected', on);
+      document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
+    });
+  }
+  tabs.forEach(t=>t.addEventListener('click',()=>select(t.dataset.os)));
+  // Deep-link: #windows etc. picks the tab.
+  if (location.hash && tabs.some(t=>t.dataset.os===location.hash.slice(1))) select(location.hash.slice(1));
+  document.querySelectorAll('[data-copy]').forEach(b=>b.addEventListener('click',()=>{
+    navigator.clipboard.writeText(document.getElementById(b.dataset.copy).textContent);
+    const o=b.textContent; b.textContent='copied'; setTimeout(()=>b.textContent=o,1200);
+  }));
+</script>
 </body>
 </html>

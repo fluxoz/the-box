@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install — The Box docs</title>
+<link rel="stylesheet" href="../docs.css">
+</head>
+<body>
+<div class="top">
+  <a class="brand" href="/">THE <b>BOX</b> <span class="sub">docs</span></a>
+  <nav>
+    <a href="./">Docs</a>
+    <a href="first-steps.html">First steps</a>
+    <a href="backups.html">Backups</a>
+    <a href="connect.html">Remote access</a>
+    <a href="fleet.html">Fleet</a>
+  </nav>
+</div>
+<main>
+  <p class="eyebrow">Guide</p>
+  <h1>Install</h1>
+  <p class="lede">The Box is a <strong>blow-away install</strong>: one generic appliance image wipes the
+  target and takes it over. The machine's identity — hostname, keys, Wi-Fi, disk layout — arrives at
+  first boot, so the same image serves every machine.</p>
+
+  <div class="warn"><b>It wipes every disk.</b> The installer only proceeds after you confirm, but there is
+  no dual-boot and no going back. Use a spare machine, a fresh VPS, or a VM.</div>
+
+  <h2 id="linux">Linux &amp; VPS — the one-liner</h2>
+  <p>On any running Linux machine (a spare PC, or a fresh cloud VPS):</p>
+  <pre><code>curl -fsSL https://thebox.build/install.sh | sudo sh</code></pre>
+  <p>It fetches the installer, <code>kexec</code>s straight into it (no reboot menu, no BIOS fiddling),
+  wipes the disks, lays down Box OS, and reboots into a running Box. On a 4&nbsp;GB VPS the whole thing
+  takes a few minutes.</p>
+  <p class="muted">Every artifact it fetches is checksummed against <a href="/SHA256SUMS">SHA256SUMS</a>
+  before anything is executed.</p>
+
+  <h2 id="configurator">Bring your settings — the Configurator</h2>
+  <p>By default the installer asks you to <a href="#decide">decide on the box</a>. To set things up ahead
+  of time instead, use the <strong>Configurator</strong> — a browser tool that builds your Box's
+  <em>orders</em> (name, disk choice, your SSH key, Wi-Fi, a Cloudflare tunnel token, and a one-time
+  pairing code). Nothing is sent anywhere: the orders stay in your browser, and you paste them into the
+  command:</p>
+  <pre><code>curl -fsSL https://thebox.build/install.sh | sudo BOX_ORDERS_B64='&lt;paste&gt;' sh</code></pre>
+  <p>The orders ride <em>base64 on the command line</em>, so there's nothing to download or move. The
+  pairing code's hash travels with them, so the Box is <strong>pairable from first boot</strong> — you
+  never need SSH. Keep the code (and any generated SSH key) in your <a href="first-steps.html#recovery">recovery kit</a>.</p>
+  <div class="tip">The Configurator warns you when your orders carry a secret (a Wi-Fi password or a
+  tunnel token), so you know to treat the command like a password.</div>
+
+  <h2 id="decide">Or decide on the box</h2>
+  <p>Skip the orders and the installer drops into a short console wizard with the machine's real disks in
+  front of you: pick a layout — <strong>single</strong>, <strong>mirror</strong> (two disks, redundant),
+  or <strong>pool</strong> — confirm, and it installs. Good for a machine you're sitting at.</p>
+
+  <h2 id="windows">Windows</h2>
+  <p>In an <strong>elevated</strong> PowerShell:</p>
+  <pre><code>irm https://thebox.build/install.ps1 | iex</code></pre>
+  <p>This stages the installer's kernel and initrd onto the Windows disk, adds a one-time boot entry, and
+  reboots into the installer, which then wipes and installs. As with Linux, it takes the whole machine.</p>
+
+  <h2 id="mac">macOS</h2>
+  <p>A Mac can't be taken over in place. Run a Box where it belongs — on server hardware — and drive it
+  from your Mac's browser:</p>
+  <ul>
+    <li><strong>A cheap VPS</strong> — run the Linux one-liner <em>inside</em> the VPS.</li>
+    <li><strong>A local VM</strong> — UTM or QEMU, boot the installer ISO, install into the VM's disk.</li>
+  </ul>
+
+  <h2 id="bare-metal">Bare metal — no OS to take over</h2>
+  <p>If the machine has no running OS to launch the one-liner from, boot the installer directly:</p>
+  <ul>
+    <li><strong>Network boot (PXE):</strong> point the machine's PXE/iPXE at the release's
+      <code>netboot.ipxe</code> (it chain-loads the kernel + initrd). The artifacts are on the
+      <a href="https://github.com/fluxoz/the-box/releases/latest">latest GitHub release</a>.</li>
+    <li><strong>ISO:</strong> build the installer image and write it to a USB stick:
+      <pre><code>nix build github:fluxoz/the-box#installer-iso
+sudo dd if=./result/iso/*.iso of=/dev/sdX bs=4M status=progress conv=fsync</code></pre>
+      Boot it, and it runs the same disk wizard.</li>
+  </ul>
+  <p class="muted">The <code>netboot.ipxe</code>, kernel, and initrd are published on each release, not on
+  this site — Pages isn't the place for large binaries.</p>
+
+  <h2 id="pi">Raspberry Pi</h2>
+  <p>A Pi is flashed, not taken over — see the <a href="raspberry-pi.html">Raspberry Pi guide</a>.</p>
+
+  <div class="pager">
+    <span><a href="./">← Docs home</a></span>
+    <span><a href="first-steps.html">First steps →</a></span>
+  </div>
+</main>
+<footer>
+  <span>The Box — a personal server you actually own.</span>
+  <span><a href="https://github.com/fluxoz/the-box">Source on GitHub</a></span>
+</footer>
+</body>
+</html>
