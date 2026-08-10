@@ -53,6 +53,7 @@ pub fn router(state: SharedState) -> Router {
         .route("/generations/{number}/rollback", post(pages::rollback))
         .route("/system", get(pages::system))
         .route("/system/check", post(pages::system_check))
+        .route("/system/update", post(pages::system_update))
         .route("/fleet", get(pages::fleet))
         .route("/pair", get(pages::pair))
         .route("/pair/redeem", post(pages::pair_redeem))

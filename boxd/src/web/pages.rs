@@ -844,8 +844,13 @@ pub async fn system(
                 section {
                     div.section-head {
                         h2 { "Platform channel" }
-                        form method="post" action="/system/check" {
-                            button.btn type="submit" { "Check for updates" }
+                        div.deploybar {
+                            form method="post" action="/system/check" {
+                                button.btn type="submit" { "Check for updates" }
+                            }
+                            form method="post" action="/system/update" {
+                                button.btn.primary type="submit" { "Update now" }
+                            }
                         }
                     }
                     table {
@@ -916,6 +921,30 @@ pub async fn system_check(State(state): State<SharedState>) -> Redirect {
             &format!("Platform up to date ({})", short_rev(&status.latest)),
         ),
         Err(err) => redirect("err", &format!("{err:#}")),
+    }
+}
+
+/// Apply an available platform update. Rebuilding + switching the system needs
+/// root, and boxd is unprivileged — so we trigger the root oneshot unit (a
+/// narrow polkit rule permits exactly this one unit). It runs in the background:
+/// the Box rebuilds, switches, health-checks, and rolls back if unhealthy.
+/// `channel update` no-ops when already current, so this is safe to click.
+pub async fn system_update(State(_state): State<SharedState>) -> Redirect {
+    let out = std::process::Command::new("systemctl")
+        .args(["start", "--no-block", "boxd-channel-update.service"])
+        .output();
+    let redirect =
+        |key: &str, msg: &str| Redirect::to(&format!("/system?{key}={}", urlencoding::encode(msg)));
+    match out {
+        Ok(o) if o.status.success() => redirect(
+            "ok",
+            "Platform update started — the Box rebuilds, switches, and rolls back automatically if it doesn't come up healthy.",
+        ),
+        Ok(o) => redirect(
+            "err",
+            &format!("could not start update: {}", String::from_utf8_lossy(&o.stderr).trim()),
+        ),
+        Err(e) => redirect("err", &format!("could not start update: {e}")),
     }
 }
 
