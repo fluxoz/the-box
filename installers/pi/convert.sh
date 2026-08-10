@@ -51,18 +51,24 @@ SYS=$(nix build --no-link --print-out-paths "${NIX_OPTS[@]}" \
   "${BOX_FLAKE}#packages.aarch64-linux.convert-pi${MODEL}-system")
 echo ">> system: $SYS"
 
-# --- 4. install in place (nixos-infect-style, Pi-aware) ----------------------
-# Mark this a NixOS system and point the system profile at the new closure.
-touch /etc/NIXOS
+# --- 4. install in place via NIXOS_LUSTRATE (the safe, documented mechanism) ---
+# Point the system profile at the new closure, then request a "lustrate": on the
+# NEXT boot, NixOS's own stage-2 moves the entire old distro to /old-root (keeping
+# /nix and /boot automatically) and boots clean. This is how nixos-infect replaces
+# a distro in place — the cleanup runs from NixOS, never from the half-dismantled
+# Raspbian. We provision the operator user + key + services in the NixOS config,
+# so there's nothing to preserve; an empty NIXOS_LUSTRATE is a full clean wipe.
 mkdir -p /nix/var/nix/profiles
 nix-env -p /nix/var/nix/profiles/system --set "$SYS"
+touch /etc/NIXOS /etc/NIXOS_LUSTRATE
 
-# switch-to-configuration `boot` installs the bootloader for NEXT boot only
-# (doesn't tear down the running Raspbian userland), and NIXOS_INSTALL_BOOTLOADER
-# makes the nvmd kernelboot builder (re)write /boot/firmware for the Pi firmware.
+# nvmd's kernelboot writes the Pi's /boot/firmware (kernel/initrd/dtbs/config.txt).
+# Do NOT move /boot aside (the GRUB path in the manual) — the Pi boots from
+# /boot/firmware and lustrate preserves /boot, so this survives the wipe.
 echo ">> writing the NixOS boot generation to /boot/firmware ..."
 NIXOS_INSTALL_BOOTLOADER=1 "$SYS/bin/switch-to-configuration" boot
 
-echo ">> Converted. Rebooting into the Box — it will come up as box.local (:2693)."
+echo ">> Converted. Rebooting — NixOS moves the old OS to /old-root on first boot,"
+echo ">> then comes up as the Box (box.local:2693)."
 sync
-systemctl reboot || reboot
+reboot
