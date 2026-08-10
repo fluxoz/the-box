@@ -119,15 +119,12 @@ jobs:
   # parallel with build/deploy — an emulated aarch64 compile is slow, so it must
   # never delay the release, and a failure here is non-fatal.
   cache-aarch64:
-    runs-on: ubuntu-latest
+    # Native ARM runner (free for public repos) — builds aarch64 boxd in minutes,
+    # not ~an hour under QEMU emulation.
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
       - uses: DeterminateSystems/nix-installer-action@main
-        with:
-          extra-conf: "extra-platforms = aarch64-linux"
       - name: Build + push aarch64 boxd to the cache
         env:
           CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
