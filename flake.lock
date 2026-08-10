@@ -1,5 +1,24 @@
 {
   "nodes": {
+    "apple-silicon": {
+      "inputs": {
+        "flake-compat": "flake-compat",
+        "nixpkgs": "nixpkgs"
+      },
+      "locked": {
+        "lastModified": 1786367009,
+        "narHash": "sha256-5Hm7sY6Kjw0lZmISOmv0+Kzt7mqJhEyb+g+I5tVStzM=",
+        "owner": "nix-community",
+        "repo": "nixos-apple-silicon",
+        "rev": "3d2325a31f37221e276f721fabac363a65d0cf7d",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nix-community",
+        "repo": "nixos-apple-silicon",
+        "type": "github"
+      }
+    },
     "argononed": {
       "flake": false,
       "locked": {
@@ -37,6 +56,21 @@
       }
     },
     "flake-compat": {
+      "locked": {
+        "lastModified": 1761640442,
+        "narHash": "sha256-AtrEP6Jmdvrqiv4x2xa5mrtaIp3OEe8uBYCDZDS+hu8=",
+        "owner": "nix-community",
+        "repo": "flake-compat",
+        "rev": "4a56054d8ffc173222d09dad23adf4ba946c8884",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nix-community",
+        "repo": "flake-compat",
+        "type": "github"
+      }
+    },
+    "flake-compat_2": {
       "locked": {
         "lastModified": 1767039857,
         "narHash": "sha256-vNpUSpF5Nuw8xvDLj2KCwwksIbjua2LZCqhV1LNRDns=",
@@ -80,9 +114,9 @@
     "nixos-raspberrypi": {
       "inputs": {
         "argononed": "argononed",
-        "flake-compat": "flake-compat",
+        "flake-compat": "flake-compat_2",
         "nixos-images": "nixos-images",
-        "nixpkgs": "nixpkgs"
+        "nixpkgs": "nixpkgs_2"
       },
       "locked": {
         "lastModified": 1785596452,
@@ -101,6 +135,22 @@
     },
     "nixpkgs": {
       "locked": {
+        "lastModified": 1786106723,
+        "narHash": "sha256-zDSUbpoeo/9ZmD2+wXnzxoo1+uhL8vxc0b8yuYMKYq0=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "f13ff45afd1bb73e640eaa08a7066dbed07e3238",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs_2": {
+      "locked": {
         "lastModified": 1784856561,
         "narHash": "sha256-J+Bx1Z6Oeoj2FgnBhRMKyUhhtDoOpTgXYaVLZpDjW4A=",
         "owner": "NixOS",
@@ -115,7 +165,7 @@
         "type": "github"
       }
     },
-    "nixpkgs_2": {
+    "nixpkgs_3": {
       "locked": {
         "lastModified": 1785967620,
         "narHash": "sha256-IItrdb7Puk05RqOBWZYFC5X6Wl1sJmCfh5MWVHw5iMM=",
@@ -133,9 +183,10 @@
     },
     "root": {
       "inputs": {
+        "apple-silicon": "apple-silicon",
         "disko": "disko",
         "nixos-raspberrypi": "nixos-raspberrypi",
-        "nixpkgs": "nixpkgs_2"
+        "nixpkgs": "nixpkgs_3"
       }
     }
   },
