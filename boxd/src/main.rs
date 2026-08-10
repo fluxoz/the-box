@@ -103,6 +103,38 @@ enum Command {
         #[command(subcommand)]
         action: ConnectCmd,
     },
+    /// Turn a spare machine on the network into a Box, hands-off: ship its
+    /// identity over SSH, run the takeover installer, wait for it to come up,
+    /// and print a session token an agent can manage it with over MCP.
+    Provision {
+        /// SSH target for the spare machine, e.g. root@192.168.1.42
+        target: String,
+        /// Hostname for the new Box ("auto" = a stable per-machine name).
+        #[arg(long, default_value = "auto")]
+        hostname: String,
+        /// Public SSH key to authorize on the Box — a literal key or a path to
+        /// a .pub file. Repeatable. Defaults to your ~/.ssh/id_*.pub.
+        #[arg(long = "ssh-key")]
+        ssh_key: Vec<String>,
+        /// Storage layout: single | mirror | pool (default: single, largest disk).
+        #[arg(long)]
+        layout: Option<String>,
+        /// Host/IP to reach the Box on after boot (default: the target's host).
+        #[arg(long)]
+        reach_host: Option<String>,
+        /// Installer URL (override for forks/mirrors).
+        #[arg(long, default_value = boxd::provision::DEFAULT_INSTALL_URL)]
+        install_url: String,
+        /// Seconds to wait for the Box to come up.
+        #[arg(long, default_value_t = 900)]
+        boot_timeout: u64,
+        /// Extra option passed through to ssh (repeatable), e.g. -p 2222
+        #[arg(long = "ssh-opt")]
+        ssh_opt: Vec<String>,
+        /// Emit the result as JSON (for agents) instead of human-readable text.
+        #[arg(long)]
+        json: bool,
+    },
     /// Serve the browser install wizard inside the installer (pre-pairing, no
     /// auth). On commit it writes orders + a disko config for box-install to
     /// act on, and serves install progress read from --progress.
@@ -419,6 +451,50 @@ fn main() -> Result<()> {
             },
             listen,
         ),
+        Command::Provision {
+            target,
+            hostname,
+            ssh_key,
+            layout,
+            reach_host,
+            install_url,
+            boot_timeout,
+            ssh_opt,
+            json,
+        } => {
+            let ssh_keys = boxd::provision::resolve_ssh_keys(ssh_key)?;
+            let p = boxd::provision::run(&boxd::provision::ProvisionOpts {
+                target,
+                hostname,
+                ssh_keys,
+                layout,
+                reach_host,
+                install_url,
+                boot_timeout_secs: boot_timeout,
+                ssh_opts: ssh_opt,
+            })?;
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "address": p.address,
+                        "token": p.token,
+                        "mcp_url": p.mcp_url,
+                        "dashboard": p.dashboard,
+                    }))?
+                );
+            } else {
+                println!("\n✓ Provisioned a Box at {}", p.address);
+                println!("  Dashboard: {}", p.dashboard);
+                println!("  MCP:       {}", p.mcp_url);
+                println!("  Session token (send as `Authorization: Bearer <token>`):");
+                println!("    {}", p.token);
+                println!(
+                    "\nThe agent can now configure and maintain this Box over MCP with that token."
+                );
+            }
+            Ok(())
+        }
     }
 }
 

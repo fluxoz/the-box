@@ -18,6 +18,7 @@ pub mod nixgen;
 pub mod ops;
 pub mod ostier;
 pub mod paths;
+pub mod provision;
 pub mod secrets;
 pub mod store;
 pub mod templates;

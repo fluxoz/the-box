@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use axum::{
     extract::{Path, Query, State},
-    http::{header, HeaderValue},
+    http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{Html, IntoResponse, Redirect, Response},
     Form,
 };
@@ -1001,20 +1001,47 @@ pub struct CodeForm {
     code: String,
 }
 
-pub async fn pair_redeem(State(state): State<SharedState>, Form(form): Form<CodeForm>) -> Response {
-    match crate::auth::redeem_code(&state.paths, &form.code, "browser") {
+pub async fn pair_redeem(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Form(form): Form<CodeForm>,
+) -> Response {
+    // Agents ask for JSON and get the token in the body (used as a Bearer
+    // token); browsers get a redirect that sets the session cookie. This is the
+    // machine-readable side of `boxd provision`: after a Box comes up, the agent
+    // redeems its one-time pairing code here for a session it can drive /mcp with.
+    let wants_json = headers
+        .get(header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|a| a.contains("application/json"));
+    let label = if wants_json { "agent" } else { "browser" };
+    match crate::auth::redeem_code(&state.paths, &form.code, label) {
         Ok(token) => {
-            let mut resp = Redirect::to("/?ok=Device+paired").into_response();
-            if let Ok(cookie) = HeaderValue::from_str(&crate::auth::session_cookie(&token)) {
-                resp.headers_mut().insert(header::SET_COOKIE, cookie);
+            if wants_json {
+                axum::Json(serde_json::json!({ "token": token, "label": label })).into_response()
+            } else {
+                let mut resp = Redirect::to("/?ok=Device+paired").into_response();
+                if let Ok(cookie) = HeaderValue::from_str(&crate::auth::session_cookie(&token)) {
+                    resp.headers_mut().insert(header::SET_COOKIE, cookie);
+                }
+                resp
             }
-            resp
         }
-        Err(err) => Redirect::to(&format!(
-            "/pair?err={}",
-            urlencoding::encode(&format!("{err:#}"))
-        ))
-        .into_response(),
+        Err(err) => {
+            if wants_json {
+                (
+                    StatusCode::UNAUTHORIZED,
+                    axum::Json(serde_json::json!({ "error": format!("{err:#}") })),
+                )
+                    .into_response()
+            } else {
+                Redirect::to(&format!(
+                    "/pair?err={}",
+                    urlencoding::encode(&format!("{err:#}"))
+                ))
+                .into_response()
+            }
+        }
     }
 }
 
