@@ -278,6 +278,20 @@
         system = "x86_64-linux";
       };
 
+      # An operator manages Boxes remotely; management is gated per-Box, scoped to
+      # one Box, and revocable (fleet write-authz).
+      checks.x86_64-linux.fleet-manage = import ./nix/tests/fleet-manage.nix {
+        inherit self nixpkgs;
+        system = "x86_64-linux";
+      };
+
+      # Boxes join a Headscale WireGuard mesh; the tunnel carries traffic (one Box
+      # reaches another's dashboard over the tailnet) + tailnet fleet discovery.
+      checks.x86_64-linux.fleet-mesh = import ./nix/tests/fleet-mesh.nix {
+        inherit self nixpkgs;
+        system = "x86_64-linux";
+      };
+
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
           packages = with pkgs; [
