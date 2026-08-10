@@ -3,16 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>The Box — a personal server you actually own</title>
+<title>The Box — turn a spare computer into a server you own</title>
+<meta name="description" content="Point a spare laptop, mini-PC, or cheap VPS at one command. It wipes the old OS and turns the machine into a private server you run from your browser — or that your agent runs for you.">
 <style>
   :root{
-    --bg:#14110c; --panel:#1b170f; --line:#322b1f; --line2:#4a4030;
+    --bg:#14110c; --panel:#1b170f; --panel2:#221d13; --line:#322b1f; --line2:#4a4030;
     --ink:#ece5d5; --dim:#948a68; --faint:#6e654a;
     --brass:#c99b4e; --brass2:#ddb15c; --brass-wash:rgba(201,155,78,.12);
+    --ok:#8fb56b;
     --mono:ui-monospace,"SF Mono","Cascadia Code","JetBrains Mono",Menlo,Consolas,monospace;
   }
   @media (prefers-color-scheme:light){
-    :root{--bg:#e7e3d8;--panel:#f1ede2;--line:#cbc4b3;--line2:#a89f8b;--ink:#1f1b14;--dim:#6c6455;--faint:#918872;--brass:#916d2f;--brass2:#a97f34;--brass-wash:rgba(169,127,52,.12);}
+    :root{--bg:#e7e3d8;--panel:#f1ede2;--panel2:#e9e4d6;--line:#cbc4b3;--line2:#a89f8b;--ink:#1f1b14;--dim:#6c6455;--faint:#918872;--brass:#916d2f;--brass2:#a97f34;--brass-wash:rgba(169,127,52,.12);--ok:#4f7a34;}
   }
   *{box-sizing:border-box;}
   body{margin:0;background:var(--bg);color:var(--ink);
@@ -22,15 +24,21 @@
     background-size:44px 44px;opacity:.16;
     -webkit-mask-image:radial-gradient(ellipse 130% 80% at 50% 0%,#000 24%,transparent 76%);
     mask-image:radial-gradient(ellipse 130% 80% at 50% 0%,#000 24%,transparent 76%);}
-  main{position:relative;z-index:1;max-width:760px;margin:0 auto;padding:12vh 1.25rem 6rem;}
+  main{position:relative;z-index:1;max-width:780px;margin:0 auto;padding:9vh 1.25rem 6rem;}
   .topbar{display:flex;align-items:baseline;gap:.6rem;}
   .brand{display:flex;align-items:baseline;gap:.6rem;font-weight:800;letter-spacing:.14em;font-size:1.05rem;}
   .brand .sub{font-weight:600;color:var(--dim);letter-spacing:.22em;text-transform:uppercase;font-size:.7rem;}
   .topbar nav{margin-left:auto;display:flex;gap:1.1rem;font-size:.82rem;letter-spacing:.04em;}
-  h1{font-size:clamp(2rem,6vw,3.2rem);line-height:1.08;margin:2.2rem 0 .6rem;text-wrap:balance;letter-spacing:-.01em;}
+  a{color:var(--brass2);text-decoration:none;border-bottom:1px solid transparent;}
+  a:hover{border-bottom-color:var(--brass);}
+
+  /* hero */
+  h1{font-size:clamp(2.1rem,6.4vw,3.4rem);line-height:1.06;margin:2.4rem 0 .7rem;text-wrap:balance;letter-spacing:-.015em;}
   h1 b{color:var(--brass2);}
-  .lede{color:var(--dim);font-size:1.15rem;max-width:52ch;margin:0 0 2.2rem;}
-  /* install tabs */
+  .lede{color:var(--ink);font-size:1.2rem;max-width:56ch;margin:0 0 2rem;opacity:.9;}
+  .lede b{color:var(--brass2);font-weight:600;}
+
+  /* install box */
   .install{background:var(--panel);border:1px solid var(--line2);border-radius:10px;overflow:hidden;box-shadow:inset 3px 0 0 var(--brass);}
   .tabs{display:flex;gap:.15rem;border-bottom:1px solid var(--line);padding:.35rem .35rem 0;flex-wrap:wrap;}
   .tab{background:transparent;color:var(--dim);border:0;border-bottom:2px solid transparent;
@@ -40,7 +48,7 @@
   .panel{padding:1rem 1.1rem 1.15rem;}
   .panel[hidden]{display:none;}
   .cmd{display:flex;align-items:center;gap:.75rem;background:var(--bg);border:1px solid var(--line);
-    border-radius:8px;padding:.8rem .95rem;font-family:var(--mono);font-size:.9rem;overflow-x:auto;}
+    border-radius:8px;padding:.85rem .95rem;font-family:var(--mono);font-size:.92rem;overflow-x:auto;}
   .cmd .prompt{color:var(--brass);flex:none;}
   .cmd code{white-space:nowrap;color:var(--ink);}
   .cmd button{margin-left:auto;flex:none;background:transparent;color:var(--dim);border:1px solid var(--line2);
@@ -48,14 +56,42 @@
   .cmd button:hover{color:var(--ink);border-color:var(--brass);}
   .panel p{margin:.7rem 0 0;color:var(--dim);font-size:.9rem;}
   .panel p.note{color:var(--faint);font-size:.82rem;}
-  .grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:2.8rem 0 2.4rem;}
-  @media (max-width:560px){.grid{grid-template-columns:1fr;}}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:1rem 1.1rem;}
-  .card h3{margin:.1rem 0 .35rem;font-size:.82rem;letter-spacing:.08em;text-transform:uppercase;color:var(--brass2);}
-  .card p{margin:0;color:var(--dim);font-size:.92rem;}
-  .next{margin:2.4rem 0;color:var(--dim);font-size:.95rem;}
-  a{color:var(--brass2);text-decoration:none;border-bottom:1px solid transparent;}
-  a:hover{border-bottom-color:var(--brass);}
+
+  /* agent door */
+  .agent{margin-top:.85rem;background:var(--panel);border:1px dashed var(--line2);border-radius:9px;
+    padding:.85rem 1rem;font-size:.95rem;color:var(--dim);}
+  .agent b{color:var(--brass2);font-weight:600;}
+  .agent code{font-family:var(--mono);font-size:.85em;color:var(--ink);}
+
+  /* section scaffolding */
+  .eyebrow{color:var(--brass);text-transform:uppercase;letter-spacing:.18em;font-size:.72rem;font-weight:700;margin:3.4rem 0 .2rem;}
+  h2{font-size:1.5rem;margin:.1rem 0 1.1rem;letter-spacing:-.01em;text-wrap:balance;}
+
+  /* 3 steps */
+  .steps{list-style:none;counter-reset:s;margin:0;padding:0;display:flex;flex-direction:column;gap:.7rem;}
+  .steps li{counter-increment:s;display:grid;grid-template-columns:2rem 1fr;gap:.85rem;align-items:baseline;}
+  .steps li::before{content:counter(s);font-family:var(--mono);font-weight:700;color:var(--brass2);
+    border:1px solid var(--line2);border-radius:6px;text-align:center;line-height:1.8;font-size:.85rem;background:var(--panel);}
+  .steps b{color:var(--ink);font-weight:600;}
+  .steps span{color:var(--dim);}
+  .stepnote{margin:1rem 0 0;color:var(--faint);font-size:.86rem;font-family:var(--mono);letter-spacing:.02em;}
+
+  /* pillars */
+  .pillars{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:1rem 0 0;}
+  @media (max-width:600px){.pillars{grid-template-columns:1fr;}}
+  .pillar{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:1.05rem 1.15rem;}
+  .pillar h3{margin:0 0 .35rem;font-size:1.02rem;color:var(--brass2);letter-spacing:-.01em;}
+  .pillar p{margin:0;color:var(--dim);font-size:.95rem;}
+
+  /* uses + start-here */
+  .uses{margin:1rem 0 0;color:var(--dim);font-size:1.02rem;max-width:60ch;}
+  .uses b{color:var(--ink);font-weight:600;}
+  .start{margin:2.6rem 0 0;display:flex;align-items:baseline;gap:.9rem;flex-wrap:wrap;}
+  .start .go{display:inline-block;background:var(--brass);color:#1a1408;border:none;border-radius:8px;
+    padding:.6rem 1.1rem;font-weight:700;letter-spacing:.01em;}
+  .start .go:hover{border-bottom-color:transparent;background:var(--brass2);}
+  .start .more{color:var(--faint);font-size:.9rem;}
+
   footer{margin-top:4rem;padding-top:1.4rem;border-top:1px solid var(--line);color:var(--faint);
     font-size:.78rem;letter-spacing:.05em;display:flex;gap:1.2rem;flex-wrap:wrap;}
 </style>
@@ -67,18 +103,20 @@
     <nav><a href="/docs/">Docs</a> <a href="https://github.com/fluxoz/the-box">GitHub</a></nav>
   </div>
 
-  <h1>A server you <b>own</b>,<br>not one you rent.</h1>
-  <p class="lede">Point a spare machine or a cheap VPS at one command. It wipes itself,
-  installs a self-managing appliance OS, and comes back as a Box you run from your browser —
-  declarative, atomic, and yours.</p>
+  <!-- WHY — the 10-second pitch -->
+  <h1>Turn a spare computer<br>into a server you <b>own</b>.</h1>
+  <p class="lede">That old laptop, a mini-PC, or a $5 VPS — <b>one command</b> wipes it and turns the
+  machine into a <b>Box</b>: a private server you run from your browser. No account, no monthly rent.
+  And it updates itself like a phone, so you basically <b>can't brick it</b>.</p>
 
+  <!-- HOW — dead simple -->
   <div class="install">
     <div class="tabs" role="tablist" aria-label="Install method">
-      <button class="tab" role="tab" aria-selected="true"  id="t-linux"   aria-controls="p-linux"   data-os="linux">Linux</button>
+      <button class="tab" role="tab" aria-selected="true"  id="t-linux"   aria-controls="p-linux"   data-os="linux">Linux / VPS</button>
       <button class="tab" role="tab" aria-selected="false" id="t-windows" aria-controls="p-windows" data-os="windows">Windows</button>
-      <button class="tab" role="tab" aria-selected="false" id="t-mac"     aria-controls="p-mac"     data-os="mac">macOS</button>
-      <button class="tab" role="tab" aria-selected="false" id="t-usb"     aria-controls="p-usb"     data-os="usb">USB / bare metal</button>
       <button class="tab" role="tab" aria-selected="false" id="t-pi"      aria-controls="p-pi"      data-os="pi">Raspberry Pi</button>
+      <button class="tab" role="tab" aria-selected="false" id="t-usb"     aria-controls="p-usb"     data-os="usb">Bare metal</button>
+      <button class="tab" role="tab" aria-selected="false" id="t-mac"     aria-controls="p-mac"     data-os="mac">macOS</button>
     </div>
 
     <div class="panel" id="p-linux" role="tabpanel" aria-labelledby="t-linux">
@@ -87,8 +125,7 @@
         <code id="cmd-linux">curl -fsSL https://thebox.build/install.sh | sudo sh</code>
         <button type="button" data-copy="cmd-linux">copy</button>
       </div>
-      <p>On a running Linux box or VPS. It kexecs into the installer — no reboot menu.</p>
-      <p class="note">Wipes every disk and installs Box OS. Bring settings from the <a href="/docs/install.html#configurator">Configurator</a>, or decide on the box.</p>
+      <p>Run it on a spare Linux machine or a cheap VPS. No USB, no reboot menu — it takes over in place.</p>
     </div>
 
     <div class="panel" id="p-windows" role="tabpanel" aria-labelledby="t-windows" hidden>
@@ -97,18 +134,7 @@
         <code id="cmd-windows">irm https://thebox.build/install.ps1 | iex</code>
         <button type="button" data-copy="cmd-windows">copy</button>
       </div>
-      <p>In an elevated PowerShell. Stages the installer from Windows and takes the machine over.</p>
-      <p class="note">Wipes every disk. See the <a href="/docs/install.html#windows">Windows guide</a>.</p>
-    </div>
-
-    <div class="panel" id="p-mac" role="tabpanel" aria-labelledby="t-mac" hidden>
-      <p>macOS can't be taken over in place. Run a Box in a local VM or a cheap VPS instead — same one command, inside the VM.</p>
-      <p class="note">Details in the <a href="/docs/install.html#mac">macOS guide</a>.</p>
-    </div>
-
-    <div class="panel" id="p-usb" role="tabpanel" aria-labelledby="t-usb" hidden>
-      <p>No running OS to take over? Boot the installer over the network (PXE) or from an ISO, then wipe and install on the machine itself.</p>
-      <p class="note">Step-by-step in the <a href="/docs/install.html#bare-metal">bare-metal guide</a>.</p>
+      <p>In an elevated PowerShell on that old Windows laptop. It stages the installer and takes the machine over.</p>
     </div>
 
     <div class="panel" id="p-pi" role="tabpanel" aria-labelledby="t-pi" hidden>
@@ -117,27 +143,77 @@
         <code id="cmd-pi">nix build github:fluxoz/the-box#pi5-image</code>
         <button type="button" data-copy="cmd-pi">copy</button>
       </div>
-      <p>Raspberry Pi 3/4/5 run as a Box — build the image and flash it to an SD card.</p>
-      <p class="note">Full walkthrough in the <a href="/docs/raspberry-pi.html">Raspberry Pi guide</a>.</p>
+      <p>A Raspberry Pi 3/4/5 makes a great Box — build the image and flash it to an SD card.</p>
+    </div>
+
+    <div class="panel" id="p-usb" role="tabpanel" aria-labelledby="t-usb" hidden>
+      <p>No OS to take over? Boot the installer from a USB stick or over the network, then wipe and install on the machine itself.</p>
+      <p class="note">Step-by-step in the <a href="/docs/install.html#bare-metal">bare-metal guide</a>.</p>
+    </div>
+
+    <div class="panel" id="p-mac" role="tabpanel" aria-labelledby="t-mac" hidden>
+      <p>A Mac can't be taken over in place. Run a Box in a local VM or a cheap VPS instead — same one command, inside it.</p>
+      <p class="note">Details in the <a href="/docs/install.html#mac">macOS guide</a>.</p>
     </div>
   </div>
 
-  <div class="grid">
-    <div class="card"><h3>Blow-away install</h3><p>No dual-boot, no cruft. One generic image; your machine's identity arrives at first boot.</p></div>
-    <div class="card"><h3>Atomic generations</h3><p>Every change is a new generation. Roll back instantly; a failed health check rolls back itself.</p></div>
-    <div class="card"><h3>Decide on the box</h3><p>Pick your disk layout — single, mirror, or pool — at the screen or in a browser, with the real disks in front of you.</p></div>
-    <div class="card"><h3>Sovereign by default</h3><p>Your keys and secrets never leave your browser or your box. No account, no phone-home.</p></div>
-    <div class="card"><h3>Agent-ready</h3><p>Point your agent at <a href="/llms.txt">thebox.build/llms.txt</a>: it can turn a spare machine into a Box and run it over MCP — hands-off.</p></div>
+  <div class="agent">
+    <b>Rather not touch a terminal?</b> Hand it to your agent — point it at
+    <a href="/llms.txt"><code>thebox.build/llms.txt</code></a> and it provisions the Box and runs it
+    for you, hands-off. The Box is built to be agent-first.
   </div>
 
-  <p class="next">New here? Start with <a href="/docs/">the docs</a> — <a href="/docs/install.html">install</a>,
-  <a href="/docs/first-steps.html">first steps</a>, <a href="/docs/backups.html">backups</a>,
-  <a href="/docs/connect.html">remote access</a>, and <a href="/docs/fleet.html">running a fleet</a>.
-  Handing this to an agent? Give it <a href="/llms.txt">/llms.txt</a>.</p>
+  <p class="eyebrow">What happens</p>
+  <h2>One command, then three minutes of watching.</h2>
+  <ol class="steps">
+    <li><b>Run the command.</b> <span>The machine erases its old OS and installs Box&nbsp;OS — with your explicit consent, nothing is touched before that.</span></li>
+    <li><b>It comes back as a Box.</b> <span>It reboots and appears on your network as <code>box.local</code>, already running.</span></li>
+    <li><b>Open it and pair once.</b> <span>Go to <code>box.local:2693</code> in your browser, pair your device, and start deploying. That's it.</span></li>
+  </ol>
+  <p class="stepnote">~10 minutes · one machine · nothing to hand-configure</p>
+
+  <!-- WHY, deeper — the proof -->
+  <p class="eyebrow">Why a Box</p>
+  <h2>The hard part isn't running a server. It's making it safe to change.</h2>
+  <div class="pillars">
+    <div class="pillar">
+      <h3>You can't brick it</h3>
+      <p>Every change is a snapshot, like a phone update. A bad one undoes itself; a failed update rolls
+      back on its own. Worst case, it reverts to what worked — you (or your agent) can't paint yourself into a corner.</p>
+    </div>
+    <div class="pillar">
+      <h3>It's yours, end to end</h3>
+      <p>Your data on your hardware. No account, no phone-home; your keys and secrets never leave the Box.
+      If our servers vanished tomorrow, your Box keeps running — it just stops getting updates.</p>
+    </div>
+    <div class="pillar">
+      <h3>Old hardware, new life</h3>
+      <p>One generic image installs any machine — laptop, mini-PC, Raspberry&nbsp;Pi, VPS. Nobody cares
+      about the Windows install on a 2015 ThinkPad; give it a second life as a server.</p>
+    </div>
+    <div class="pillar">
+      <h3>Agent-first</h3>
+      <p>Everything the dashboard does, an agent can do over a simple interface — provision a machine,
+      deploy a service, take a backup, roll back. Point yours at <a href="/llms.txt">/llms.txt</a>.</p>
+    </div>
+  </div>
+
+  <p class="eyebrow">What you run on it</p>
+  <h2>Your websites, your backups, your remote access.</h2>
+  <p class="uses">Deploy a <b>website</b>, back it up to <b>storage you own</b>, reach it <b>privately from
+  anywhere</b>, or run a <b>whole fleet</b> of Boxes that find each other. All the software is free and
+  open — do it from the dashboard, or tell your agent. Paid tiers (offsite backups, a managed relay) are
+  optional conveniences, never a gate on your own Box.</p>
+
+  <div class="start">
+    <a class="go" href="/docs/install.html">Get started →</a>
+    <span class="more">or read <a href="/docs/">the docs</a> · <a href="/docs/first-steps.html">first steps</a> · <a href="/docs/agents.html">for agents</a> · <a href="/docs/concepts.html">how it works</a></span>
+  </div>
 
   <footer>
-    <span>Verified: every artifact is checksummed in <a href="/SHA256SUMS">SHA256SUMS</a>.</span>
-    <span>The installer refuses to touch a disk without your explicit consent.</span>
+    <span>Free &amp; open source.</span>
+    <span>No account, no phone-home.</span>
+    <span>Every artifact checksummed in <a href="/SHA256SUMS">SHA256SUMS</a>.</span>
   </footer>
 </main>
 <script>
@@ -151,7 +227,6 @@
     });
   }
   tabs.forEach(t=>t.addEventListener('click',()=>select(t.dataset.os)));
-  // Deep-link: #windows etc. picks the tab.
   if (location.hash && tabs.some(t=>t.dataset.os===location.hash.slice(1))) select(location.hash.slice(1));
   document.querySelectorAll('[data-copy]').forEach(b=>b.addEventListener('click',()=>{
     navigator.clipboard.writeText(document.getElementById(b.dataset.copy).textContent);

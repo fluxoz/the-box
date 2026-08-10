@@ -21,24 +21,38 @@
 <main>
   <p class="eyebrow">Documentation</p>
   <h1>Run a Box</h1>
-  <p class="lede">The Box is a self-managing appliance OS: point a machine at one command, and it
-  comes back as a server you run from your browser — declarative, atomic, and yours. These guides
-  take you from bare metal to a fleet.</p>
+  <p class="lede">The Box turns a spare computer into a private server you own — and keeps it safe to
+  change. These guides go from a bare machine to a running Box that you, or your agent, manage.</p>
 
+  <div class="note">New here? It's two steps: <b><a href="install.html">Install</a></b>, then
+  <b><a href="first-steps.html">First steps</a></b>. That's the whole path from nothing to a paired,
+  running Box — about ten minutes.</div>
+
+  <h2>Start here</h2>
   <div class="cards">
-    <a class="dcard" href="install.html"><h3>Install →</h3><p>Linux one-liner, Windows, bare metal, and a VPS. What "blow-away install" means and how to bring your settings.</p></a>
-    <a class="dcard" href="first-steps.html"><h3>First steps →</h3><p>Pair your browser, open the dashboard, deploy your first service, and keep your recovery kit.</p></a>
-    <a class="dcard" href="backups.html"><h3>Backups →</h3><p>Client-side-encrypted backups to your own storage — set it up, restore, and guard the key.</p></a>
-    <a class="dcard" href="connect.html"><h3>Remote access →</h3><p>Box Connect: reach your Box from anywhere over a private WireGuard mesh — no open ports.</p></a>
-    <a class="dcard" href="fleet.html"><h3>Fleet →</h3><p>Run several Boxes: they discover each other, and you manage each from one place.</p></a>
-    <a class="dcard" href="agents.html"><h3>Agents →</h3><p>Have an agent turn a spare machine into a Box and run it for you — provision, configure, maintain over MCP.</p></a>
-    <a class="dcard" href="raspberry-pi.html"><h3>Raspberry Pi →</h3><p>Turn a Pi 3/4/5 into a Box — build the image and flash it to an SD card.</p></a>
-    <a class="dcard" href="updates.html"><h3>Updates &amp; rollback →</h3><p>The platform channel: check, update, and the automatic health-checked rollback.</p></a>
-    <a class="dcard" href="concepts.html"><h3>How it works →</h3><p>Generations, the reconciler, and why nothing ever phones home.</p></a>
+    <a class="dcard" href="install.html"><h3>1 · Install →</h3><p>Point a Linux box, Windows laptop, VPS, or bare metal at one command. What "blow-away install" means, and how to bring your settings.</p></a>
+    <a class="dcard" href="first-steps.html"><h3>2 · First steps →</h3><p>Find your Box, pair your browser, deploy your first service, and save your recovery kit.</p></a>
   </div>
 
-  <div class="note">New to The Box? Read <b>Install</b> then <b>First steps</b> — that's the whole path from
-  nothing to a paired, running Box.</div>
+  <h2>Get it onto hardware</h2>
+  <div class="cards">
+    <a class="dcard" href="raspberry-pi.html"><h3>Raspberry Pi →</h3><p>A Pi 3/4/5 makes a cheap, silent Box — build the image and flash it to an SD card.</p></a>
+    <a class="dcard" href="agents.html"><h3>Let an agent do it →</h3><p>Point an agent at your machine (or the LAN) and it provisions the Box and runs it for you.</p></a>
+  </div>
+
+  <h2>Use your Box</h2>
+  <div class="cards">
+    <a class="dcard" href="backups.html"><h3>Backups →</h3><p>Client-side-encrypted backups to storage you own — set it up, restore, and guard the key.</p></a>
+    <a class="dcard" href="connect.html"><h3>Remote access →</h3><p>Reach your Box from anywhere over a private WireGuard mesh — no open ports.</p></a>
+    <a class="dcard" href="fleet.html"><h3>Run a fleet →</h3><p>Several Boxes discover each other, and you manage each from one place.</p></a>
+    <a class="dcard" href="updates.html"><h3>Updates &amp; rollback →</h3><p>The platform updates like a phone: check, apply, and the automatic health-checked rollback.</p></a>
+  </div>
+
+  <h2>Understand it</h2>
+  <div class="cards">
+    <a class="dcard" href="concepts.html"><h3>How it works →</h3><p>The appliance model, atomic generations, self-reconcile, and why nothing ever phones home.</p></a>
+    <a class="dcard" href="agents.html"><h3>For agents →</h3><p>The MCP tool surface an agent uses to configure and maintain a Box — plus <a href="/llms.txt">/llms.txt</a>.</p></a>
+  </div>
 </main>
 <footer>
   <span>The Box — a personal server you actually own.</span>
