@@ -5,9 +5,12 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     disko.url = "github:nix-community/disko";
     disko.inputs.nixpkgs.follows = "nixpkgs";
+    # Purpose-built Raspberry Pi 5 support (vendor kernel + firmware + boot),
+    # with a binary cache for the kernel. Brings its own nixpkgs.
+    nixos-raspberrypi.url = "github:nvmd/nixos-raspberrypi/main";
   };
 
-  outputs = { self, nixpkgs, disko }:
+  outputs = { self, nixpkgs, disko, nixos-raspberrypi }:
     let
       systems = [ "x86_64-linux" "aarch64-linux" ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
@@ -48,6 +51,28 @@
           ./nix/box-os.nix
         ];
       };
+
+      # A Box for a given Raspberry Pi model, on nixos-raspberrypi's per-model
+      # base (vendor kernel + firmware + boot method) — the generic aarch64 image
+      # does not boot a Pi. This SAME system closure is both the flashable SD
+      # image (config.system.build.sdImage) and what the live-convert installs
+      # onto an existing Pi: flash and convert are two deliveries of one Box.
+      # Pis are a common appliance, so 3/4/5 are all first-class.
+      mkPiBox = model: nixos-raspberrypi.lib.nixosSystemFull {
+        specialArgs = { inherit nixos-raspberrypi; };
+        modules = [
+          {
+            imports = [
+              nixos-raspberrypi.nixosModules.sd-image
+              nixos-raspberrypi.nixosModules.trusted-nix-caches
+              nixos-raspberrypi.nixosModules."raspberry-pi-${model}".base
+            ];
+          }
+          self.nixosModules.platform
+          ./nix/pi.nix
+        ];
+      };
+      boxPis = nixpkgs.lib.genAttrs [ "3" "4" "5" ] mkPiBox;
 
       # A per-box config composes the reusable platform (boxd + Box software)
       # with a hardware layer and its own host/service modules — the OS tier of
@@ -112,6 +137,13 @@
           default = boxd;
         }))
         {
+          # Per-model Pi appliance images (raw .img, dd to SD/USB): pi3-image,
+          # pi4-image, pi5-image.
+          aarch64-linux = nixpkgs.lib.mapAttrs'
+            (m: cfg: nixpkgs.lib.nameValuePair "pi${m}-image"
+              cfg.config.system.build.sdImage)
+            boxPis;
+
           x86_64-linux = {
             installer-iso =
               self.nixosConfigurations.box-installer-iso.config.system.build.isoImage;
@@ -227,7 +259,9 @@
           "${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix";
         box-installer-netboot = installerWith
           "${nixpkgs}/nixos/modules/installer/netboot/netboot-minimal.nix";
-      } // boxHosts;
+      } // boxHosts
+        // (nixpkgs.lib.mapAttrs'
+             (m: cfg: nixpkgs.lib.nameValuePair "box-os-pi${m}" cfg) boxPis);
 
       # Live VM proof that the OS-tier switch + system rollback work on a
       # booted Box (exercises the exact command sequence ostier.rs drives).
