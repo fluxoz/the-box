@@ -30,7 +30,9 @@ fn default_platform_ref() -> String {
     DEFAULT_PLATFORM_REF.to_string()
 }
 fn default_system() -> String {
-    "x86_64-linux".to_string()
+    // Track the platform for THIS box's architecture: a Pi is aarch64, and
+    // pinning x86_64-linux there would build (or fail to fetch) the wrong system.
+    format!("{}-linux", std::env::consts::ARCH)
 }
 
 /// Per-box OS-tier binding: identity, which platform to track, and whether to
@@ -264,7 +266,7 @@ mod tests {
         let loaded = ChannelConfig::load(&paths).unwrap().unwrap();
         assert_eq!(loaded.host_id, "box-abc");
         assert_eq!(loaded.platform_ref, DEFAULT_PLATFORM_REF);
-        assert_eq!(loaded.system, "x86_64-linux");
+        assert_eq!(loaded.system, format!("{}-linux", std::env::consts::ARCH));
         assert!(!loaded.auto_update);
     }
 

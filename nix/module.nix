@@ -97,7 +97,7 @@ in
         after = [ "network.target" ];
         # boxd shells out to nix (generation builds), cloudflared (BYO tunnel),
         # and avahi-browse + curl (LAN fleet discovery).
-        path = [ pkgs.nix pkgs.cloudflared pkgs.avahi pkgs.curl ];
+        path = [ pkgs.nix pkgs.cloudflared pkgs.avahi pkgs.curl pkgs.systemd ];
         # nix (invoked by boxd for generation builds) needs a writable cache
         # under $HOME; the boxd system user's default home is /var/empty.
         environment.HOME = cfg.dataDir;
@@ -136,6 +136,35 @@ in
           RandomizedDelaySec = "20m";
         };
       };
+
+      # Platform channel update as a ROOT oneshot (switching the system profile
+      # needs root; boxd runs unprivileged). `boxd channel update` checks the
+      # channel and, on a new release, rebuilds + switches + health-checks +
+      # rolls back if unhealthy. Always defined so the dashboard's "Update now"
+      # can trigger it; the autoUpdate timer below is what makes it periodic.
+      systemd.services.boxd-channel-update = {
+        description = "The Box platform channel update";
+        path = [ pkgs.nix pkgs.git ];
+        environment.HOME = "/root";
+        serviceConfig = {
+          Type = "oneshot";
+          User = "root";
+          ExecStart = "${lib.getExe cfg.package} --data-dir ${cfg.dataDir} channel update";
+        };
+      };
+
+      # Let the unprivileged boxd user START (only) that one update unit, so the
+      # dashboard's "Update now" can trigger the root reconcile without granting
+      # boxd broad control over the system.
+      security.polkit.extraConfig = ''
+        polkit.addRule(function(action, subject) {
+          if (action.id == "org.freedesktop.systemd1.manage-units" &&
+              action.lookup("unit") == "boxd-channel-update.service" &&
+              subject.user == "boxd") {
+            return polkit.Result.YES;
+          }
+        });
+      '';
 
       # A machine-readable record of what the OS tier declares, for boxd/GUI
       # introspection of the composed layer stack.
@@ -181,19 +210,9 @@ in
     })
 
     (lib.mkIf cfg.autoUpdate.enable {
-      # The self-reconcile: check the channel, and on a new release rebuild the
-      # whole system, switch, and roll back if it doesn't come up healthy.
-      # Runs as root because switching the system profile requires it.
-      systemd.services.boxd-channel-update = {
-        description = "The Box platform channel update";
-        path = [ pkgs.nix pkgs.git ];
-        environment.HOME = "/root";
-        serviceConfig = {
-          Type = "oneshot";
-          User = "root";
-          ExecStart = "${lib.getExe cfg.package} --data-dir ${cfg.dataDir} channel update";
-        };
-      };
+      # The self-reconcile timer: periodically run the (always-defined) update
+      # service — check the channel, and on a new release rebuild, switch, and
+      # roll back if it doesn't come up healthy.
       systemd.timers.boxd-channel-update = {
         description = "Periodic Box platform channel update";
         wantedBy = [ "timers.target" ];
