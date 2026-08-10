@@ -1,6 +1,20 @@
 {
   description = "The Box — Nix-powered plug-and-play personal server platform";
 
+  # Declare the binary caches so anyone building a Pi image (or boxd) pulls the
+  # vendor kernel + boxd from cache instead of compiling them. Without this a
+  # `nix build .#pi5-image` recompiles the Raspberry Pi kernel from source.
+  nixConfig = {
+    extra-substituters = [
+      "https://nixos-raspberrypi.cachix.org"
+      "https://fluxoz.cachix.org"
+    ];
+    extra-trusted-public-keys = [
+      "nixos-raspberrypi.cachix.org-1:4iMO9LXa8BqhU+Rpg6LQKiGa2lsNh/j2oiYLNOQ5sPI="
+      "fluxoz.cachix.org-1:yzuO7pZpCoHEIT6PQiYJ1eupby/rH3Ls3Q18+VA0Krc="
+    ];
+  };
+
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     disko.url = "github:nix-community/disko";
