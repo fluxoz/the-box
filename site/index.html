@@ -68,13 +68,16 @@
   h2{font-size:1.5rem;margin:.1rem 0 1.1rem;letter-spacing:-.01em;text-wrap:balance;}
 
   /* 3 steps */
-  .steps{list-style:none;counter-reset:s;margin:0;padding:0;display:flex;flex-direction:column;gap:.7rem;}
-  .steps li{counter-increment:s;display:grid;grid-template-columns:2rem 1fr;gap:.85rem;align-items:baseline;}
-  .steps li::before{content:counter(s);font-family:var(--mono);font-weight:700;color:var(--brass2);
-    border:1px solid var(--line2);border-radius:6px;text-align:center;line-height:1.8;font-size:.85rem;background:var(--panel);}
+  .steps{list-style:none;counter-reset:s;margin:0;padding:0;display:flex;flex-direction:column;gap:.85rem;}
+  .steps li{counter-increment:s;display:flex;gap:.85rem;align-items:flex-start;}
+  .steps li::before{content:counter(s);flex:none;font-family:var(--mono);font-weight:700;color:var(--brass2);
+    width:1.9rem;height:1.9rem;line-height:1.8rem;text-align:center;font-size:.92rem;
+    border:1px solid var(--line2);border-radius:6px;background:var(--panel);}
+  .steps .txt{color:var(--dim);padding-top:.12rem;}
   .steps b{color:var(--ink);font-weight:600;}
-  .steps span{color:var(--dim);}
-  .stepnote{margin:1rem 0 0;color:var(--faint);font-size:.86rem;font-family:var(--mono);letter-spacing:.02em;}
+  .steps code,.lede code{font-family:var(--mono);font-size:.88em;color:var(--ink);
+    background:var(--brass-wash);padding:.04rem .32rem;border-radius:4px;}
+  .stepnote{margin:1.1rem 0 0;color:var(--faint);font-size:.86rem;font-family:var(--mono);letter-spacing:.02em;}
 
   /* pillars */
   .pillars{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:1rem 0 0;}
@@ -166,9 +169,9 @@
   <p class="eyebrow">What happens</p>
   <h2>One command, then three minutes of watching.</h2>
   <ol class="steps">
-    <li><b>Run the command.</b> <span>The machine erases its old OS and installs Box&nbsp;OS — with your explicit consent, nothing is touched before that.</span></li>
-    <li><b>It comes back as a Box.</b> <span>It reboots and appears on your network as <code>box.local</code>, already running.</span></li>
-    <li><b>Open it and pair once.</b> <span>Go to <code>box.local:2693</code> in your browser, pair your device, and start deploying. That's it.</span></li>
+    <li><span class="txt"><b>Run the command.</b> The machine erases its old OS and installs Box&nbsp;OS — with your explicit consent; nothing is touched before that.</span></li>
+    <li><span class="txt"><b>It comes back as a Box.</b> It reboots and appears on your network as <code>box.local</code>, already running.</span></li>
+    <li><span class="txt"><b>Open it and pair once.</b> Go to <code>box.local:2693</code> in your browser, pair your device, and start deploying. That's it.</span></li>
   </ol>
   <p class="stepnote">~10 minutes · one machine · nothing to hand-configure</p>
 
