@@ -24,6 +24,10 @@
   it for you — provision, configure, maintain — hands-off. A Box is built to be driven by software,
   not just a browser.</p>
 
+  <div class="tip">Point your agent at <a href="/llms.txt"><code>thebox.build/llms.txt</code></a> and it
+  has everything below as an executable runbook — no docs-reading required. The complete machine
+  reference (orders schema + every MCP tool) is at <a href="/llms-full.txt"><code>/llms-full.txt</code></a>.</div>
+
   <h2 id="provision">Provision: bare machine → Box</h2>
   <p>If the spare machine has an OS you can SSH into, one command turns it into a Box:</p>
   <pre><code>boxd provision root@192.168.1.42 --ssh-key ~/.ssh/id_ed25519.pub</code></pre>

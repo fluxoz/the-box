@@ -1,0 +1,96 @@
+# The Box
+
+> The Box is a sovereign, self-hosting personal-server platform. One generic OS
+> image installs any machine; identity arrives at first boot. Every change is an
+> atomic, reversible Nix generation. A running Box exposes a dashboard, a JSON
+> API, and an MCP server — so an agent can provision and manage it end to end.
+
+This file is written for AI agents. If you are an agent asked to "set up The Box"
+on a machine, everything you need is here. Complete machine reference (orders
+schema + every MCP tool): https://thebox.build/llms-full.txt
+
+## Provision a spare machine into a Box
+
+Requirements: SSH access to the target (as root, or a sudo user), plus `ssh` and
+`curl` locally. The takeover **wipes the target disk** — only run it on a machine
+you intend to convert.
+
+If `boxd` is installed locally, one command runs the whole flow and prints
+`{address, token, mcp_url, dashboard}` — then skip to "Manage a Box":
+
+    boxd provision root@TARGET_IP --ssh-key ~/.ssh/id_ed25519.pub --json
+
+Without `boxd`, the identical flow with shell tools:
+
+1. Invent a one-time pairing code and build the orders. `erase_disk:true` is
+   required consent; `enrollment_code_hash` is the SHA-256 of the code (keep the
+   plaintext — you redeem it in step 4):
+
+       CODE=$(head -c5 /dev/urandom | od -An -tx1 | tr -d ' \n')   # keep this
+       HASH=$(printf %s "$CODE" | sha256sum | cut -d' ' -f1)
+       KEY=$(cat ~/.ssh/id_ed25519.pub)
+       cat > box-install.json <<JSON
+       { "erase_disk": true, "hostname": "auto",
+         "ssh_authorized_keys": ["$KEY"],
+         "enrollment_code_hash": "$HASH" }
+       JSON
+
+2. Ship the orders and run the takeover installer over SSH. It kexecs into the
+   installer, so the SSH connection drops mid-command — that is expected.
+   Connecting as root (shown here); as a sudo user, use `sudo BOX_ORDERS_B64=$B64 sh`:
+
+       B64=$(base64 -w0 box-install.json)
+       ssh root@TARGET_IP "curl -fsSL https://thebox.build/install.sh | BOX_ORDERS_B64=$B64 sh"
+
+3. Wait for the Box to come up on management port 2693 (health is public):
+
+       until curl -fsS http://TARGET_IP:2693/api/v1/health >/dev/null; do sleep 5; done
+
+4. Redeem your code for a session token:
+
+       TOKEN=$(curl -fsS -X POST http://TARGET_IP:2693/pair/redeem \
+         -H 'accept: application/json' --data-urlencode "code=$CODE" | jq -r .token)
+
+## Manage a Box — configure, deploy, maintain
+
+Every Box runs an MCP server (JSON-RPC 2.0 over HTTP) at http://BOX:2693/mcp.
+Authenticate with the session token as a Bearer header: `Authorization: Bearer TOKEN`.
+This is the same declarative surface the dashboard and CLI use.
+
+List the tools:
+
+    curl -fsS -X POST http://BOX:2693/mcp \
+      -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+      -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+
+Deploy a static site (activates atomically as a new generation; rollback-safe):
+
+    curl -fsS -X POST http://BOX:2693/mcp -H "authorization: Bearer $TOKEN" \
+      -H 'content-type: application/json' \
+      -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{
+           "name":"deploy_static_site",
+           "arguments":{"name":"welcome","index_html":"<h1>hi</h1>"}}}'
+
+Tools: get_status, list_services, list_templates, deploy, deploy_static_site,
+delete_service, list_generations, list_history, channel_status, channel_check,
+rollback, backup_status, backup_snapshots, backup_now, backup_restore.
+Full argument schemas + examples: https://thebox.build/llms-full.txt
+
+## Notes
+
+- The Box trusts YOU, not other machines. The session token is a revocable
+  operator device — it appears under Devices and can be revoked anytime. Give
+  each agent its own SSH key and its own token.
+- No account, no phone-home. Keys, codes, and the backup key are generated on the
+  Box or by you and never leave it.
+- Deploys and platform updates are atomic generations; a bad change is one
+  `rollback` away, and a failed update rolls itself back.
+- Bare metal with a blank disk has no SSH to hit — flash or netboot the installer
+  first: https://thebox.build/docs/install.html#bare-metal
+
+## Docs
+
+- [Agents](https://thebox.build/docs/agents.html): this flow, in prose.
+- [Install](https://thebox.build/docs/install.html): every install path.
+- [How it works](https://thebox.build/docs/concepts.html): generations, self-reconcile, sovereignty.
+- [Full machine reference](https://thebox.build/llms-full.txt): orders schema + every MCP tool.
