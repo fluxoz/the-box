@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Raspberry Pi — The Box docs</title>
+<link rel="stylesheet" href="../docs.css">
+</head>
+<body>
+<div class="top">
+  <a class="brand" href="/">THE <b>BOX</b> <span class="sub">docs</span></a>
+  <nav>
+    <a href="./">Docs</a>
+    <a href="install.html">Install</a>
+    <a href="first-steps.html">First steps</a>
+    <a href="backups.html">Backups</a>
+    <a href="fleet.html">Fleet</a>
+  </nav>
+</div>
+<main>
+  <p class="eyebrow">Guide</p>
+  <h1>Raspberry Pi</h1>
+  <p class="lede">A Raspberry Pi 3, 4, or 5 makes a great Box — cheap, silent, low-power. A Pi is
+  <strong>flashed</strong>, not taken over: you build a ready-to-run image and write it to an SD card.</p>
+
+  <div class="note">The <code>curl | sh</code> takeover is a PC/x86 thing (it kexecs into the installer,
+  which the Pi can't do). Flashing is how everything installs on a Pi — this is the Pi's normal path, and
+  it's fully supported.</div>
+
+  <h2 id="build">Build the image</h2>
+  <p>With <a href="https://nixos.org/download">Nix</a> installed, build the image for your model
+  (<code>pi3-image</code>, <code>pi4-image</code>, or <code>pi5-image</code>):</p>
+  <pre><code>nix build github:fluxoz/the-box#pi5-image</code></pre>
+  <p>boxd and the Pi's vendor kernel come prebuilt from a binary cache, so this is mostly downloads — a few
+  minutes, not a from-scratch compile. The result is a raw <code>.img</code> under <code>./result/sd-image/</code>.</p>
+
+  <h2 id="flash">Flash it</h2>
+  <pre><code>sudo dd if=./result/sd-image/*.img of=/dev/sdX bs=4M status=progress conv=fsync</code></pre>
+  <div class="warn"><b>Check <code>/dev/sdX</code>.</b> Point it at the SD card, not a system disk — <code>dd</code>
+  overwrites whatever you give it. On macOS use <code>/dev/rdiskN</code>; the Raspberry Pi Imager can also
+  write a custom <code>.img</code>.</div>
+
+  <h2 id="boot">Boot &amp; pair</h2>
+  <p>Put the card in the Pi and power on. On first boot it expands the filesystem to fill the card and comes
+  up as a Box on your LAN — <code>box.local:2693</code>. From there it's the same as any Box:
+  <a href="first-steps.html">pair your browser and go</a>.</p>
+
+  <div class="pager">
+    <span><a href="install.html">← Install</a></span>
+    <span><a href="first-steps.html">First steps →</a></span>
+  </div>
+</main>
+<footer>
+  <span>The Box — a personal server you actually own.</span>
+  <span><a href="https://github.com/fluxoz/the-box">Source on GitHub</a></span>
+</footer>
+</body>
+</html>

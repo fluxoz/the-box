@@ -248,6 +248,12 @@
                 cp ${./installers/windows/install.ps1} $out/install.ps1
                 cp ${./installers/macos/README.md}     $out/mac.txt
                 cp ${./site/index.html}                $out/index.html
+                cp ${./site/docs.css}                  $out/docs.css
+                cp -r ${./site/docs}                   $out/docs
+                # The pre-install Configurator (self-contained), served live so
+                # the install docs' references to it are real.
+                mkdir -p $out/configurator
+                cp ${./configurator/index.html}        $out/configurator/index.html
 
                 ( cd $out && find . -type f ! -name SHA256SUMS -print0 \
                     | sort -z | xargs -0 sha256sum > SHA256SUMS )

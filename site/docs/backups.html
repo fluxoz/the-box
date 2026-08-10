@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Backups — The Box docs</title>
+<link rel="stylesheet" href="../docs.css">
+</head>
+<body>
+<div class="top">
+  <a class="brand" href="/">THE <b>BOX</b> <span class="sub">docs</span></a>
+  <nav>
+    <a href="./">Docs</a>
+    <a href="install.html">Install</a>
+    <a href="first-steps.html">First steps</a>
+    <a href="connect.html">Remote access</a>
+    <a href="fleet.html">Fleet</a>
+  </nav>
+</div>
+<main>
+  <p class="eyebrow">Guide</p>
+  <h1>Backups</h1>
+  <p class="lede">Box Backup is <strong>client-side encrypted</strong> and points at storage <strong>you
+  own</strong>. Everything is encrypted on the Box before it leaves, so your storage provider — and we —
+  only ever see ciphertext.</p>
+
+  <h2 id="what">What gets backed up</h2>
+  <p>The backup set is derived from your Box's manifest, not a list you maintain: your config, secrets,
+  and auth, plus each service's declared <em>state directory</em>. Add a stateful service and its data is
+  protected automatically.</p>
+  <div class="note">The Nix store and past generations are <b>deliberately not</b> backed up — they rebuild
+  from the (backed-up) config. Backups stay small and are about your <em>data</em>, not the OS.</div>
+
+  <h2 id="backends">Bring your own backend</h2>
+  <p>Point it at storage you control:</p>
+  <table class="tbl">
+    <tr><th>Backend</th><th>Use</th></tr>
+    <tr><td>local</td><td>Another disk on the Box, or a mounted drive.</td></tr>
+    <tr><td>s3</td><td>Backblaze B2, Cloudflare R2, MinIO, any S3-compatible bucket.</td></tr>
+    <tr><td>sftp</td><td>A NAS or another server over SSH.</td></tr>
+    <tr><td>rest</td><td>A restic REST server.</td></tr>
+  </table>
+
+  <h2 id="setup">Turn it on</h2>
+  <ol>
+    <li>Dashboard → <strong>Backup</strong> → choose a backend and enter its details.</li>
+    <li>The Box generates your <strong>backup key</strong> and shows it <strong>once</strong>.
+      <strong>Save it</strong> — it's the encryption key, it never leaves the Box, and without it a backup
+      can't be restored by anyone.</li>
+    <li>Pick a schedule (e.g. daily). An hourly heartbeat runs a backup when one is due.</li>
+  </ol>
+  <div class="warn"><b>The key is the whole game.</b> Zero-knowledge means exactly that: lose the key and
+  the data is gone. Put it in your <a href="first-steps.html#recovery">recovery kit</a>.</div>
+
+  <h2 id="restore">Restore</h2>
+  <p>Dashboard → <strong>Backup</strong> shows your snapshots. Restore everything, or scope it to a single
+  service's data or just the Box's config. On a fresh Box, re-enter the same backend and key, and the
+  snapshots are right there.</p>
+
+  <h2 id="managed">Managed offsite (optional)</h2>
+  <p>Don't want to run storage? The managed tier gives you metered, encrypted-in-flight-and-at-rest offsite
+  storage in one command — still zero-knowledge, the key still never leaves your Box:</p>
+  <pre><code>boxd cloud enroll --server &lt;url&gt; --token &lt;one-time-token&gt;</code></pre>
+  <p>It links the Box to a cloud account, provisions scoped storage, and points Box Backup at it. The
+  software is free; only the operated storage is paid.</p>
+
+  <div class="pager">
+    <span><a href="first-steps.html">← First steps</a></span>
+    <span><a href="connect.html">Remote access →</a></span>
+  </div>
+</main>
+<footer>
+  <span>The Box — a personal server you actually own.</span>
+  <span><a href="https://github.com/fluxoz/the-box">Source on GitHub</a></span>
+</footer>
+</body>
+</html>
