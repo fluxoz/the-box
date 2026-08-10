@@ -64,10 +64,50 @@ that is success, not failure. The authoritative "it worked" signal is the Box
 answering on port 2693 (§3).
 
 Bare metal with no OS (blank disk) cannot be reached by SSH — there is nothing to
-run install.sh. Flash the SD/USB image or netboot the installer first
+run install.sh. A human flashes the SD/USB image or netboots the installer once
 (https://thebox.build/docs/install.html#bare-metal , and for Raspberry Pi,
-https://thebox.build/docs/raspberry-pi.html). Once it is a Box, everything below
-applies unchanged.
+https://thebox.build/docs/raspberry-pi.html). From there the machine is agent-
+drivable on the LAN — see §2b. Once it is a Box, everything from §3 on applies
+unchanged.
+
+
+## 2b. The installer beacon (bare-metal, no SSH)
+
+A machine sitting in the installer's setup wizard advertises itself over mDNS so
+an agent can discover and finish it without a screen — the LAN-native analog of
+SSH. This is how you provision a machine that has no OS to SSH into.
+
+Discovery: it advertises the DNS-SD service type `_thebox-setup._tcp` on port
+2693, with TXT records vendor=thebox, role=installer, state=unclaimed,
+pin=required. Browse for it and read the address from the record:
+
+    avahi-browse -rpt _thebox-setup._tcp | grep '^=' | grep IPv4
+    # (or: dns-sd -B _thebox-setup._tcp)
+
+Identity: GET http://IP:2693/api/hello — unauthenticated. Returns
+{ "thebox":"installer", "role":"installer", "state":"unclaimed"|"installing"|"done",
+"pin_required":bool, "port":2693, "version":"..." }. Use it to confirm you found a
+Box installer and whether a setup PIN is needed, before touching anything.
+
+Setup PIN: the destructive endpoints are gated by a PIN presented in the
+`X-Setup-Pin` header. The PIN is shown on the machine's own screen, or set in the
+Configurator (rides in as `setup_pin`); you supply it out of band. This is the
+physical-security gate — the pre-install analog of the enrollment code — so a
+random host on the LAN can't claim a booting machine with its own keys.
+
+The setup API (all under http://IP:2693, all PIN-gated except /api/hello):
+- GET  /api/probe  → { ok, disks:[{path,size_bytes,model,rotational,removable,...}] }
+- POST /api/plan   { "layout": "single"|"mirror"|"pool" } → resolved layout preview
+- POST /api/commit { "layout": "...", "base": <orders> } → writes the effective
+  orders + disko config and starts the install. `base` is the orders object from
+  §1 (hostname, ssh_authorized_keys, enrollment_code_hash, wifi); the chosen
+  layout is merged into it. This is the commit — it wipes and installs.
+- GET  /api/status → { committed, done, log } (install progress)
+
+Agent flow: browse → /api/hello → (build orders as in §1) → POST /api/commit with
+the PIN → poll /api/status until done (or just wait for the Box on 2693, §3) →
+redeem your pairing code (§4) → manage over MCP (§6). The beacon stops advertising
+the moment setup commits.
 
 `boxd provision <ssh-target>` packages the whole §1–§4 flow (orders, ssh+install,
 wait, redeem) into one command; add --json for `{address, token, mcp_url,

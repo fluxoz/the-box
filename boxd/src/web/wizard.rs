@@ -84,11 +84,34 @@ fn base_config(cfg: &WizardCfg, body: &Value) -> Value {
 pub fn router(cfg: WizardCfg) -> Router {
     Router::new()
         .route("/", get(index))
+        .route("/api/hello", get(hello))
         .route("/api/probe", get(probe_disks))
         .route("/api/plan", post(plan))
         .route("/api/commit", post(commit))
         .route("/api/status", get(status))
         .with_state(Arc::new(cfg))
+}
+
+/// Unauthenticated identity — the discovery counterpart to the mDNS beacon.
+/// An agent that finds an unclaimed installer on the LAN hits this (no PIN) to
+/// confirm it's a Box installer and whether a setup PIN is required, before it
+/// bothers with the destructive PIN-gated endpoints. Reveals nothing sensitive.
+async fn hello(State(cfg): St) -> Json<Value> {
+    let state = if cfg.done.exists() {
+        "done"
+    } else if cfg.commit_flag.exists() {
+        "installing"
+    } else {
+        "unclaimed"
+    };
+    Json(json!({
+        "thebox": "installer",
+        "role": "installer",
+        "state": state,
+        "pin_required": cfg.pin.is_some(),
+        "port": 2693,
+        "version": env!("CARGO_PKG_VERSION"),
+    }))
 }
 
 pub fn run(cfg: WizardCfg, listen: SocketAddr) -> anyhow::Result<()> {

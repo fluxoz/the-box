@@ -51,6 +51,32 @@ Without `boxd`, the identical flow with shell tools:
        TOKEN=$(curl -fsS -X POST http://TARGET_IP:2693/pair/redeem \
          -H 'accept: application/json' --data-urlencode "code=$CODE" | jq -r .token)
 
+## Bare metal — a machine with no OS
+
+A blank machine has no SSH to hit. A human flashes/netboots the installer once
+(https://thebox.build/docs/install.html#bare-metal); from there it's agent-drivable
+on the LAN. While it sits in setup it **beacons over mDNS** as an unclaimed Box
+installer, and its setup API is PIN-gated (the PIN is shown on the machine's screen,
+or set in the Configurator — you supply it out of band).
+
+1. Discover it (its address comes straight from the browse record):
+
+       avahi-browse -rpt _thebox-setup._tcp | grep '^=' | grep IPv4
+
+2. Confirm what you found (no PIN needed):
+
+       curl -fsS http://IP:2693/api/hello        # {"thebox":"installer","state":"unclaimed","pin_required":true}
+
+3. Build orders as above (§ code/HASH/KEY), then push them with a layout and the
+   setup PIN — this commits and starts the install:
+
+       curl -fsS -X POST http://IP:2693/api/commit -H "x-setup-pin: $PIN" \
+         -H 'content-type: application/json' \
+         -d "{\"layout\":\"single\",\"base\":$(cat box-install.json)}"
+
+Then wait for the Box to come up (step 3–4 of "Provision") and redeem your code
+for a session token. Layouts: single | mirror | pool.
+
 ## Manage a Box — configure, deploy, maintain
 
 Every Box runs an MCP server (JSON-RPC 2.0 over HTTP) at http://BOX:2693/mcp.
@@ -85,8 +111,7 @@ Full argument schemas + examples: https://thebox.build/llms-full.txt
   Box or by you and never leave it.
 - Deploys and platform updates are atomic generations; a bad change is one
   `rollback` away, and a failed update rolls itself back.
-- Bare metal with a blank disk has no SSH to hit — flash or netboot the installer
-  first: https://thebox.build/docs/install.html#bare-metal
+- Bare metal with a blank disk has no SSH to hit — see "Bare metal" below.
 
 ## Docs
 
