@@ -1073,8 +1073,8 @@ pub async fn fleet(
         p.muted {
             "Boxes on this network announce themselves over mDNS. This view is "
             "peer-federated — your Box discovers the others directly and reads each "
-            "one's coarse health. Seeing a Box here doesn't grant control; that needs "
-            "pairing."
+            "one's coarse health. Seeing a Box here doesn't grant control; open a "
+            "peer to manage it, and pair with it there (Boxes trust you, not each other)."
         }
         section.cards {
             div.card {
@@ -1092,7 +1092,7 @@ pub async fn fleet(
             div.section-head { h2 { "Boxes" } }
             table {
                 thead {
-                    tr { th { "Box" } th { "Health" } th { "Services" } th { "Version" } th { "Address" } }
+                    tr { th { "Box" } th { "Health" } th { "Services" } th { "Version" } th { "Address" } th { "Manage" } }
                 }
                 tbody {
                     tr {
@@ -1104,6 +1104,7 @@ pub async fn fleet(
                         td { (me.services) }
                         td { (me.version) }
                         td { span.muted { "local" } }
+                        td { a href="/" { "dashboard" } }
                     }
                     @for p in &peers {
                         tr {
@@ -1127,6 +1128,16 @@ pub async fn fleet(
                                 }
                             }
                             td { code { (p.address) ":" (p.port) } }
+                            td {
+                                // Open the peer's own dashboard — the operator pairs
+                                // (or SSH-tunnels) there. No box-to-box trust: this is
+                                // the operator's browser reaching the peer directly.
+                                @match &p.health {
+                                    Some(_) => a href={ "http://" (p.address) ":" (p.port) "/" }
+                                        target="_blank" rel="noopener" { "open ↗" },
+                                    None => span.muted { "—" },
+                                }
+                            }
                         }
                     }
                 }
