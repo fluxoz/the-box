@@ -250,6 +250,10 @@
                 cp ${./site/index.html}                $out/index.html
                 cp ${./site/docs.css}                  $out/docs.css
                 cp -r ${./site/docs}                   $out/docs
+                # Agent entry points: point an agent at thebox.build and it can
+                # provision + manage a Box from these alone (llms.txt convention).
+                cp ${./site/llms.txt}                  $out/llms.txt
+                cp ${./site/llms-full.txt}             $out/llms-full.txt
                 # The pre-install Configurator (self-contained), served live so
                 # the install docs' references to it are real.
                 mkdir -p $out/configurator
