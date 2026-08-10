@@ -26,7 +26,4 @@ in
   # rejects an authorized_keys file whose realpath is under group-writable
   # /nix/store) is counterproductive for an appliance image. Revisit for prod.
   services.openssh.settings.StrictModes = false;
-
-  # Raw (uncompressed) image so it dd's straight onto the card.
-  sdImage.compressImage = false;
 }
