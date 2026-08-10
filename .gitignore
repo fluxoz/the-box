@@ -5,3 +5,8 @@
 /.dev-data
 .direnv/
 *.iso
+
+# stray screenshots
+Screenshot_*.png
+result
+result-*
