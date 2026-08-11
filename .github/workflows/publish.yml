@@ -157,30 +157,31 @@ jobs:
   pi-images:
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-24.04-arm
+    # One parallel job per model: the images are independent, so build them
+    # concurrently rather than in a serial loop. Each uploads as soon as it's
+    # done, so pi5 doesn't wait on pi3/pi4. fail-fast off so one model's failure
+    # doesn't cancel the others.
+    strategy:
+      fail-fast: false
+      matrix:
+        model: ["3", "4", "5"]
     steps:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@main
-      - name: Build + compress pi3/4/5 SD images
+      - name: Build + compress the pi${{ matrix.model }} image
         run: |
           set -euo pipefail
-          mkdir -p pi
-          for m in 3 4 5; do
-            echo "::group::pi${m}-image"
-            out=$(nix build ".#packages.aarch64-linux.pi${m}-image" --no-link --print-out-paths)
-            img=$(echo "$out"/sd-image/*.img)
-            # .xz is the format Raspberry Pi Imager and `dd` users expect; the
-            # image is mostly empty so it shrinks a lot.
-            xz -T0 -6 -c "$img" > "pi/thebox-pi${m}.img.xz"
-            echo "::endgroup::"
-          done
-          ( cd pi && sha256sum *.img.xz > SHA256SUMS.pi )
-          ls -la pi/
-      - name: Attach Pi images to the Release
+          out=$(nix build ".#packages.aarch64-linux.pi${{ matrix.model }}-image" --no-link --print-out-paths)
+          img=$(echo "$out"/sd-image/*.img)
+          # .xz is the format Raspberry Pi Imager and `dd` users expect; the
+          # image is mostly empty so it shrinks a lot.
+          xz -T0 -6 -c "$img" > "thebox-pi${{ matrix.model }}.img.xz"
+          sha256sum "thebox-pi${{ matrix.model }}.img.xz" > "thebox-pi${{ matrix.model }}.img.xz.sha256"
+          ls -la thebox-pi${{ matrix.model }}.img.xz*
+      - name: Attach the pi${{ matrix.model }} image to the Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            pi/thebox-pi3.img.xz
-            pi/thebox-pi4.img.xz
-            pi/thebox-pi5.img.xz
-            pi/SHA256SUMS.pi
+            thebox-pi${{ matrix.model }}.img.xz
+            thebox-pi${{ matrix.model }}.img.xz.sha256
           fail_on_unmatched_files: true
