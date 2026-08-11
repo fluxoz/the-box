@@ -232,6 +232,21 @@ pub async fn index(
     Ok(layout("Services", &flash, body))
 }
 
+/// The lead sentence of a description. Card grids want one scannable line;
+/// the full text stays on the template's own form (and in the API and MCP,
+/// where an agent benefits from the detail).
+fn first_sentence(text: &str) -> &str {
+    // Cut at the first sentence boundary that leaves something worth reading —
+    // "Run a web app." on its own says nothing the title didn't. If no boundary
+    // qualifies, hand back the whole line; the card clamps it to two lines.
+    for (i, _) in text.match_indices(". ") {
+        if i + 1 >= 30 {
+            return &text[..=i];
+        }
+    }
+    text
+}
+
 /// The template/preset chooser: everything deployable from a browser — the
 /// catalog's presets plus the raw primitives, same set an agent sees over MCP.
 pub async fn new_service(
@@ -241,28 +256,29 @@ pub async fn new_service(
     let catalog = crate::catalog::for_data_dir(&state.paths.data_dir);
     let body = html! {
         h2 { "Deploy a service" }
-        p.muted { "Creates or updates a service, builds a new generation and activates it atomically. Roll back any time from the Generations page." }
+        p.muted { "Pick what to run. Every deploy builds a new generation and activates it atomically, so anything here is reversible from Generations." }
         @if !catalog.is_empty() {
-            div.section-head { h3 { "From the catalog" } }
-            section.cards {
+            div.section-head { h3 { "Ready to run" } }
+            section.cards.pick {
                 @for entry in catalog.values() {
                     a.card href={ "/services/new/" (entry.id) } {
-                        h3 {
-                            @if !entry.icon.is_empty() { (entry.icon) " " }
-                            (entry.title)
-                        }
-                        p.muted { (entry.description) }
+                        // entry.icon is deliberately not rendered: the values are
+                        // names ("elephant", "bucket"), and the design system
+                        // allows inline SVG only — no emoji, no pictographs. It
+                        // stays in the schema for a future SVG mapping.
+                        h3 { (entry.title) }
+                        p.muted { (first_sentence(&entry.description)) }
                         @if !entry.category.is_empty() { span.badge { (entry.category) } }
                     }
                 }
             }
         }
-        div.section-head { h3 { "From a primitive" } }
-        section.cards {
+        div.section-head { h3 { "Build your own" } }
+        section.cards.pick {
             @for t in crate::templates::all() {
                 a.card href={ "/services/new/" (t.id()) } {
                     h3 { (t.title()) }
-                    p.muted { (t.description()) }
+                    p.muted { (first_sentence(t.description())) }
                 }
             }
         }
