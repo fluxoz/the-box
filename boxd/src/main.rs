@@ -88,6 +88,23 @@ enum Command {
         #[command(subcommand)]
         action: AuthCmd,
     },
+    /// Config repo: manage the offsite backup remote (your own git host) and
+    /// push config + encrypted secrets to it.
+    Config {
+        #[command(subcommand)]
+        action: ConfigCmd,
+    },
+    /// Recreate this box from a config repo — the second half of
+    /// destroy-and-recreate. Clones the config + encrypted secrets, re-keys each
+    /// secret to this box with your operator key, then builds and switches.
+    Restore {
+        /// The config repo URL (the same one `config remote set` pushes to).
+        repo_url: String,
+        /// Operator identity (an SSH or age private key) that can decrypt the
+        /// repo's secrets, so they can be re-keyed to this box.
+        #[arg(long)]
+        identity: PathBuf,
+    },
     /// Client-side-encrypted backups to your own backend (restic).
     Backup {
         #[command(subcommand)]
@@ -181,6 +198,21 @@ enum AuthCmd {
         #[arg(long, default_value = "enrollment")]
         label: String,
     },
+}
+
+#[derive(Subcommand)]
+enum ConfigCmd {
+    /// Set, show, or clear the git remote the config repo is pushed to. With no
+    /// URL, prints the current remote; with --none, clears it.
+    Remote {
+        /// The remote URL, e.g. git@github.com:you/box-config.git
+        url: Option<String>,
+        /// Clear the configured remote instead of setting one.
+        #[arg(long)]
+        none: bool,
+    },
+    /// Push the config + encrypted secrets to the configured remote now.
+    Push,
 }
 
 #[derive(Subcommand)]
@@ -384,6 +416,43 @@ fn main() -> Result<()> {
         }
         Command::Channel { action } => run_channel(&paths, action),
         Command::Auth { action } => run_auth(&paths, action),
+        Command::Config { action } => match action {
+            ConfigCmd::Remote { url, none } => {
+                if none {
+                    boxd::history::set_remote(&paths, None)?;
+                    println!("config remote cleared");
+                } else if let Some(u) = url {
+                    boxd::history::set_remote(&paths, Some(&u))?;
+                    println!("config remote set to {u}");
+                } else {
+                    match boxd::history::remote(&paths) {
+                        Some(u) => println!("{u}"),
+                        None => println!("no config remote set"),
+                    }
+                }
+                Ok(())
+            }
+            ConfigCmd::Push => {
+                match boxd::history::remote(&paths) {
+                    Some(u) => {
+                        boxd::history::push(&paths)?;
+                        println!("pushed config + encrypted secrets to {u}");
+                    }
+                    None => println!(
+                        "no config remote set — run `boxd config remote <url>` first"
+                    ),
+                }
+                Ok(())
+            }
+        },
+        Command::Restore { repo_url, identity } => {
+            let info = ops::restore(&paths, builder.as_ref(), &repo_url, &identity)?;
+            println!(
+                "restored from {repo_url} — activated generation #{}",
+                info.number
+            );
+            Ok(())
+        }
         Command::Backup { action } => run_backup(&paths, action),
         Command::Cloud { action } => match action {
             CloudCmd::Enroll { server, token } => {

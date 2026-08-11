@@ -190,6 +190,122 @@ fn app_deploy_allocates_and_validates_ports() {
     assert!(ops::deploy(&paths, &builder, req).is_err(), "static-site must reject a port");
 }
 
+// --- destroy-and-recreate: a box comes back from its config repo -------------
+
+fn have(bin: &str) -> bool {
+    std::process::Command::new(bin)
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+fn age_keygen(path: &std::path::Path) -> String {
+    std::process::Command::new("age-keygen")
+        .arg("-o")
+        .arg(path)
+        .output()
+        .unwrap();
+    let pubk = std::process::Command::new("age-keygen")
+        .arg("-y")
+        .arg(path)
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&pubk.stdout).trim().to_string()
+}
+
+fn age_decrypt(file: &std::path::Path, identity: &std::path::Path) -> std::process::Output {
+    std::process::Command::new("age")
+        .arg("-d")
+        .arg("-i")
+        .arg(identity)
+        .arg(file)
+        .output()
+        .unwrap()
+}
+
+/// The acceptance test in miniature: box1 has config + an encrypted secret and
+/// pushes them to a repo; box2 (a fresh box with a different host key) restores
+/// from that repo and ends up able to decrypt the secret unattended, while the
+/// old box's key no longer can. Config and served content survive too.
+#[test]
+fn restore_recreates_config_and_rekeys_secrets() {
+    if !have("git") || !have("age") || !have("age-keygen") {
+        return;
+    }
+    let keys = TempDir::new().unwrap();
+    let operator = keys.path().join("operator");
+    let op_rcpt = age_keygen(&operator);
+    let box1_id = keys.path().join("box1");
+    let box1_rcpt = age_keygen(&box1_id);
+    let box2_id = keys.path().join("box2");
+    let box2_rcpt = age_keygen(&box2_id);
+
+    // A bare repo stands in for the user's GitHub config repo.
+    let remote = keys.path().join("config.git");
+    std::process::Command::new("git")
+        .args(["init", "-q", "--bare"])
+        .arg(&remote)
+        .output()
+        .unwrap();
+    let remote_url = format!("file://{}", remote.display());
+
+    // --- box1: deploy a service, add an encrypted secret, push. ---
+    let (tmp1, paths1, builder1) = setup();
+    ops::deploy(&paths1, &builder1, deploy_inline("site", "<h1>alive</h1>")).unwrap();
+    let secrets1 = paths1.data_dir.join("secrets");
+    std::fs::create_dir_all(&secrets1).unwrap();
+    boxd::agecrypt::encrypt(
+        "TOKEN=s3cr3t",
+        &[box1_rcpt.clone(), op_rcpt.clone()],
+        &secrets1.join("app-env.age"),
+    )
+    .unwrap();
+    boxd::history::set_remote(&paths1, Some(&remote_url)).unwrap();
+    boxd::history::commit(&paths1, "add secret").unwrap();
+    boxd::history::push(&paths1).unwrap();
+
+    // --- box2: a fresh box restores from the repo with the operator key. ---
+    let (_tmp2, paths2, builder2) = setup();
+    let host2_pub = keys.path().join("host2.pub");
+    let auth2 = keys.path().join("authorized_keys");
+    std::fs::write(&host2_pub, format!("{box2_rcpt}\n")).unwrap();
+    std::fs::write(&auth2, format!("{op_rcpt}\n")).unwrap();
+    std::env::set_var("BOX_HOST_KEY_PUB", &host2_pub);
+    std::env::set_var("BOX_AUTHORIZED_KEYS", &auth2);
+
+    ops::restore(&paths2, &builder2, &remote_url, &operator).unwrap();
+
+    std::env::remove_var("BOX_HOST_KEY_PUB");
+    std::env::remove_var("BOX_AUTHORIZED_KEYS");
+
+    // Config and served content came back.
+    let config = BoxConfig::load(&paths2).unwrap();
+    assert_eq!(config.services.len(), 1);
+    assert_eq!(config.services[0].name, "site");
+    assert_eq!(served(&paths2, "site", "index.html"), "<h1>alive</h1>");
+
+    // The secret was re-keyed to box2: box2 decrypts it unattended, the operator
+    // still can, and box1's now-destroyed key cannot.
+    let restored = paths2.data_dir.join("secrets").join("app-env.age");
+    assert!(restored.exists(), "secret should be restored");
+    assert_eq!(
+        String::from_utf8_lossy(&age_decrypt(&restored, &box2_id).stdout).trim(),
+        "TOKEN=s3cr3t",
+        "box2 must decrypt the re-keyed secret with its own key"
+    );
+    assert!(
+        age_decrypt(&restored, &operator).status.success(),
+        "operator still a recipient"
+    );
+    assert!(
+        !age_decrypt(&restored, &box1_id).status.success(),
+        "the destroyed box's key must no longer decrypt"
+    );
+
+    drop(tmp1);
+}
+
 /// Deploying a catalog preset by id resolves to its base primitive with the
 /// preset's params (here from the box's own user catalog, no env needed).
 #[test]

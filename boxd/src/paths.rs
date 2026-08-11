@@ -57,6 +57,12 @@ impl Paths {
         self.data_dir.join("channel.toml")
     }
 
+    /// The git remote the config repo (config + encrypted secrets) is pushed to
+    /// as an offsite, user-owned backup. Per-box, never committed.
+    pub fn config_remote_file(&self) -> PathBuf {
+        self.data_dir.join("config-remote")
+    }
+
     /// Operator sessions and one-time pairing codes (hashed, 0600, never in git).
     pub fn auth_file(&self) -> PathBuf {
         self.data_dir.join("auth.json")
