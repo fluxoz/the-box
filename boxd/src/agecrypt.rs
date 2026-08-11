@@ -6,10 +6,12 @@
 //! holds a decryption identity.
 
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use anyhow::{bail, Context, Result};
+
+use crate::paths::Paths;
 
 /// The recipients every secret is encrypted to: the box's host public key plus
 /// every operator key. age accepts ssh ed25519/rsa public keys as recipients
@@ -109,6 +111,69 @@ pub fn decrypt(age_file: &Path, identity: &Path) -> Result<Vec<u8>> {
 pub fn rekey(age_file: &Path, identity: &Path, recipients: &[String]) -> Result<()> {
     let plaintext = decrypt(age_file, identity)?;
     encrypt_bytes(&plaintext, recipients, age_file)
+}
+
+/// The box's own age identity. boxd's *operational* secrets (backup password,
+/// tokens) are consumed by the unprivileged boxd process itself, at arbitrary
+/// times — so unlike service secrets (which agenix decrypts at boot as root
+/// using the SSH host key boxd can't read), boxd needs a key it can read. This
+/// is that key: created on first use, 0400, and — crucially — gitignored, so it
+/// never leaves the box even though the secrets it protects travel in the config
+/// repo. It is the operational counterpart to the SSH host key.
+pub fn ensure_box_identity(paths: &Paths) -> Result<PathBuf> {
+    let dir = paths.data_dir.join("secrets");
+    std::fs::create_dir_all(&dir)?;
+    let key = dir.join("boxd-identity.key");
+    if !key.exists() {
+        let out = Command::new("age-keygen")
+            .arg("-o")
+            .arg(&key)
+            .output()
+            .context("running age-keygen (is age installed?)")?;
+        if !out.status.success() {
+            bail!(
+                "age-keygen failed: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            );
+        }
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o400))?;
+    }
+    Ok(key)
+}
+
+/// The box identity's public recipient string.
+pub fn box_identity_pub(paths: &Paths) -> Result<String> {
+    let key = ensure_box_identity(paths)?;
+    let out = Command::new("age-keygen")
+        .arg("-y")
+        .arg(&key)
+        .output()
+        .context("reading box identity public key")?;
+    if !out.status.success() {
+        bail!(
+            "age-keygen -y failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+/// Recipients for secrets boxd itself must read unattended: the box + operator
+/// keys (as [`recipients`]) plus the box's own identity. Operational secrets and
+/// re-keyed operational secrets use this set so boxd can decrypt them, the
+/// operator can recover/migrate them, and they survive destroy-and-recreate.
+pub fn local_recipients(paths: &Paths) -> Result<Vec<String>> {
+    // The box may have no host/operator keys yet (very early boot); the box
+    // identity alone still lets boxd store and read a secret.
+    let mut r = recipients().unwrap_or_default();
+    r.push(box_identity_pub(paths)?);
+    let mut seen = std::collections::HashSet::new();
+    r.retain(|k| seen.insert(k.clone()));
+    Ok(r)
 }
 
 #[cfg(test)]

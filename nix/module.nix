@@ -222,7 +222,9 @@ in
         description = "The Box scheduled backup";
         after = [ "network-online.target" "boxd.service" ];
         wants = [ "network-online.target" ];
-        path = [ pkgs.restic pkgs.openssh ];
+        # age: boxd decrypts the (encrypted-at-rest) backup password on demand
+        # for restic via RESTIC_PASSWORD_COMMAND.
+        path = [ pkgs.restic pkgs.openssh pkgs.age ];
         environment.HOME = cfg.dataDir;
         serviceConfig = {
           Type = "oneshot";

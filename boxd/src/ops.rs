@@ -322,17 +322,17 @@ pub fn restore(
     history::fetch_checkout(paths, repo_url)
         .with_context(|| format!("cloning config repo {repo_url}"))?;
 
-    let recipients = agecrypt::recipients()?;
     let secrets_dir = paths.data_dir.join("secrets");
-    if secrets_dir.is_dir() {
-        for entry in fs::read_dir(&secrets_dir)? {
-            let path = entry?.path();
-            if path.extension().and_then(|e| e.to_str()) == Some("age") {
-                agecrypt::rekey(&path, identity, &recipients)
-                    .with_context(|| format!("re-keying secret {}", path.display()))?;
-            }
-        }
-    }
+    // Service secrets (parent dir) re-key to [host + operator] — agenix decrypts
+    // them at boot with the host key; boxd never holds a key for them.
+    rekey_age_dir(&secrets_dir, identity, &agecrypt::recipients()?)?;
+    // Operational secrets (op/ subdir) re-key to [host + operator + box identity]
+    // so this box's boxd can read them unattended (backup password, tokens).
+    rekey_age_dir(
+        &secrets_dir.join("op"),
+        identity,
+        &agecrypt::local_recipients(paths)?,
+    )?;
 
     // Keep pushing future generations back to the same repo.
     history::set_remote(paths, Some(repo_url))?;
@@ -343,6 +343,22 @@ pub fn restore(
         &format!("generation #{}: restore from {repo_url}", info.number),
     );
     Ok(info)
+}
+
+/// Re-key every `.age` directly in `dir` (non-recursive) to `recipients`,
+/// decrypting with `identity`. A missing dir is fine (no secrets of that kind).
+fn rekey_age_dir(dir: &std::path::Path, identity: &std::path::Path, recipients: &[String]) -> Result<()> {
+    if !dir.is_dir() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(dir)? {
+        let path = entry?.path();
+        if path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("age") {
+            agecrypt::rekey(&path, identity, recipients)
+                .with_context(|| format!("re-keying secret {}", path.display()))?;
+        }
+    }
+    Ok(())
 }
 
 /// Switch to an existing generation and restore the declarative state (config

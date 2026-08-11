@@ -130,7 +130,19 @@ fn restic(paths: &Paths, bc: &BackupConfig) -> Result<Command> {
     }
     let mut c = Command::new("restic");
     c.env("RESTIC_REPOSITORY", repo_url(&bc.backend)?);
-    c.env("RESTIC_PASSWORD_FILE", secrets::secret_file(paths, PW_SECRET));
+    // The password is encrypted at rest; hand restic a command that decrypts it
+    // on demand (via the box identity) rather than a plaintext file. No plaintext
+    // ever hits disk.
+    let exe = std::env::current_exe().context("locating boxd for RESTIC_PASSWORD_COMMAND")?;
+    c.env(
+        "RESTIC_PASSWORD_COMMAND",
+        format!(
+            "'{}' --data-dir '{}' secret print {}",
+            exe.display(),
+            paths.data_dir.display(),
+            PW_SECRET
+        ),
+    );
     if bc.backend.kind == "s3" {
         if let Some(k) = secrets::get(paths, S3_KEY)? {
             c.env("AWS_ACCESS_KEY_ID", k);

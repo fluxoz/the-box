@@ -85,13 +85,26 @@ pkgs.testers.runNixOSTest {
     # The .age is ciphertext, not the plaintext token.
     box1.fail("grep -q s3cr3t /var/lib/boxd/secrets/demo-env.age")
 
-    # Push config + encrypted secret to the user's repo, via real boxd.
+    # An OPERATIONAL secret boxd generates itself: the restic backup password.
+    # It's encrypted at rest (op/*.age) and must survive destroy-and-recreate,
+    # or a recreated box can't read its own backups.
+    backup_key = box1.succeed("boxd backup init").strip()
+    box1.succeed("test -f /var/lib/boxd/secrets/op/backup-password.age")
+    # Encrypted at rest — the plaintext key is not in the .age.
+    box1.fail(f"grep -q {backup_key} /var/lib/boxd/secrets/op/backup-password.age")
+    # The box identity that decrypts it stays on the box (never pushed).
+    box1.succeed("test -f /var/lib/boxd/secrets/boxd-identity.key")
+
+    # Push config + encrypted secrets to the user's repo, via real boxd.
     box1.succeed("boxd config remote git://hub/repo.git")
     box1.succeed("boxd config push")
 
-    # The remote received the config and the .age, and NOT any plaintext.
+    # The remote received the config and both .age secrets, and NOT the box
+    # identity key (it must never leave the box).
     hub.succeed("git -C /srv/repo.git cat-file -e main:box.toml")
     hub.succeed("git -C /srv/repo.git cat-file -e main:secrets/demo-env.age")
+    hub.succeed("git -C /srv/repo.git cat-file -e main:secrets/op/backup-password.age")
+    hub.fail("git -C /srv/repo.git cat-file -e main:secrets/boxd-identity.key")
 
     # --- box2: a fresh box recreates itself from the repo. ---
     box2.succeed(
@@ -116,7 +129,18 @@ pkgs.testers.runNixOSTest {
         "age -d -i ${operator}/key /var/lib/boxd/secrets/demo-env.age | grep -qx TOKEN=s3cr3t"
     )
 
-    print("destroy-and-recreate verified: config + content restored and the "
-          "secret re-keyed to the new box's own SSH host key")
+    # The operational secret survived: box2 generated its OWN box identity, and
+    # restore re-keyed the backup password to it — so box2 reads the very same
+    # backup key its predecessor generated, and can therefore restore its
+    # backups. This is the recreate-critical property.
+    box2.succeed("test -f /var/lib/boxd/secrets/boxd-identity.key")
+    got_key = box2.succeed("boxd secret print backup-password").strip()
+    assert got_key == backup_key, (
+        f"box2 backup key {got_key!r} != box1 {backup_key!r}"
+    )
+
+    print("destroy-and-recreate verified: config + content restored, the service "
+          "secret re-keyed to box2's SSH host key, and the box-generated backup "
+          "password recovered on box2 — nothing operational left in plaintext")
   '';
 }
