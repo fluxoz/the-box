@@ -7,6 +7,7 @@
 pub mod agecrypt;
 pub mod auth;
 pub mod backup;
+pub mod board;
 pub mod catalog;
 pub mod channel;
 pub mod cloud;

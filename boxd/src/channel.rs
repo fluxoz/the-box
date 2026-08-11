@@ -44,6 +44,10 @@ pub struct ChannelConfig {
     pub platform_ref: String,
     #[serde(default = "default_system")]
     pub system: String,
+    /// Hardware board (`pi3`/`pi4`/`pi5`) this box's systems must be built for;
+    /// absent on generic hardware. TOML can't encode `None`, so it's skipped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub board: Option<String>,
     #[serde(default)]
     pub auto_update: bool,
 }
@@ -54,6 +58,7 @@ impl ChannelConfig {
             host_id: host_id.into(),
             platform_ref: default_platform_ref(),
             system: default_system(),
+            board: None,
             auto_update: false,
         }
     }
@@ -84,6 +89,7 @@ impl ChannelConfig {
             self.platform_ref.clone(),
             self.system.clone(),
         )
+        .with_board(self.board.clone())
     }
 }
 
@@ -218,6 +224,9 @@ pub fn update_and_switch(
             ostier::SYSTEM_PROFILE
         );
     }
+    // The brick guard: never rebuild/switch a system whose board binding
+    // doesn't match this hardware (a Pi on a generic build won't boot again).
+    crate::board::assert_compatible(channel.board.as_deref())?;
     let repo = paths.os_config_dir();
     hostgen::write_host_repo(paths, config, &channel.spec(), &repo)?;
 
@@ -267,7 +276,17 @@ mod tests {
         assert_eq!(loaded.host_id, "box-abc");
         assert_eq!(loaded.platform_ref, DEFAULT_PLATFORM_REF);
         assert_eq!(loaded.system, format!("{}-linux", std::env::consts::ARCH));
+        assert!(loaded.board.is_none(), "no board on generic hardware");
         assert!(!loaded.auto_update);
+
+        // A Pi's binding round-trips its board (TOML has no null, so None is
+        // simply absent — which is also what pre-board channel.toml files have).
+        let mut pi = ChannelConfig::new("pibox");
+        pi.board = Some("pi5".into());
+        pi.save(&paths).unwrap();
+        let loaded = ChannelConfig::load(&paths).unwrap().unwrap();
+        assert_eq!(loaded.board.as_deref(), Some("pi5"));
+        assert_eq!(loaded.spec().board.as_deref(), Some("pi5"));
     }
 
     #[test]

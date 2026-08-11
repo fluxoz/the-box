@@ -63,6 +63,9 @@ enum Command {
         /// Nix system double
         #[arg(long, default_value = "x86_64-linux")]
         system: String,
+        /// Hardware board: auto | none | pi3|pi4|pi5 (see `channel set`).
+        #[arg(long, default_value = "auto")]
+        board: String,
         /// Output directory (default: <data>/os-config)
         #[arg(long)]
         out: Option<PathBuf>,
@@ -77,6 +80,9 @@ enum Command {
         platform: String,
         #[arg(long, default_value = "x86_64-linux")]
         system: String,
+        /// Hardware board: auto | none | pi3|pi4|pi5 (see `channel set`).
+        #[arg(long, default_value = "auto")]
+        board: String,
     },
     /// Platform update channel: inspect and apply platform releases.
     Channel {
@@ -325,6 +331,10 @@ enum ChannelCmd {
         platform: String,
         #[arg(long, default_value = "x86_64-linux")]
         system: String,
+        /// Hardware board: auto (detect from the device tree), none (generic
+        /// appliance), or pi3|pi4|pi5. A Pi rebuilt without its board won't boot.
+        #[arg(long, default_value = "auto")]
+        board: String,
         #[arg(long)]
         auto_update: bool,
     },
@@ -399,10 +409,12 @@ fn main() -> Result<()> {
             host_id,
             platform,
             system,
+            board,
             out,
         } => {
             let config = boxd::config::BoxConfig::load(&paths)?;
-            let spec = boxd::hostgen::HostSpec::new(host_id, platform, system);
+            let spec = boxd::hostgen::HostSpec::new(host_id, platform, system)
+                .with_board(boxd::board::resolve_arg(&board)?);
             let out = out.unwrap_or_else(|| paths.os_config_dir());
             boxd::hostgen::write_host_repo(&paths, &config, &spec, &out)?;
             println!(
@@ -416,9 +428,13 @@ fn main() -> Result<()> {
             host_id,
             platform,
             system,
+            board,
         } => {
             let config = boxd::config::BoxConfig::load(&paths)?;
-            let spec = boxd::hostgen::HostSpec::new(host_id, platform, system);
+            let board = boxd::board::resolve_arg(&board)?;
+            // Never switch onto a system built for the wrong hardware.
+            boxd::board::assert_compatible(board.as_deref())?;
+            let spec = boxd::hostgen::HostSpec::new(host_id, platform, system).with_board(board);
             let toplevel = boxd::ostier::reconcile(
                 &paths,
                 &config,
@@ -728,18 +744,32 @@ fn run_channel(paths: &Paths, action: ChannelCmd) -> Result<()> {
             host_id,
             platform,
             system,
+            board,
             auto_update,
         } => {
+            let board = boxd::board::resolve_arg(&board)?;
+            // A Pi bound without --system aarch64-linux would build the wrong
+            // arch; make the common case (auto-detected board on the box
+            // itself) just work instead of requiring two flags to agree.
+            let system = if board.is_some() && system == "x86_64-linux" {
+                "aarch64-linux".to_string()
+            } else {
+                system
+            };
             let cfg = ChannelConfig {
                 host_id,
                 platform_ref: platform,
                 system,
+                board,
                 auto_update,
             };
             cfg.save(paths)?;
             println!(
-                "channel set: {} tracking {} (auto-update: {})",
-                cfg.host_id, cfg.platform_ref, cfg.auto_update
+                "channel set: {} tracking {} (board: {}, auto-update: {})",
+                cfg.host_id,
+                cfg.platform_ref,
+                cfg.board.as_deref().unwrap_or("generic"),
+                cfg.auto_update
             );
             Ok(())
         }
@@ -751,6 +781,7 @@ fn run_channel(paths: &Paths, action: ChannelCmd) -> Result<()> {
                     println!("host id:      {}", cfg.host_id);
                     println!("platform:     {}", cfg.platform_ref);
                     println!("system:       {}", cfg.system);
+                    println!("board:        {}", cfg.board.as_deref().unwrap_or("generic"));
                     println!("auto-update:  {}", cfg.auto_update);
                     println!(
                         "pinned to:    {}",

@@ -77,26 +77,87 @@
         ];
       };
 
+      # The on-disk layout our flashed Pi images leave behind. While BUILDING an
+      # image the sd-image module supplies this; a channel update rebuilds the
+      # system ON the box, where no sd-image module is composed — so the
+      # regenerated system must declare the very same layout or it would have no
+      # root filesystem. Skipped automatically whenever sd-image is present.
+      piFlashedDisk = { config, lib, options, ... }: {
+        config = lib.mkIf (!(options ? sdImage)) {
+          fileSystems."/" = {
+            device = "/dev/disk/by-label/NIXOS_SD";
+            fsType = "ext4";
+            options = [ "x-initrd.mount" "noatime" ];
+          };
+          fileSystems."/boot/firmware" = {
+            device = "/dev/disk/by-label/FIRMWARE";
+            fsType = "vfat";
+            options = [ "noatime" "noauto" "x-systemd.automount" "x-systemd.idle-timeout=1min" ];
+          };
+          # Our Pi 5 images boot via the new generational "kernel" bootloader
+          # (the sd-image module overrides the base's deprecated "kernelboot"
+          # default) — a rebuilt system must use the same boot method the
+          # flashed FIRMWARE partition was laid out for. pi3/pi4 stay on the
+          # base's uboot default, which the image path doesn't touch.
+          boot.loader.raspberry-pi.bootloader =
+            lib.mkIf (config.boot.loader.raspberry-pi.variant == "5") "kernel";
+        };
+      };
+
+      # EVERY Box system composes through this one builder: the flashable Pi
+      # image, the x86 appliance, and — critically — the per-box repo boxd
+      # regenerates on a channel update (hostgen emits `the-box.lib.boxSystem`).
+      # One entry point means the update path cannot drift from the image path:
+      # a Pi switched onto a generic aarch64 system (no vendor kernel, no
+      # firmware-partition boot method) comes back from its next reboot a brick.
+      #   board = null              → generic appliance (x86/aarch64)
+      #   board = "pi3"|"pi4"|"pi5" → nixos-raspberrypi vendor base + Pi disk layout
+      boxSystem = { system, board ? null, modules ? [ ] }:
+        if board == null then
+          nixpkgs.lib.nixosSystem {
+            inherit system;
+            modules = [
+              self.nixosModules.platform
+              self.nixosModules.hardwareAppliance
+            ] ++ modules;
+          }
+        else
+          assert nixpkgs.lib.assertMsg (system == "aarch64-linux")
+            "boxSystem: board ${board} is aarch64-linux hardware, not ${system}";
+          let
+            base = {
+              pi3 = nixos-raspberrypi.nixosModules.raspberry-pi-3.base;
+              pi4 = nixos-raspberrypi.nixosModules.raspberry-pi-4.base;
+              pi5 = nixos-raspberrypi.nixosModules.raspberry-pi-5.base;
+            }.${board} or (throw "boxSystem: unsupported board ${board} (pi3|pi4|pi5)");
+          in
+          nixos-raspberrypi.lib.nixosSystemFull {
+            specialArgs = { inherit nixos-raspberrypi; };
+            modules = [
+              base
+              nixos-raspberrypi.nixosModules.trusted-nix-caches
+              piFlashedDisk
+              self.nixosModules.platform
+              ./nix/pi.nix
+            ] ++ modules;
+          };
+
       # A Box for a given Raspberry Pi model, on nixos-raspberrypi's per-model
       # base (vendor kernel + firmware + boot method) — the generic aarch64 image
       # does not boot a Pi. Delivered as a flashable SD/USB image; that is the Pi
       # install path (live in-place conversion of a running Raspberry Pi OS is not
       # viable on this hardware — kexec is blocked by the RPi OS kernel). Pis are
-      # a common appliance, so 3/4/5 are all first-class.
-      mkPiBox = model: nixos-raspberrypi.lib.nixosSystemFull {
-        specialArgs = { inherit nixos-raspberrypi; };
+      # a common appliance, so 3/4/5 are all first-class. Composed via boxSystem
+      # (the same builder channel updates use) + the sd-image builder on top.
+      mkPiBox = model: boxSystem {
+        system = "aarch64-linux";
+        board = "pi${model}";
         modules = [
           {
-            imports = [
-              nixos-raspberrypi.nixosModules.sd-image
-              nixos-raspberrypi.nixosModules.trusted-nix-caches
-              nixos-raspberrypi.nixosModules."raspberry-pi-${model}".base
-            ];
+            imports = [ nixos-raspberrypi.nixosModules.sd-image ];
             # Raw (uncompressed) image so it dd's straight onto the card.
             sdImage.compressImage = false;
           }
-          self.nixosModules.platform
-          ./nix/pi.nix
         ];
       };
       boxPis = nixpkgs.lib.genAttrs [ "3" "4" "5" ] mkPiBox;
@@ -369,6 +430,49 @@
         system = "x86_64-linux";
       };
 
+      # Eval-level proof that a channel-update rebuild produces the SAME bootable
+      # Pi system as the flashed image: identical vendor kernel derivation, boot
+      # method, and disk layout. This is what stands between a Pi and an update
+      # that bricks on the next reboot — if boxSystem and the image ever drift,
+      # this check fails before anything ships.
+      checks.x86_64-linux.pi-update-parity =
+        let
+          parityOk = model:
+            let
+              runtime = boxSystem {
+                system = "aarch64-linux";
+                board = "pi${model}";
+                modules = [ { networking.hostName = "parity"; } ];
+              };
+              image = boxPis.${model};
+              eq = name: a: b:
+                nixpkgs.lib.assertMsg (a == b)
+                  "pi${model} update parity: ${name} differs between the flashed image and a channel-update rebuild (${builtins.toJSON a} vs ${builtins.toJSON b})";
+            in
+            assert eq "vendor kernel"
+              runtime.config.boot.kernelPackages.kernel.drvPath
+              image.config.boot.kernelPackages.kernel.drvPath;
+            assert eq "boot method"
+              runtime.config.boot.loader.raspberry-pi.bootloader
+              image.config.boot.loader.raspberry-pi.bootloader;
+            assert eq "boot variant"
+              runtime.config.boot.loader.raspberry-pi.variant
+              image.config.boot.loader.raspberry-pi.variant;
+            assert eq "root filesystem"
+              runtime.config.fileSystems."/".device
+              image.config.fileSystems."/".device;
+            assert eq "root fsType"
+              runtime.config.fileSystems."/".fsType
+              image.config.fileSystems."/".fsType;
+            assert eq "firmware partition"
+              runtime.config.fileSystems."/boot/firmware".device
+              image.config.fileSystems."/boot/firmware".device;
+            true;
+        in
+        assert nixpkgs.lib.all parityOk [ "3" "4" "5" ];
+        nixpkgs.legacyPackages.x86_64-linux.runCommand "pi-update-parity-ok" { }
+          "echo 'channel-update rebuild == flashed image (kernel, boot, disk) for pi3/pi4/pi5' > $out";
+
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
           packages = with pkgs; [
@@ -382,6 +486,11 @@
           RUST_BACKTRACE = "1";
         };
       });
+
+      # The composition entry point for generated per-box repos: hostgen emits
+      # `the-box.lib.boxSystem { system; board; modules; }`, so the platform —
+      # not the generated file — decides how a board becomes a bootable system.
+      lib.boxSystem = boxSystem;
 
       nixosModules.default = { pkgs, lib, ... }: {
         # module.nix is the boxd service; agenix provides the age.* secret

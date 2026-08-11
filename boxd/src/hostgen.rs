@@ -28,6 +28,11 @@ pub struct HostSpec {
     pub platform_ref: String,
     /// Nix system double, e.g. "x86_64-linux".
     pub system: String,
+    /// Hardware board (`pi3`/`pi4`/`pi5`), or `None` for the generic appliance.
+    /// The platform's `lib.boxSystem` composes the matching vendor kernel,
+    /// firmware and boot method — a Pi rebuilt without its board would not
+    /// boot. See [`crate::board`].
+    pub board: Option<String>,
 }
 
 impl HostSpec {
@@ -40,7 +45,13 @@ impl HostSpec {
             id: id.into(),
             platform_ref: platform_ref.into(),
             system: system.into(),
+            board: None,
         }
+    }
+
+    pub fn with_board(mut self, board: Option<String>) -> Self {
+        self.board = board;
+        self
     }
 }
 
@@ -52,6 +63,10 @@ pub fn validate_host_id(id: &str) -> Result<()> {
 }
 
 fn render_flake(spec: &HostSpec) -> String {
+    let board = match &spec.board {
+        Some(b) => format!("\"{b}\""),
+        None => "null".to_string(),
+    };
     format!(
         r#"{{
   description = "The Box — configuration for {id} (managed by boxd; do not edit by hand)";
@@ -64,13 +79,14 @@ fn render_flake(spec: &HostSpec) -> String {
 
   outputs = {{ self, nixpkgs, the-box, ... }}:
     {{
-      nixosConfigurations."{id}" = nixpkgs.lib.nixosSystem {{
+      # boxSystem composes the right hardware layer for this box's board —
+      # vendor kernel/firmware/boot on a Raspberry Pi, the generic appliance
+      # elsewhere. The platform decides how, so the update path can never
+      # drift from the install images.
+      nixosConfigurations."{id}" = the-box.lib.boxSystem {{
         system = "{system}";
-        modules = [
-          the-box.nixosModules.platform
-          the-box.nixosModules.hardwareAppliance
-          ./nodes/hosts/{id}
-        ];
+        board = {board};
+        modules = [ ./nodes/hosts/{id} ];
       }};
     }};
 }}
@@ -78,6 +94,7 @@ fn render_flake(spec: &HostSpec) -> String {
         id = spec.id,
         platform_ref = spec.platform_ref,
         system = spec.system,
+        board = board,
     )
 }
 
@@ -215,8 +232,10 @@ mod tests {
 
         let flake = std::fs::read_to_string(out.join("flake.nix")).unwrap();
         assert!(flake.contains(r#"nixosConfigurations."demo-box""#));
-        assert!(flake.contains("the-box.nixosModules.platform"));
-        assert!(flake.contains("the-box.nixosModules.hardwareAppliance"));
+        // Composition goes through the platform's boxSystem builder, which
+        // picks the hardware layer from the board.
+        assert!(flake.contains("the-box.lib.boxSystem"));
+        assert!(flake.contains("board = null;"));
         assert!(flake.contains(r#"inputs.the-box.url = "github:fluxoz/the-box""#));
 
         let host = std::fs::read_to_string(out.join("nodes/hosts/demo-box/default.nix")).unwrap();
@@ -239,6 +258,25 @@ mod tests {
     fn rejects_bad_host_id() {
         assert!(validate_host_id("Good-Box").is_err());
         assert!(validate_host_id("box-1").is_ok());
+    }
+
+    /// A Pi's generated flake carries its board, so the platform composes the
+    /// vendor kernel/boot instead of the generic appliance (which won't boot it).
+    #[test]
+    fn pi_board_lands_in_the_flake() {
+        let tmp = TempDir::new().unwrap();
+        let paths = Paths::new(tmp.path().join("data"));
+        paths.ensure().unwrap();
+        let out = tmp.path().join("repo");
+        let spec = HostSpec::new("box", "github:fluxoz/the-box", "aarch64-linux")
+            .with_board(Some("pi5".into()));
+
+        write_host_repo(&paths, &BoxConfig::default(), &spec, &out).unwrap();
+
+        let flake = std::fs::read_to_string(out.join("flake.nix")).unwrap();
+        assert!(flake.contains("the-box.lib.boxSystem"));
+        assert!(flake.contains(r#"board = "pi5";"#));
+        assert!(flake.contains(r#"system = "aarch64-linux";"#));
     }
 
     #[test]
