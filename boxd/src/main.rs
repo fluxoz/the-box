@@ -435,6 +435,9 @@ fn main() -> Result<()> {
             ConfigCmd::Push => {
                 match boxd::history::remote(&paths) {
                     Some(u) => {
+                        // Snapshot the current config first so a manual push always
+                        // reflects on-disk state, then ship it.
+                        boxd::history::commit(&paths, "config push")?;
                         boxd::history::push(&paths)?;
                         println!("pushed config + encrypted secrets to {u}");
                     }

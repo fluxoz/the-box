@@ -364,6 +364,10 @@
         inherit self nixpkgs;
         system = "x86_64-linux";
       };
+      checks.x86_64-linux.restore = import ./nix/tests/restore.nix {
+        inherit self nixpkgs;
+        system = "x86_64-linux";
+      };
 
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
