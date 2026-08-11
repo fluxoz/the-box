@@ -224,6 +224,9 @@
         pname = crate;
         version = boxVersion;
         src = rustSrc;
+        # webauthn-rs (security-key sign-in) pulls openssl-sys.
+        nativeBuildInputs = [ pkgs.pkg-config ];
+        buildInputs = [ pkgs.openssl ];
         cargoLock.lockFile = ./Cargo.lock;
         cargoBuildFlags = [ "-p" crate ];
         cargoTestFlags = [ "-p" crate ];
@@ -499,6 +502,8 @@
             # Rust
             cargo
             rustc
+            pkg-config
+            openssl
             rustfmt
             clippy
             rust-analyzer
@@ -528,7 +533,7 @@
         # default shell carries a browser and a Python env for driving the
         # console, which have no business being fetched onto a Raspberry Pi.
         build = pkgs.mkShell {
-          packages = with pkgs; [ cargo rustc pkg-config age git ];
+          packages = with pkgs; [ cargo rustc pkg-config openssl age git ];
           RUST_BACKTRACE = "1";
         };
       });

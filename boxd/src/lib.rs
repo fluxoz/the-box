@@ -29,5 +29,6 @@ pub mod store;
 pub mod templates;
 pub mod tunnel;
 pub mod util;
+pub mod webauthn;
 pub mod words;
 pub mod web;

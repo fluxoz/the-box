@@ -21,6 +21,8 @@ toml = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 urlencoding = "2"
+uuid = { version = "1", features = ["v4", "serde"] }
+webauthn-rs = { version = "0.5", features = ["danger-allow-state-serialisation"] }
 
 [dev-dependencies]
 http-body-util = "0.1"

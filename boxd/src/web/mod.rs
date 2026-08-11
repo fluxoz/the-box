@@ -28,6 +28,10 @@ pub struct AppState {
     /// run here instead of inside the request, so the console can show progress
     /// rather than hanging on a Nix build.
     pub jobs: Arc<crate::jobs::Registry>,
+    /// In-flight WebAuthn ceremonies (security-key enrolment and sign-in).
+    /// Deliberately in memory: a challenge is single-use and a restart should
+    /// invalidate it rather than leave something replayable on disk.
+    pub ceremonies: Arc<crate::webauthn::Ceremonies>,
     /// Serializes apply/deploy/rollback so concurrent requests cannot race
     /// on the generation-src directory or profile numbering.
     pub apply_lock: Mutex<()>,
@@ -41,6 +45,7 @@ impl AppState {
             builder,
             tunnel,
             jobs: crate::jobs::Registry::new(),
+            ceremonies: Arc::new(crate::webauthn::Ceremonies::new()),
             apply_lock: Mutex::new(()),
         })
     }
@@ -71,6 +76,11 @@ pub fn router(state: SharedState) -> Router {
         .route("/devices", get(pages::devices))
         .route("/devices/add", post(pages::add_device))
         .route("/devices/{id}/revoke", post(pages::revoke_device))
+        .route("/devices/keys/start", post(pages::key_register_start))
+        .route("/devices/keys/finish", post(pages::key_register_finish))
+        .route("/devices/keys/{id}/revoke", post(pages::revoke_key))
+        .route("/pair/key/start", post(pages::key_signin_start))
+        .route("/pair/key/finish", post(pages::key_signin_finish))
         .route("/backup", get(pages::backup))
         .route("/backup/configure", post(pages::configure_backup))
         .route("/backup/run", post(pages::run_backup_now))

@@ -175,7 +175,6 @@ pub async fn index(
         section {
             div.section-head {
                 h2 { "Services" }
-                a.btn href="/services/new" { "+ Deploy service" }
             }
             @if config.services.is_empty() {
                 div.empty {
@@ -1925,7 +1924,11 @@ pub async fn pair(
                             }
                             details style="margin-top:1.5rem" {
                                 summary.muted { "Have a pairing code instead?" }
-                                form.stack method="post" action="/pair/redeem" style="margin-top:.8rem" {
+                                div #keysigninbox {
+                button.btn type="button" #keysignin { "Sign in with a security key" }
+                p.hint #keysigninmsg {}
+            }
+            form.stack method="post" action="/pair/redeem" style="margin-top:.8rem" {
                                     label {
                                         "Pairing code"
                                         input type="text" name="code" required
@@ -2049,8 +2052,16 @@ pub async fn pair_redeem(
     }
 }
 
-pub async fn devices(State(state): State<SharedState>, Query(flash): Query<Flash>) -> Html<String> {
+pub async fn devices(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Query(flash): Query<Flash>,
+) -> Html<String> {
     let sessions = crate::auth::list(&state.paths);
+    // Whether this browser could use a security key at all is a property of the
+    // ADDRESS it reached us on, so it is computed per request.
+    let avail = key_availability(&headers);
+    let keys = crate::auth::list_keys(&state.paths);
     let body = html! {
         h2 { "Paired devices" }
         p.muted {
@@ -2084,6 +2095,67 @@ pub async fn devices(State(state): State<SharedState>, Query(flash): Query<Flash
                             td {
                                 form method="post" action={ "/devices/" (s.id) "/revoke" } {
                                     button.danger type="submit" { "Revoke" }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        section {
+            div.section-head { h2 { "Security keys" } }
+            p.muted {
+                "Sign in by touching a YubiKey or using a passkey, instead of copying a "
+                "one-time code. The private half never leaves the key, and what it signs is "
+                "tied to this Box's address, so it cannot be replayed anywhere else."
+            }
+
+            @if avail.usable {
+                form.stack #keyform onsubmit="return false" {
+                    label {
+                        "Name this key"
+                        span.hint { "So you can tell them apart later." }
+                        input type="text" #keylabel value="Security key";
+                    }
+                    button.btn type="button" #keyadd { "Enrol a security key" }
+                    p.hint #keymsg {}
+                }
+            } @else {
+                div.empty {
+                    p { strong { "Not available at this address." } }
+                    p.muted { (avail.reason) }
+                    p.muted {
+                        "You are on " code { (avail.origin) } ". That is a rule of the web "
+                        "platform rather than a setting here: browsers only offer security "
+                        "keys over an encrypted connection, and never to a bare IP address."
+                    }
+                }
+            }
+
+            @if keys.is_empty() {
+                p.muted { "No security keys enrolled yet." }
+            } @else {
+                table {
+                    thead { tr { th { "Name" } th { "Works at" } th { "Last used" } th {} } }
+                    tbody {
+                        @for k in &keys {
+                            tr {
+                                td { strong { (k.label) } }
+                                td {
+                                    code { (k.rp_id) }
+                                    @if k.rp_id != avail.rp_id { " " span.badge { "other address" } }
+                                }
+                                td {
+                                    @match k.last_used_at.and_then(|t| chrono::DateTime::from_timestamp(t, 0)) {
+                                        Some(t) => { (t.format("%Y-%m-%d %H:%M UTC").to_string()) },
+                                        None => { "never" },
+                                    }
+                                }
+                                td {
+                                    form method="post" action={ "/devices/keys/" (k.id) "/revoke" } {
+                                        button.danger type="submit" { "Remove" }
+                                    }
                                 }
                             }
                         }
@@ -2227,4 +2299,152 @@ pub async fn rollback(State(state): State<SharedState>, Path(number): Path<u64>)
         },
     );
     Redirect::to(&format!("/jobs/{id}"))
+}
+
+// ---- security keys (WebAuthn) ---------------------------------------------
+
+/// What the browser can do here, decided from the request's own headers.
+fn key_availability(headers: &HeaderMap) -> crate::webauthn::Availability {
+    let host = headers
+        .get("host")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("localhost");
+    let proto = headers.get("x-forwarded-proto").and_then(|v| v.to_str().ok());
+    crate::webauthn::availability(host, proto)
+}
+
+fn json_err(e: impl std::fmt::Display) -> Response {
+    (
+        StatusCode::BAD_REQUEST,
+        axum::Json(serde_json::json!({ "error": e.to_string() })),
+    )
+        .into_response()
+}
+
+#[derive(Deserialize)]
+pub struct KeyStart {
+    #[serde(default)]
+    label: String,
+}
+
+/// Enrol a key, step 1: hand the browser a challenge for the authenticator.
+pub async fn key_register_start(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Form(form): Form<KeyStart>,
+) -> Response {
+    let avail = key_availability(&headers);
+    if !avail.usable {
+        return json_err(&avail.reason);
+    }
+    let existing: Vec<_> = crate::auth::keys_for(&state.paths, &avail.rp_id)
+        .iter()
+        .filter_map(|k| k.passkey().ok())
+        .collect();
+    let operator = match crate::auth::operator_id(&state.paths) {
+        Ok(id) => id,
+        Err(e) => return json_err(e),
+    };
+    match state
+        .ceremonies
+        .start_registration(&avail, operator, &existing)
+    {
+        Ok((challenge, handle)) => axum::Json(serde_json::json!({
+            "challenge": challenge, "handle": handle, "label": form.label
+        }))
+        .into_response(),
+        Err(e) => json_err(e),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct KeyFinish {
+    handle: String,
+    #[serde(default)]
+    label: String,
+    response: serde_json::Value,
+}
+
+/// Enrol a key, step 2: verify and store it.
+pub async fn key_register_finish(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    axum::Json(body): axum::Json<KeyFinish>,
+) -> Response {
+    let avail = key_availability(&headers);
+    let label = if body.label.trim().is_empty() {
+        "Security key".to_string()
+    } else {
+        body.label.trim().to_string()
+    };
+    match state.ceremonies.finish_registration(&body.handle, body.response) {
+        Ok(passkey) => match serde_json::to_value(&passkey)
+            .map_err(anyhow::Error::from)
+            .and_then(|v| crate::auth::add_key(&state.paths, &label, &avail.rp_id, v))
+        {
+            Ok(()) => axum::Json(serde_json::json!({ "ok": true, "label": label })).into_response(),
+            Err(e) => json_err(e),
+        },
+        Err(e) => json_err(format!("{e:#}")),
+    }
+}
+
+pub async fn revoke_key(State(state): State<SharedState>, Path(id): Path<String>) -> Redirect {
+    let msg = match crate::auth::revoke_key(&state.paths, &id) {
+        Ok(true) => "Security key removed".to_string(),
+        Ok(false) => "No such security key".to_string(),
+        Err(e) => format!("{e:#}"),
+    };
+    Redirect::to(&format!("/devices?ok={}", urlencoding::encode(&msg)))
+}
+
+/// Sign in with a key, step 1. Public, like the rest of /pair: you cannot have
+/// a session yet, which is the point.
+pub async fn key_signin_start(State(state): State<SharedState>, headers: HeaderMap) -> Response {
+    let avail = key_availability(&headers);
+    if !avail.usable {
+        return json_err(&avail.reason);
+    }
+    let keys: Vec<_> = crate::auth::keys_for(&state.paths, &avail.rp_id)
+        .iter()
+        .filter_map(|k| k.passkey().ok())
+        .collect();
+    match state.ceremonies.start_authentication(&avail, &keys) {
+        Ok((challenge, handle)) => {
+            axum::Json(serde_json::json!({ "challenge": challenge, "handle": handle }))
+                .into_response()
+        }
+        Err(e) => json_err(e),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct KeySignin {
+    handle: String,
+    response: serde_json::Value,
+}
+
+/// Sign in with a key, step 2: verify the assertion and mint the same kind of
+/// session a pairing code would have produced.
+pub async fn key_signin_finish(
+    State(state): State<SharedState>,
+    axum::Json(body): axum::Json<KeySignin>,
+) -> Response {
+    match state.ceremonies.finish_authentication(&body.handle, body.response) {
+        Ok(result) => {
+            let cred_id: &[u8] = result.cred_id().as_ref();
+            match crate::auth::session_from_key(&state.paths, cred_id, "security key") {
+                Ok(token) => {
+                    let mut resp =
+                        axum::Json(serde_json::json!({ "ok": true, "next": "/" })).into_response();
+                    if let Ok(cookie) = HeaderValue::from_str(&crate::auth::session_cookie(&token)) {
+                        resp.headers_mut().insert(header::SET_COOKIE, cookie);
+                    }
+                    resp
+                }
+                Err(e) => json_err(e),
+            }
+        }
+        Err(e) => json_err(format!("{e:#}")),
+    }
 }

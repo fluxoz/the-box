@@ -44,6 +44,16 @@ struct Store {
     sessions: Vec<StoredSession>,
     #[serde(default)]
     codes: Vec<StoredCode>,
+    /// Enrolled security keys / passkeys. These stay here rather than in the
+    /// config repo: they bind an authenticator to THIS box's origin, so they
+    /// are not portable configuration and must not be pushed to a git host.
+    #[serde(default)]
+    keys: Vec<crate::webauthn::StoredKey>,
+    /// Stable WebAuthn user handle for this Box's operator. Generated once so
+    /// every key enrolled here belongs to the same user, which is what lets a
+    /// browser offer them together.
+    #[serde(default)]
+    operator_id: Option<String>,
 }
 
 /// A session as shown in the "Paired devices" list — never includes the hash.
@@ -61,7 +71,7 @@ fn hash(s: &str) -> String {
         .collect()
 }
 
-fn random_hex(n: usize) -> Result<String> {
+pub(crate) fn random_hex(n: usize) -> Result<String> {
     let mut buf = vec![0u8; n];
     std::fs::File::open("/dev/urandom")
         .context("opening /dev/urandom")?
@@ -309,6 +319,86 @@ pub fn extract_token(headers: &HeaderMap) -> Option<String> {
 /// The `Set-Cookie` value that binds a browser session.
 pub fn session_cookie(token: &str) -> String {
     format!("{COOKIE}={token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=31536000")
+}
+
+// ---- security keys (WebAuthn) --------------------------------------------
+
+/// The stable user handle every key on this Box is enrolled against.
+pub fn operator_id(paths: &Paths) -> Result<uuid::Uuid> {
+    let mut store = load(paths);
+    if let Some(id) = store.operator_id.as_deref().and_then(|s| s.parse().ok()) {
+        return Ok(id);
+    }
+    let id = uuid::Uuid::new_v4();
+    store.operator_id = Some(id.to_string());
+    save(paths, &store)?;
+    Ok(id)
+}
+
+/// Keys usable at this Relying Party ID. A credential is bound to one rpId, so
+/// a key enrolled over an SSH forward genuinely cannot answer through the
+/// tunnel — filtering here is what keeps that from looking like a failure.
+pub fn keys_for(paths: &Paths, rp_id: &str) -> Vec<crate::webauthn::StoredKey> {
+    load(paths)
+        .keys
+        .into_iter()
+        .filter(|k| k.rp_id == rp_id)
+        .collect()
+}
+
+pub fn list_keys(paths: &Paths) -> Vec<crate::webauthn::StoredKey> {
+    load(paths).keys
+}
+
+pub fn add_key(paths: &Paths, label: &str, rp_id: &str, passkey: serde_json::Value) -> Result<()> {
+    let mut store = load(paths);
+    store.keys.push(crate::webauthn::StoredKey {
+        id: random_hex(4)?,
+        label: label.trim().to_string(),
+        rp_id: rp_id.to_string(),
+        created_at: now(),
+        last_used_at: None,
+        passkey,
+    });
+    save(paths, &store)
+}
+
+pub fn revoke_key(paths: &Paths, id: &str) -> Result<bool> {
+    let mut store = load(paths);
+    let before = store.keys.len();
+    store.keys.retain(|k| k.id != id);
+    let removed = store.keys.len() != before;
+    if removed {
+        save(paths, &store)?;
+    }
+    Ok(removed)
+}
+
+/// Record a successful assertion (updates the signature counter) and mint a
+/// session, so signing in with a key lands in exactly the same place as
+/// redeeming a pairing code — nothing downstream needs to know the difference.
+pub fn session_from_key(paths: &Paths, cred_id: &[u8], label: &str) -> Result<String> {
+    let mut store = load(paths);
+    let hex: String = cred_id.iter().map(|b| format!("{b:02x}")).collect();
+    if let Some(key) = store.keys.iter_mut().find(|k| {
+        k.passkey()
+            .map(|p| {
+                let id: &[u8] = p.cred_id().as_ref();
+                id.iter().map(|b| format!("{b:02x}")).collect::<String>() == hex
+            })
+            .unwrap_or(false)
+    }) {
+        key.last_used_at = Some(now());
+    }
+    let token = random_hex(32)?;
+    store.sessions.push(StoredSession {
+        id: random_hex(4)?,
+        label: label.to_string(),
+        hash: hash(&token),
+        created_at: now(),
+    });
+    save(paths, &store)?;
+    Ok(token)
 }
 
 #[cfg(test)]
