@@ -28,7 +28,7 @@ jobs:
   version-guard:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Tag must match the workspace version
         if: startsWith(github.ref, 'refs/tags/')
         run: |
@@ -45,9 +45,12 @@ jobs:
     needs: version-guard
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: actions/checkout@v7
+      - uses: DeterminateSystems/nix-installer-action@v22
         with:
+          # We use our own substituters; the default (determinate: true) also
+          # logs in to FlakeHub, which fails every run with no token.
+          determinate: false
           # Put the caches straight in nix.conf. Relying on the flake's declared
           # nixConfig doesn't work in non-interactive CI (Nix ignores flake-
           # provided substituters without accept-flake-config), which silently
@@ -105,7 +108,7 @@ jobs:
 
       - name: Publish the Release (heavy artifacts)
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             pub/netboot/bzImage
@@ -126,9 +129,13 @@ jobs:
           rm -rf site_out/netboot
           echo 'thebox.build' > site_out/CNAME
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site_out
+          # v4 started dropping dotfiles from the artifact. The site has none
+          # today, but a future .well-known/ (domain verification, ACME) would
+          # vanish silently — keep the pre-v4 behaviour.
+          include-hidden-files: true
 
   deploy:
     needs: build
@@ -138,7 +145,7 @@ jobs:
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
 
   # Advance the `release` branch — the platform update channel boxes track —
   # to this tag, but only after the site/closure (build) and the aarch64 boxd
@@ -151,7 +158,7 @@ jobs:
     needs: [build, cache-aarch64]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Fast-forward release to ${{ github.ref_name }}
         run: git push --force origin "HEAD:refs/heads/release"
 
@@ -166,9 +173,12 @@ jobs:
     # not ~an hour under QEMU emulation.
     runs-on: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v4
-      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: actions/checkout@v7
+      - uses: DeterminateSystems/nix-installer-action@v22
         with:
+          # We use our own substituters; the default (determinate: true) also
+          # logs in to FlakeHub, which fails every run with no token.
+          determinate: false
           # Put the caches straight in nix.conf. Relying on the flake's declared
           # nixConfig doesn't work in non-interactive CI (Nix ignores flake-
           # provided substituters without accept-flake-config), which silently
@@ -209,9 +219,12 @@ jobs:
       matrix:
         model: ["3", "4", "5"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: actions/checkout@v7
+      - uses: DeterminateSystems/nix-installer-action@v22
         with:
+          # We use our own substituters; the default (determinate: true) also
+          # logs in to FlakeHub, which fails every run with no token.
+          determinate: false
           # Put the caches straight in nix.conf. Relying on the flake's declared
           # nixConfig doesn't work in non-interactive CI (Nix ignores flake-
           # provided substituters without accept-flake-config), which silently
@@ -263,7 +276,7 @@ jobs:
           .github/scripts/push-closure.sh "$sys" https://nixos-raspberrypi.cachix.org
 
       - name: Attach the pi${{ matrix.model }} image to the Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             thebox-pi${{ matrix.model }}.img.xz
