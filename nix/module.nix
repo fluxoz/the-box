@@ -75,6 +75,49 @@ in
       });
     };
 
+    containers = lib.mkOption {
+      default = { };
+      description = ''
+        OCI/Docker containers run via podman, reverse-proxied by domain. Each
+        container service maps 127.0.0.1:`port` (platform-assigned) to the
+        image's `containerPort`, and nginx routes its domain there. The port is
+        internal and the firewall stays closed. Attribute name is the service
+        name.
+      '';
+      type = lib.types.attrsOf (lib.types.submodule {
+        options = {
+          image = lib.mkOption {
+            type = lib.types.str;
+            description = "OCI image reference, e.g. nginx:1.27.";
+          };
+          port = lib.mkOption {
+            type = lib.types.port;
+            description = "Host loopback port nginx proxies to (platform-assigned).";
+          };
+          containerPort = lib.mkOption {
+            type = lib.types.port;
+            default = 80;
+            description = "Port the image listens on inside the container.";
+          };
+          domain = lib.mkOption {
+            type = lib.types.nullOr lib.types.str;
+            default = null;
+            description = "Public hostname; when null the container is the default vhost.";
+          };
+          environment = lib.mkOption {
+            type = lib.types.attrsOf lib.types.str;
+            default = { };
+            description = "Environment variables passed to the container.";
+          };
+          volumes = lib.mkOption {
+            type = lib.types.listOf lib.types.str;
+            default = [ ];
+            description = ''Volume mounts, "host:container" (host side backed up when absolute).'';
+          };
+        };
+      });
+    };
+
     platform = {
       release = lib.mkOption {
         type = lib.types.str;
@@ -294,6 +337,26 @@ in
         }) cfg.apps;
 
       # nginx is the only thing exposed for web services; app ports stay loopback.
+      networking.firewall.allowedTCPPorts = [ 80 ];
+    })
+
+    (lib.mkIf (cfg.containers != { }) {
+      virtualisation.podman.enable = true;
+      virtualisation.oci-containers.backend = "podman";
+      virtualisation.oci-containers.containers = lib.mapAttrs (_: c: {
+        inherit (c) image environment volumes;
+        # Bind only to loopback; nginx is the front door, the port never LAN-exposed.
+        ports = [ "127.0.0.1:${toString c.port}:${toString c.containerPort}" ];
+      }) cfg.containers;
+
+      services.nginx = {
+        enable = true;
+        virtualHosts = lib.mapAttrs (name: c: {
+          serverName = if c.domain != null then c.domain else name;
+          default = c.domain == null;
+          locations."/".proxyPass = "http://127.0.0.1:${toString c.port}";
+        }) cfg.containers;
+      };
       networking.firewall.allowedTCPPorts = [ 80 ];
     })
   ]);
