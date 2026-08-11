@@ -753,8 +753,105 @@ pub async fn network(State(state): State<SharedState>, Query(flash): Query<Flash
                 }
             }
         }
+
+        @let mesh = crate::connect::status().ok();
+        @let mesh_state = mesh.as_ref()
+            .and_then(|s| s.get("BackendState").and_then(|v| v.as_str()))
+            .unwrap_or("not installed")
+            .to_string();
+        @let mesh_name = mesh.as_ref()
+            .and_then(|s| s.pointer("/Self/DNSName").and_then(|v| v.as_str()))
+            .map(|n| n.trim_end_matches('.').to_string());
+        section {
+            div.section-head {
+                h2 { "Box Connect" }
+                @if mesh_state == "Running" {
+                    form method="post" action="/network/connect/down" {
+                        button.danger type="submit" { "Leave the mesh" }
+                    }
+                }
+            }
+            p.muted {
+                "Private remote access: a WireGuard mesh that reaches this Box from "
+                "anywhere without opening a port or making anything public. The tunnel "
+                "above publishes services to the Internet; this does the opposite, and "
+                "carries any service, not just web."
+            }
+            section.cards {
+                div.card {
+                    h3 { "Mesh" }
+                    p.big {
+                        @if mesh_state == "Running" { span.badge.on { "connected" } }
+                        @else { span.badge { (mesh_state) } }
+                    }
+                    p.muted { "WireGuard, via your coordinator" }
+                }
+                div.card {
+                    h3 { "This Box" }
+                    p.big { (mesh_name.clone().unwrap_or_else(|| "—".into())) }
+                    p.muted { "name on the mesh" }
+                }
+            }
+            @if mesh_state != "Running" {
+                p.muted {
+                    "Bring your own coordinator (self-hosted Headscale, or Tailscale). "
+                    "Generate a pre-auth key there, then join:"
+                }
+                form.stack method="post" action="/network/connect" {
+                    label {
+                        "Coordinator URL"
+                        input type="text" name="server" required placeholder="https://headscale.example.com";
+                    }
+                    label {
+                        "Pre-auth key"
+                        input type="password" name="authkey" required placeholder="key...";
+                    }
+                    label {
+                        "Name on the mesh " span.muted { "(optional)" }
+                        input type="text" name="hostname" placeholder=(crate::connect::default_hostname());
+                    }
+                    button.btn type="submit" { "Join the mesh" }
+                }
+            }
+        }
     };
     layout("Networking", &flash, body)
+}
+
+#[derive(Deserialize)]
+pub struct ConnectForm {
+    server: String,
+    authkey: String,
+    #[serde(default)]
+    hostname: Option<String>,
+}
+
+pub async fn connect_enroll(
+    State(_state): State<SharedState>,
+    Form(form): Form<ConnectForm>,
+) -> Redirect {
+    let redirect =
+        |key: &str, msg: &str| Redirect::to(&format!("/network?{key}={}", urlencoding::encode(msg)));
+    let host = none_if_empty(form.hostname).unwrap_or_else(crate::connect::default_hostname);
+    let server = form.server.trim().to_string();
+    let authkey = form.authkey.trim().to_string();
+    if server.is_empty() || authkey.is_empty() {
+        return redirect("err", "A coordinator URL and a pre-auth key are both required");
+    }
+    let result = blocking(move || crate::connect::enroll(&server, &authkey, &host)).await;
+    match result {
+        Ok(()) => redirect("ok", "Joined the mesh"),
+        Err(e) => redirect("err", &format!("{e:#}")),
+    }
+}
+
+pub async fn connect_down(State(_state): State<SharedState>) -> Redirect {
+    let redirect =
+        |key: &str, msg: &str| Redirect::to(&format!("/network?{key}={}", urlencoding::encode(msg)));
+    match blocking(crate::connect::down).await {
+        Ok(()) => redirect("ok", "Left the mesh"),
+        Err(e) => redirect("err", &format!("{e:#}")),
+    }
 }
 
 #[derive(Deserialize)]
@@ -1417,6 +1514,51 @@ pub async fn system(
                 }
             },
         }
+        @let cloud_linked = crate::secrets::exists(&state.paths, "cloud-api-token");
+        section {
+            div.section-head { h2 { "Box Cloud" } }
+            p.muted {
+                "Optional, paid: link this Box to a cloud account for managed offsite "
+                "backups and managed Box Connect. Everything the Box does works without "
+                "it. Backups stay encrypted with a key that never leaves this Box, so a "
+                "cloud account cannot read them."
+            }
+            @if cloud_linked {
+                @let usage = crate::cloud::usage(&state.paths).ok();
+                section.cards {
+                    div.card {
+                        h3 { "Account" }
+                        p.big { span.badge.on { "linked" } }
+                        p.muted { (crate::secrets::get(&state.paths, "cloud-server").ok().flatten().unwrap_or_default()) }
+                    }
+                    div.card {
+                        h3 { "Managed backup" }
+                        p.big {
+                            @match usage.as_ref().and_then(|u| u.get("bytes")).and_then(|b| b.as_u64()) {
+                                Some(b) => (format!("{:.2} MiB", b as f64 / 1_048_576.0)),
+                                None => "—",
+                            }
+                        }
+                        p.muted { "stored offsite" }
+                    }
+                }
+                form method="post" action="/system/cloud/provision" {
+                    button.btn type="submit" { "Refresh storage credentials" }
+                }
+            } @else {
+                form.stack method="post" action="/system/cloud" {
+                    label {
+                        "Cloud server"
+                        input type="text" name="server" required placeholder="https://cloud.thebox.build";
+                    }
+                    label {
+                        "One-time enrollment token " span.muted { "(from your cloud account)" }
+                        input type="password" name="token" required;
+                    }
+                    button.btn type="submit" { "Link this Box" }
+                }
+            }
+        }
         section {
             p.muted {
                 "Every change is atomic and reversible. Roll back manually any time from the "
@@ -1500,6 +1642,43 @@ pub async fn system_set_channel(
                 cfg.board.as_deref().unwrap_or("generic")
             ),
         ),
+        Err(e) => redirect("err", &format!("{e:#}")),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct CloudForm {
+    server: String,
+    token: String,
+}
+
+pub async fn cloud_enroll(State(state): State<SharedState>, Form(form): Form<CloudForm>) -> Redirect {
+    let redirect =
+        |key: &str, msg: &str| Redirect::to(&format!("/system?{key}={}", urlencoding::encode(msg)));
+    let server = form.server.trim().to_string();
+    let token = form.token.trim().to_string();
+    if server.is_empty() || token.is_empty() {
+        return redirect("err", "A cloud server and an enrollment token are both required");
+    }
+    let result = {
+        let state = state.clone();
+        blocking(move || crate::cloud::enroll(&state.paths, &server, &token)).await
+    };
+    match result {
+        Ok(()) => redirect("ok", "Linked — managed backup is on. Reveal your recovery key on the Backup page."),
+        Err(e) => redirect("err", &format!("{e:#}")),
+    }
+}
+
+pub async fn cloud_provision(State(state): State<SharedState>) -> Redirect {
+    let redirect =
+        |key: &str, msg: &str| Redirect::to(&format!("/system?{key}={}", urlencoding::encode(msg)));
+    let result = {
+        let state = state.clone();
+        blocking(move || crate::cloud::provision(&state.paths)).await
+    };
+    match result {
+        Ok(()) => redirect("ok", "Managed storage credentials refreshed"),
         Err(e) => redirect("err", &format!("{e:#}")),
     }
 }
