@@ -59,6 +59,12 @@ pub fn set(paths: &Paths, name: &str, value: &str) -> Result<()> {
         .with_context(|| format!("encrypting secret {name}"))?;
     fs::set_permissions(&file, fs::Permissions::from_mode(0o600))?;
 
+    // Keep everything readable by the boxd service user even if this ran as root
+    // (e.g. an operator over SSH).
+    crate::util::chown_like(&paths.data_dir, &secrets_dir(paths));
+    crate::util::chown_like(&paths.data_dir, &dir);
+    crate::util::chown_like(&paths.data_dir, &file);
+
     // Remove any pre-encryption plaintext so it doesn't linger.
     let _ = fs::remove_file(secrets_dir(paths).join(name));
     Ok(())

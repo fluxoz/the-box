@@ -142,6 +142,9 @@ pub fn ensure_box_identity(paths: &Paths) -> Result<PathBuf> {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o400))?;
     }
+    // Stay readable by the boxd service user even when created by root over SSH.
+    crate::util::chown_like(&paths.data_dir, &dir);
+    crate::util::chown_like(&paths.data_dir, &key);
     Ok(key)
 }
 
