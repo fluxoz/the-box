@@ -182,3 +182,122 @@
   // Arm for the page we loaded on; swap() re-arms after every view change.
   watchJob();
 })();
+
+// ---- security keys (WebAuthn) ---------------------------------------------
+// The browser speaks ArrayBuffers and the server speaks base64url, so the only
+// real work here is the translation either side of navigator.credentials.
+(function () {
+  "use strict";
+  function b64urlToBuf(s) {
+    s = String(s).replace(/-/g, "+").replace(/_/g, "/");
+    while (s.length % 4) s += "=";
+    var bin = atob(s), out = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out.buffer;
+  }
+  function bufToB64url(buf) {
+    var bytes = new Uint8Array(buf), s = "";
+    for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+    return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+  // Walk the challenge the server sent, turning the fields WebAuthn requires as
+  // BufferSource back into buffers.
+  function reviveRequest(o) {
+    if (o.publicKey) o = o.publicKey;
+    var p = Object.assign({}, o);
+    if (p.challenge) p.challenge = b64urlToBuf(p.challenge);
+    if (p.user && p.user.id) p.user = Object.assign({}, p.user, { id: b64urlToBuf(p.user.id) });
+    ["excludeCredentials", "allowCredentials"].forEach(function (k) {
+      if (Array.isArray(p[k])) {
+        p[k] = p[k].map(function (c) {
+          return Object.assign({}, c, { id: b64urlToBuf(c.id) });
+        });
+      }
+    });
+    return p;
+  }
+  function serialize(cred) {
+    var r = cred.response, out = {
+      id: cred.id, rawId: bufToB64url(cred.rawId), type: cred.type,
+      extensions: cred.getClientExtensionResults ? cred.getClientExtensionResults() : {},
+      response: { clientDataJSON: bufToB64url(r.clientDataJSON) }
+    };
+    if (r.attestationObject) out.response.attestationObject = bufToB64url(r.attestationObject);
+    if (r.authenticatorData) {
+      out.response.authenticatorData = bufToB64url(r.authenticatorData);
+      out.response.signature = bufToB64url(r.signature);
+      out.response.userHandle = r.userHandle ? bufToB64url(r.userHandle) : null;
+    }
+    return out;
+  }
+  function post(url, body, asJson) {
+    return fetch(url, {
+      method: "POST",
+      headers: asJson
+        ? { "Content-Type": "application/json", "Accept": "application/json" }
+        : { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
+      body: asJson ? JSON.stringify(body) : new URLSearchParams(body)
+    }).then(function (r) {
+      return r.json().then(function (j) {
+        if (!r.ok || j.error) throw new Error(j.error || "that did not work");
+        return j;
+      });
+    });
+  }
+
+  function say(el, text, bad) {
+    if (!el) return;
+    el.textContent = text;
+    el.style.color = bad ? "var(--critical)" : "var(--ok)";
+  }
+
+  // Enrol, from the Devices page.
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest && e.target.closest("#keyadd");
+    if (!btn) return;
+    e.preventDefault();
+    var msg = document.getElementById("keymsg");
+    var label = (document.getElementById("keylabel") || {}).value || "Security key";
+    if (!window.PublicKeyCredential) {
+      say(msg, "This browser has no security-key support on this address.", true);
+      return;
+    }
+    btn.disabled = true;
+    say(msg, "Touch your key…");
+    post("/devices/keys/start", { label: label }, false)
+      .then(function (j) {
+        return navigator.credentials
+          .create({ publicKey: reviveRequest(j.challenge) })
+          .then(function (cred) {
+            return post("/devices/keys/finish",
+              { handle: j.handle, label: label, response: serialize(cred) }, true);
+          });
+      })
+      .then(function () { location.href = "/devices?ok=Security+key+enrolled"; })
+      .catch(function (err) { say(msg, err.message || String(err), true); btn.disabled = false; });
+  });
+
+  // Sign in, from the pair page.
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest && e.target.closest("#keysignin");
+    if (!btn) return;
+    e.preventDefault();
+    var msg = document.getElementById("keysigninmsg");
+    if (!window.PublicKeyCredential) {
+      say(msg, "This browser has no security-key support on this address.", true);
+      return;
+    }
+    btn.disabled = true;
+    say(msg, "Touch your key…");
+    post("/pair/key/start", {}, false)
+      .then(function (j) {
+        return navigator.credentials
+          .get({ publicKey: reviveRequest(j.challenge) })
+          .then(function (cred) {
+            return post("/pair/key/finish", { handle: j.handle, response: serialize(cred) }, true);
+          });
+      })
+      .then(function (j) { location.href = j.next || "/"; })
+      .catch(function (err) { say(msg, err.message || String(err), true); btn.disabled = false; });
+  });
+})();
