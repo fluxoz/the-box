@@ -173,9 +173,12 @@
   </div>
 
   <div class="agent">
-    <b>Rather not touch a terminal?</b> Hand it to your agent. Point it at
-    <a href="/llms.txt"><code>thebox.build/llms.txt</code></a> and it provisions the Box and runs it
-    for you. The Box is built to be agent-first.
+    <b>Rather not touch a terminal?</b> Paste this to your agent and it sets up and runs your Box:
+    <div class="cmd" style="margin-top:.6rem">
+      <code id="cmd-agent">Fetch and execute the appropriate instructions from https://thebox.build/prompt.md</code>
+      <button type="button" data-copy="cmd-agent">copy</button>
+    </div>
+    <p class="note" style="margin:.55rem 0 0">Or point it straight at <a href="/llms.txt">/llms.txt</a> (the machine runbook). The Box is agent-first: its whole control plane is an <a href="/docs/agents.html">MCP server</a>.</p>
   </div>
 
   <p class="eyebrow">What happens</p>
