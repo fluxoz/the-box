@@ -514,7 +514,7 @@ fn backup_redirect(result: anyhow::Result<()>, ok_msg: &str) -> Redirect {
 fn backup_form(config: &BoxConfig, submit: &str) -> Markup {
     let b = config.backup.as_ref().map(|c| &c.backend);
     let val = |f: fn(&crate::config::BackendConfig) -> Option<String>| -> String {
-        b.and_then(|bk| f(bk)).unwrap_or_default()
+        b.and_then(f).unwrap_or_default()
     };
     let kind = b.map(|bk| bk.kind.clone()).unwrap_or_default();
     let sched = config
