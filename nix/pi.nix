@@ -47,6 +47,17 @@ in
   };
   security.sudo.wheelNeedsPassword = false;
 
+  # The sd-image/base profile drags ZFS in. The Box never uses ZFS anywhere
+  # (the x86 appliance ships ext4 + vfat only), and on a Pi it is worse than
+  # dead weight: the vendor kernel is a multi-output derivation whose `dev`
+  # output is on no binary cache, and zfs-kernel is the ONLY consumer of that
+  # output. Nix cannot substitute a subset of a derivation's outputs, so one
+  # uncached `dev` forces a full kernel rebuild — which is the entire reason
+  # Pi 3/4 releases spent ~1h33m compiling a kernel that Pi 5 downloaded.
+  # Turning it off aligns the Pi with the appliance and lets the vendor kernel
+  # substitute. Re-enable per-box if a Pi ever needs ZFS.
+  boot.supportedFilesystems.zfs = lib.mkForce false;
+
   # Keys are baked declaratively into the immutable store, so StrictModes (which
   # rejects an authorized_keys file whose realpath is under group-writable
   # /nix/store) is counterproductive for an appliance image. Revisit for prod.

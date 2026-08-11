@@ -233,14 +233,21 @@ jobs:
           sha256sum "thebox-pi${{ matrix.model }}.img.xz" > "thebox-pi${{ matrix.model }}.img.xz.sha256"
           ls -la thebox-pi${{ matrix.model }}.img.xz*
 
-      # Push this model's image closure to fluxoz so the NEXT release fetches it
-      # instead of recompiling. Pi 3/4 share a bcm2711 kernel whose exact
-      # derivation (a regenerated kernel config) is on no public cache, so it
-      # recompiles (~10+ min) every release; Pi 5's bcm2712 kernel is already
-      # cached upstream, which is why Pi 5 finishes ~2x faster. We only push
-      # paths not already on the public caches, so fluxoz stays lean (the
-      # compiled kernel + our own bits). Skips cleanly without a token; a failure
-      # here must never fail the release.
+      # Cache what the NEXT release would otherwise recompile.
+      #
+      # Pi 3/4 spend ~1h33m compiling the bcm2711 kernel while Pi 5 doesn't, and
+      # the reason is subtle: the vendor kernel is a multi-output derivation
+      # (out/modules/dev) and the upstream cache carries out+modules but not dev.
+      # Nix cannot substitute a subset of a derivation's outputs, so one missing
+      # dev forces a full kernel rebuild. The only thing that wants dev is
+      # zfs-kernel — and Pi 5 is fast purely because ITS zfs-kernel output
+      # happens to be cached, so dev is never requested.
+      #
+      # So we push the system toplevel (which carries zfs-kernel, the kernel,
+      # modules and boxd) AND the kernel's dev output explicitly. Both are
+      # already built here, so realising them is free. We deliberately do NOT
+      # push the sdImage closure: it is a 4.6 GiB leaf artifact that already
+      # ships on the Release and nothing will ever substitute it.
       - name: Cache the pi${{ matrix.model }} closure (fluxoz)
         continue-on-error: true
         env:
@@ -253,8 +260,11 @@ jobs:
           fi
           nix profile install nixpkgs#cachix
           cachix authtoken "$CACHIX_AUTH_TOKEN"
-          .github/scripts/push-closure.sh "${{ steps.build.outputs.out }}" \
-            https://nixos-raspberrypi.cachix.org
+          cfg=".#nixosConfigurations.box-os-pi${{ matrix.model }}.config"
+          sys=$(nix build "$cfg.system.build.toplevel" --no-link --print-out-paths)
+          dev=$(nix build "$cfg.boot.kernelPackages.kernel.dev" --no-link --print-out-paths)
+          .github/scripts/push-closure.sh "$sys" https://nixos-raspberrypi.cachix.org
+          .github/scripts/push-closure.sh "$dev" https://nixos-raspberrypi.cachix.org
 
       - name: Attach the pi${{ matrix.model }} image to the Release
         uses: softprops/action-gh-release@v2
