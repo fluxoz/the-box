@@ -258,8 +258,58 @@ form.stack input, form.stack textarea {
   color: var(--ink); background: var(--bg); border: 1px solid var(--line-strong); border-radius: 2px; padding: 9px 11px;
 }
 form.stack textarea { font-size: 13px; min-height: 120px; resize: vertical; }
-form.stack input:focus, form.stack textarea:focus { outline: none; border-color: var(--brass); box-shadow: 0 0 0 3px var(--brass-wash); }
+form.stack input:focus, form.stack textarea:focus, form.stack select:focus {
+  outline: none; border-color: var(--brass); box-shadow: 0 0 0 3px var(--brass-wash);
+}
 form.stack .btn { align-self: flex-start; }
+
+/* A select had no styling at all, so it rendered as a raw OS control in the
+   middle of the industrial theme. Same box as the inputs, with our own chevron
+   drawn inline (no asset to fetch). */
+form.stack select {
+  font-family: var(--mono); font-size: 15px; color: var(--ink);
+  background-color: var(--bg); border: 1px solid var(--line-strong);
+  border-radius: 2px; padding: 9px 34px 9px 11px; appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath fill='%23916d2f' d='M0 0h10L5 6z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center; background-size: 10px 6px;
+}
+:root[data-theme="dark"] form.stack select, .dark form.stack select {
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath fill='%23c99b4e' d='M0 0h10L5 6z'/%3E%3C/svg%3E");
+}
+@media (prefers-color-scheme: dark) {
+  form.stack select {
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath fill='%23c99b4e' d='M0 0h10L5 6z'/%3E%3C/svg%3E");
+  }
+}
+
+/* A checkbox is a row, not a stack. The default label rule is column, which
+   left the box floating above its own text. */
+form.stack label.check {
+  flex-direction: row; align-items: flex-start; gap: 10px;
+  text-transform: none; letter-spacing: normal; font-size: 13.5px;
+  font-family: inherit; font-weight: 400; color: var(--ink); cursor: pointer;
+}
+form.stack label.check input[type="checkbox"] {
+  width: 16px; height: 16px; margin: 1px 0 0; accent-color: var(--brass); flex: none;
+}
+
+/* Help text under a label: readable prose, not another shouting label. */
+form.stack label.check .hint { display: block; margin-top: 3px; }
+form.stack .hint {
+  font-family: inherit; font-size: 12.5px; line-height: 1.45; font-weight: 400;
+  text-transform: none; letter-spacing: normal; color: var(--dim);
+}
+
+/* Everything most people never need, folded away by default. */
+details.adv { border-top: 1px solid var(--line); padding-top: .9rem; }
+details.adv > summary {
+  cursor: pointer; font-family: var(--mono); font-size: 11px; letter-spacing: .16em;
+  text-transform: uppercase; color: var(--faint); list-style: none;
+}
+details.adv > summary::-webkit-details-marker { display: none; }
+details.adv > summary::before { content: "▸ "; color: var(--brass); }
+details.adv[open] > summary::before { content: "▾ "; }
+details.adv > .stack, details.adv .fields { display: flex; flex-direction: column; gap: 16px; margin-top: 1rem; }
 
 code {
   font-family: var(--mono); background: var(--panel-2); border: 1px solid var(--line);

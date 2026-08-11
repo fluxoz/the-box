@@ -1,6 +1,6 @@
 id = "postgres"
 title = "PostgreSQL"
-description = "A PostgreSQL database, reachable only by your other services on the box (loopback, never exposed)."
+description = "A database for your other apps to use. Nothing outside your Box can reach it."
 category = "Databases"
 base = "container"
 icon = "elephant"

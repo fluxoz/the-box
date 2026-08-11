@@ -1,6 +1,6 @@
 id = "redis"
 title = "Redis"
-description = "A Redis in-memory data store, reachable only by your other services on the box."
+description = "Fast temporary storage that makes other apps quicker. Nothing outside your Box can reach it."
 category = "Databases"
 base = "container"
 icon = "brick"
