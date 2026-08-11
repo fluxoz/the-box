@@ -488,17 +488,39 @@
         nixpkgs.legacyPackages.x86_64-linux.runCommand "pi-update-parity-ok" { }
           "echo 'channel-update rebuild == flashed image (kernel, boot, disk) for pi3/pi4/pi5' > $out";
 
+      # One environment for everything: `nix develop -c <cmd>`. Every tool the
+      # work needs lives here, pinned to this flake's nixpkgs, so it resolves to
+      # the same store paths every time. Reaching for `nix shell nixpkgs#thing`
+      # instead pulls from the mutable registry and mints a fresh closure per
+      # invocation, which is how a store fills up with near-duplicates.
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
           packages = with pkgs; [
+            # Rust
             cargo
             rustc
             rustfmt
             clippy
             rust-analyzer
+            # Nix + CI files
             nixpkgs-fmt
+            yq-go # reading/validating .github workflows
+            shellcheck # the CI shell scripts
+            sqlite # inspecting the nix db, boxd state
+            # The console: syntax-checking dash.js, and driving a real browser
+            # to verify the dashboard end to end (screenshots, SPA navigation).
+            nodejs
+            chromium
+            chromedriver
+            (python3.withPackages (ps: [ ps.selenium ]))
+            # Runtime deps boxd shells out to, so the dev loop matches a Box.
+            age
+            git
+            restic
           ];
           RUST_BACKTRACE = "1";
+          # Selenium needs to find the pinned browser rather than a system one.
+          CHROME_BIN = "${pkgs.chromium}/bin/chromium";
         };
       });
 
