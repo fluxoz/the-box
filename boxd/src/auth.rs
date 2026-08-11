@@ -255,8 +255,9 @@ pub fn is_proxied(headers: &HeaderMap) -> bool {
 /// Reject a state-changing request that a browser initiated from another site.
 ///
 /// This is the CSRF boundary, and it matters far more here than in a typical
-/// app because [`is_trusted_local`] authorizes a loopback peer with NO
-/// credential at all. Any page in a browser that can reach the console —
+/// app: until recently [`is_trusted_local`] authorized a loopback peer with NO
+/// credential at all, and even now a browser holds a session cookie that a
+/// cross-site form POST would otherwise carry. Any page in a browser that can reach the console —
 /// one opened on the Box itself, or on a laptop with `ssh -L 2693:...` open,
 /// or via DNS rebinding — could otherwise POST a form cross-origin (a CORS
 /// "simple request", no preflight) and mint a pairing code, repoint the update
@@ -292,7 +293,13 @@ pub fn cross_site_write(method: &str, headers: &HeaderMap) -> bool {
     }
 }
 
-/// Trusted local access = a loopback peer on a direct (non-proxied) connection.
+/// A direct connection from this machine (loopback, not through the tunnel).
+///
+/// This is no longer an authorization decision — every request needs a session.
+/// It survives because it answers a different question: is this connection safe
+/// to put a SECRET on the wire? The Recreate page uses it to decide whether to
+/// accept the operator's private key, since loopback and the TLS tunnel are the
+/// only paths where that key is not travelling in the clear.
 /// The BYO Cloudflare tunnel also connects from loopback, but cloudflared
 /// forwards proxy headers while direct/SSH-tunnel access does not — so tunnel
 /// traffic is never mistaken for trusted local access.
