@@ -35,8 +35,11 @@ for cache in "${caches[@]}"; do
   [ -s "$tmp/todo" ] || break
   sed "s|^|${cache%/}/|; s|$|.narinfo|" "$tmp/todo" > "$tmp/urls"
   # One curl per batch; curl parallelizes internally and reuses connections.
+  # --retry so a dropped connection under load doesn't misclassify a path as
+  # ours (harmless — it would just be pushed again — but it bloats the cache).
   xargs -a "$tmp/urls" -n 500 \
-    curl -s --parallel --parallel-max 64 --max-time 120 \
+    curl -sI --parallel --parallel-max 48 --max-time 120 \
+         --retry 2 --retry-connrefused \
          -o /dev/null -w '%{http_code} %{url_effective}\n' 2>/dev/null \
     | awk '$1==200 { n=split($2,a,"/"); h=a[n]; sub(/\.narinfo$/,"",h); print h }' \
     >> "$tmp/upstream" || true
