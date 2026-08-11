@@ -34,6 +34,11 @@ fn git(paths: &Paths, args: &[&str]) -> Result<std::process::Output> {
         .arg(&paths.data_dir)
         // Don't depend on a global git identity being configured.
         .args(["-c", "user.name=boxd", "-c", "user.email=boxd@localhost"])
+        // The data dir may be owned by the boxd service user while git runs as
+        // another (e.g. root during a restore); don't let git's ownership guard
+        // refuse to operate on our own repo.
+        .arg("-c")
+        .arg(format!("safe.directory={}", paths.data_dir.display()))
         .args(args)
         .output()
         .context("running git (is it installed?)")?;
