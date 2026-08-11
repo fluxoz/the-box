@@ -111,6 +111,17 @@ async fn require_auth(
         return next.run(request).await;
     }
     let headers = request.headers();
+    // Before any authorization: a write that a browser started on another site
+    // is refused outright. Loopback access needs no credential, so without this
+    // any page the operator visits could drive the console (see
+    // auth::cross_site_write).
+    if crate::auth::cross_site_write(request.method().as_str(), headers) {
+        return (
+            StatusCode::FORBIDDEN,
+            axum::Json(serde_json::json!({ "error": "cross-site request refused" })),
+        )
+            .into_response();
+    }
     let authorized = crate::auth::is_trusted_local(peer.ip().is_loopback(), headers)
         || crate::auth::extract_token(headers)
             .is_some_and(|t| crate::auth::verify(&state.paths, &t));

@@ -22,6 +22,8 @@ const GITIGNORE: &str = "\
 !/secrets/op/
 /secrets/op/*
 !/secrets/op/*.age
+/channel.toml
+/.gitconfig
 /store/
 /profiles/
 /generation-src/
@@ -33,8 +35,18 @@ const GITIGNORE: &str = "\
 
 fn git(paths: &Paths, args: &[&str]) -> Result<std::process::Output> {
     let out = Command::new("git")
+        // The service runs with HOME set to the data dir, so a `.gitconfig`
+        // that arrives IN a cloned repo would be read as git's global config —
+        // and `core.hooksPath` plus a tracked executable hook is then arbitrary
+        // code execution as the boxd user on the next commit. Ignore external
+        // config entirely and pin hooks off; everything we need is passed with
+        // -c below.
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_SYSTEM", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
         .arg("-C")
         .arg(&paths.data_dir)
+        .args(["-c", "core.hooksPath=/dev/null"])
         // Don't depend on a global git identity being configured.
         .args(["-c", "user.name=boxd", "-c", "user.email=boxd@localhost"])
         // The data dir may be owned by the boxd service user while git runs as
@@ -140,9 +152,21 @@ pub fn push(paths: &Paths) -> Result<()> {
     Ok(())
 }
 
-/// Populate a fresh config repo from a remote: fetch its `main` and check it out
-/// into the data dir. Used by restore — brings back box.toml, sources, and the
-/// encrypted `.age` secrets. The data dir must not already hold a tracked config.
+/// The only paths a restore is allowed to take from a config repo. Everything
+/// else in the data dir is this Box's own and must survive untouched.
+///
+/// This list is a security boundary, not tidiness. A full `checkout -f` of a
+/// remote tree would let whoever controls that repo overwrite `auth.json`
+/// (their session hash becomes a live operator, yours are revoked), rewrite
+/// `channel.toml` (they own your update channel, therefore root), drop a
+/// `.gitconfig` (HOME is the data dir, so `core.hooksPath` is code execution),
+/// replace `secrets/boxd-identity.key` (they own your operational secrets), and
+/// delete `.gitignore` so the next push ships your plaintext to them.
+const RESTORE_PATHS: &[&str] = &["box.toml", "sources", "secrets"];
+
+/// Populate this Box's config from a remote: fetch its `main` and take only
+/// [`RESTORE_PATHS`] out of it. Used by restore — brings back box.toml, the
+/// service sources, and the encrypted `.age` secrets, and nothing else.
 pub fn fetch_checkout(paths: &Paths, url: &str) -> Result<()> {
     ensure_repo(paths)?;
     let _ = git(paths, &["remote", "remove", "origin"]);
@@ -160,12 +184,51 @@ pub fn fetch_checkout(paths: &Paths, url: &str) -> Result<()> {
             String::from_utf8_lossy(&fetch.stderr)
         );
     }
-    let co = git(paths, &["checkout", "-f", "-B", "main", "origin/main"])?;
-    if !co.status.success() {
-        bail!(
-            "git checkout failed: {}",
-            String::from_utf8_lossy(&co.stderr)
-        );
+
+    // Path-limited checkout. A path missing from their tree is not an error —
+    // a config repo with no secrets is perfectly normal.
+    let mut took_any = false;
+    for path in RESTORE_PATHS {
+        let co = git(paths, &["checkout", "-f", "origin/main", "--", path])?;
+        if co.status.success() {
+            took_any = true;
+        }
+    }
+    if !took_any {
+        bail!("nothing to restore: {url} has no box.toml, sources or secrets on main");
+    }
+
+    // Adopt their history as our parent so later pushes fast-forward rather
+    // than force-rewriting the operator's repo, while the working tree stays
+    // the filtered one we just built.
+    let _ = git(paths, &["reset", "--soft", "origin/main"]);
+
+    // Our ignore rules, never theirs: an incoming tree without .gitignore would
+    // otherwise leave the data dir unfiltered, and the next push would ship
+    // plaintext secrets and auth.json to that remote.
+    std::fs::write(paths.data_dir.join(".gitignore"), GITIGNORE)?;
+
+    // Secrets travel only as ciphertext. Anything else that arrived under
+    // secrets/ (a plaintext file, or a substituted box identity key) is dropped.
+    prune_non_age_secrets(&paths.data_dir.join("secrets"))?;
+    Ok(())
+}
+
+/// Remove everything under a restored `secrets/` tree that is not a `.age`
+/// file, so a hostile repo cannot install its own box identity or plant
+/// plaintext that a later push would leak back.
+fn prune_non_age_secrets(dir: &std::path::Path) -> Result<()> {
+    if !dir.is_dir() {
+        return Ok(());
+    }
+    for entry in std::fs::read_dir(dir)? {
+        let path = entry?.path();
+        if path.is_dir() {
+            prune_non_age_secrets(&path)?;
+        } else if path.extension().and_then(|e| e.to_str()) != Some("age") {
+            tracing::warn!("restore: dropping non-encrypted {}", path.display());
+            let _ = std::fs::remove_file(&path);
+        }
     }
     Ok(())
 }
