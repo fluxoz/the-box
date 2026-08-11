@@ -90,6 +90,11 @@ in
             type = lib.types.str;
             description = "OCI image reference, e.g. nginx:1.27.";
           };
+          imageFile = lib.mkOption {
+            type = lib.types.nullOr lib.types.path;
+            default = null;
+            description = "Optional local image tarball to load instead of pulling (air-gapped/curated images).";
+          };
           port = lib.mkOption {
             type = lib.types.port;
             description = "Host loopback port nginx proxies to (platform-assigned).";
@@ -345,6 +350,7 @@ in
       virtualisation.oci-containers.backend = "podman";
       virtualisation.oci-containers.containers = lib.mapAttrs (_: c: {
         inherit (c) image environment volumes;
+        imageFile = lib.mkIf (c.imageFile != null) c.imageFile;
         # Bind only to loopback; nginx is the front door, the port never LAN-exposed.
         ports = [ "127.0.0.1:${toString c.port}:${toString c.containerPort}" ];
       }) cfg.containers;
