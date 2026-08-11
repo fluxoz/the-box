@@ -17,6 +17,12 @@ use tower::ServiceExt;
 
 /// A local process connecting to 127.0.0.1:2693 — exactly what a `box-app-*`
 /// unit (DynamicUser, host netns, no PrivateNetwork/IPAddressDeny) sees.
+// Regression tests for the security review of 2026-08-11. Each of these
+// reproduced a real, exploited defect; they now assert the defect stays fixed.
+// Loopback still carries full operator authority BY DESIGN (an operator at the
+// Box needs no credential) — what changed is that a cross-site write is
+// refused, a source tree cannot publish the Box's secrets, and a container
+// cannot mount the host.
 fn loopback() -> ConnectInfo<SocketAddr> {
     ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 40000)))
 }
@@ -248,8 +254,9 @@ async fn source_path_exfil_variants() {
     .await;
     println!("[b] LAN GET /sites/exfil2/loot/backup-password -> {s} {b}");
     assert!(
-        b.contains("S3CRET-RESTIC-PW"),
-        "symlink exfil should have worked, got {s} {b}"
+        !b.contains("S3CRET-RESTIC-PW"),
+        "REGRESSION: symlinked source_path exfiltrated a secret over the \
+         unauthenticated /sites/ route, got {s} {b}"
     );
 }
 
@@ -283,27 +290,34 @@ async fn loopback_can_write_a_root_bind_mount_into_the_system_config() {
     )
     .await;
     println!("[root] LOOPBACK POST /api/v1/services (container, volumes=/:/host) -> {s} {b}");
-    assert_eq!(s, StatusCode::OK, "no validation rejects a host-root mount");
+    assert_ne!(
+        s,
+        StatusCode::OK,
+        "REGRESSION: a host-root bind mount was accepted, got {s} {b}"
+    );
 
-    // It is now in the box's declarative config.
-    let toml = std::fs::read_to_string(paths.config_file()).unwrap();
-    println!("[root] box.toml now contains:\n{toml}");
-    assert!(toml.contains("/:/host"));
+    // Nothing may have reached the declarative config, and if a config exists
+    // at all (from an earlier healthy deploy) it must not carry the mount.
+    let toml = std::fs::read_to_string(paths.config_file()).unwrap_or_default();
+    assert!(
+        !toml.contains("/:/host"),
+        "REGRESSION: host-root bind mount landed in box.toml:\n{toml}"
+    );
 
-    // And it compiles into the NixOS host repo that the ROOT update unit builds.
-    let out = tmp.path().join("hostrepo");
-    let config = boxd::config::BoxConfig::load(&paths).unwrap();
-    let ch = boxd::channel::ChannelConfig::load(&paths)
-        .unwrap()
-        .unwrap_or_else(|| boxd::channel::ChannelConfig::new("demo-box"));
-    let spec = ch.spec();
-    boxd::hostgen::write_host_repo(&paths, &config, &spec, &out).unwrap();
-    let module = std::fs::read_to_string(
-        out.join("nodes/hosts")
-            .join(&ch.host_id)
-            .join("services/rootkit.nix"),
-    )
-    .unwrap();
-    println!("[root] generated module:\n{module}");
-    assert!(module.contains(r#""/:/host""#), "host-root mount compiled in");
+    // Belt and braces: the template validator itself refuses it, so no other
+    // caller (MCP, the API, a hand-edited box.toml applied later) can sneak it
+    // past by taking a different route to the same place.
+    let container = boxd::templates::get("container").unwrap();
+    for spec in ["/:/host", "/etc:/etc", "/nix:/nix", "/:/anything"] {
+        assert!(
+            container
+                .validate(&serde_json::json!({ "image": "x", "volumes": [spec] }))
+                .is_err(),
+            "REGRESSION: {spec} accepted as a bind mount"
+        );
+    }
+    // A normal service volume still works.
+    assert!(container
+        .validate(&serde_json::json!({ "image": "x", "volumes": ["/var/lib/box/pg:/data"] }))
+        .is_ok());
 }
