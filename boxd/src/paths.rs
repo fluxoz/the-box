@@ -80,11 +80,26 @@ impl Paths {
     }
 }
 
-/// Default data directory: $BOXD_DATA_DIR, else ~/.local/share/boxd.
+/// The Box's own state directory, created by the platform's systemd unit. Its
+/// existence is what marks this machine as a Box.
+const PLATFORM_DATA_DIR: &str = "/var/lib/boxd";
+
+/// Default data directory: `$BOXD_DATA_DIR`, else the Box's own state dir if
+/// this machine is a Box, else `~/.local/share/boxd`.
+///
+/// The middle case matters: the platform exports `BOXD_DATA_DIR` for interactive
+/// shells, but `sudo` resets the environment, so `sudo boxd channel update` on a
+/// real Box used to fall through to `/root/.local/share/boxd` and quietly report
+/// "no channel configured" while managing an empty private state dir instead of
+/// the Box. Commands that need root now land on the Box's state by default.
 pub fn default_data_dir() -> PathBuf {
     if let Ok(dir) = std::env::var("BOXD_DATA_DIR") {
         return PathBuf::from(dir);
     }
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/var/lib/boxd".into());
+    let platform = PathBuf::from(PLATFORM_DATA_DIR);
+    if platform.is_dir() {
+        return platform;
+    }
+    let home = std::env::var("HOME").unwrap_or_else(|_| PLATFORM_DATA_DIR.into());
     Path::new(&home).join(".local/share/boxd")
 }
