@@ -2150,7 +2150,7 @@ pub async fn devices(
                         span.hint { "So you can tell them apart later." }
                         input type="text" #keylabel value="Security key";
                     }
-                    button.btn type="button" #keyadd { "Enrol a security key" }
+                    button.btn type="button" #keyadd { "Enroll a security key" }
                     p.hint #keymsg {}
                 }
             } @else {
@@ -2359,7 +2359,7 @@ pub struct KeyStart {
     label: String,
 }
 
-/// Enrol a key, step 1: hand the browser a challenge for the authenticator.
+/// Enroll a key, step 1: hand the browser a challenge for the authenticator.
 pub async fn key_register_start(
     State(state): State<SharedState>,
     headers: HeaderMap,
@@ -2397,7 +2397,7 @@ pub struct KeyFinish {
     response: serde_json::Value,
 }
 
-/// Enrol a key, step 2: verify and store it.
+/// Enroll a key, step 2: verify and store it.
 pub async fn key_register_finish(
     State(state): State<SharedState>,
     headers: HeaderMap,

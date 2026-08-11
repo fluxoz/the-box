@@ -28,7 +28,7 @@ pub struct AppState {
     /// run here instead of inside the request, so the console can show progress
     /// rather than hanging on a Nix build.
     pub jobs: Arc<crate::jobs::Registry>,
-    /// In-flight WebAuthn ceremonies (security-key enrolment and sign-in).
+    /// In-flight WebAuthn ceremonies (security-key enrollment and sign-in).
     /// Deliberately in memory: a challenge is single-use and a restart should
     /// invalidate it rather than leave something replayable on disk.
     pub ceremonies: Arc<crate::webauthn::Ceremonies>,
