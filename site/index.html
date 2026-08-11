@@ -5,6 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>The Box: turn a spare computer into a server you own</title>
 <meta name="description" content="Point a spare laptop, mini-PC, or cheap VPS at one command. It wipes the old OS and turns the machine into a private server you run from your browser, or that your agent runs for you.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/favicon.svg">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="The Box">
+<meta property="og:title" content="The Box: a server you own">
+<meta property="og:description" content="Turn a spare computer into a private server you run from your browser. One command, no account, no rent, and you can't brick it.">
+<meta property="og:url" content="https://thebox.build/">
+<meta property="og:image" content="https://thebox.build/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="The Box: a server you own">
+<meta name="twitter:description" content="Turn a spare computer into a private server. One command, no account, no rent, you can't brick it.">
+<meta name="twitter:image" content="https://thebox.build/og.png">
 <style>
   :root{
     --bg:#14110c; --panel:#1b170f; --panel2:#221d13; --line:#322b1f; --line2:#4a4030;
@@ -26,7 +40,9 @@
     mask-image:radial-gradient(ellipse 130% 80% at 50% 0%,#000 24%,transparent 76%);}
   main{position:relative;z-index:1;max-width:780px;margin:0 auto;padding:9vh 1.25rem 6rem;}
   .topbar{display:flex;align-items:baseline;gap:.6rem;}
-  .brand{display:flex;align-items:baseline;gap:.6rem;font-weight:800;letter-spacing:.14em;font-size:1.05rem;}
+  .brand{display:flex;align-items:center;gap:.5rem;font-weight:800;letter-spacing:.14em;font-size:1.05rem;}
+  .brand .mk{width:1.35em;height:1.35em;flex:none;}
+  .brand .mk path{stroke:var(--brass2);stroke-width:2.8;fill:none;stroke-linejoin:round;stroke-linecap:round;}
   .brand .sub{font-weight:600;color:var(--dim);letter-spacing:.22em;text-transform:uppercase;font-size:.7rem;}
   .topbar nav{margin-left:auto;display:flex;gap:1.1rem;font-size:.82rem;letter-spacing:.04em;}
   a{color:var(--brass2);text-decoration:none;border-bottom:1px solid transparent;}
@@ -102,7 +118,7 @@
 <body>
 <main>
   <div class="topbar">
-    <div class="brand">THE <b style="color:var(--brass2)">BOX</b> <span class="sub">personal server platform</span></div>
+    <div class="brand"><svg class="mk" viewBox="0 0 48 48" aria-hidden="true"><path d="M24 7 L39 15 V33 L24 41 L9 33 V15 Z"/><path d="M24 24 L9 15 M24 24 L39 15 M24 24 V41"/></svg>THE <b style="color:var(--brass2)">BOX</b> <span class="sub">personal server platform</span></div>
     <nav><a href="/docs/">Docs</a> <a href="https://github.com/fluxoz/the-box">GitHub</a></nav>
   </div>
 

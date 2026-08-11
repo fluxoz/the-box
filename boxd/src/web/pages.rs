@@ -54,7 +54,7 @@ const CSS: &str = include_str!("style.css");
 const JS: &str = include_str!("dash.js");
 
 // Inline SVG icons — no emoji, so they render identically on every platform.
-const MARK_SVG: &str = r##"<svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.6" y="1.6" width="12.8" height="12.8" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 2.3v11.4H3.6A1.6 1.6 0 0 1 2 12.1V3.9A1.6 1.6 0 0 1 3.6 2.3z" fill="currentColor"/></svg>"##;
+const MARK_SVG: &str = r##"<svg class="ico" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round"><path d="M8 2.5 13 5.5V11L8 13.5 3 11V5.5Z"/><path d="M8 8.5 3 5.5M8 8.5 13 5.5M8 8.5V13.5"/></svg>"##;
 const THEME_SVG: &str = r##"<svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.6a6.4 6.4 0 0 0 0 12.8z" fill="currentColor"/></svg>"##;
 
 #[derive(Deserialize, Default)]
