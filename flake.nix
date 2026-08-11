@@ -522,6 +522,15 @@
           # Selenium needs to find the pinned browser rather than a system one.
           CHROME_BIN = "${pkgs.chromium}/bin/chromium";
         };
+
+        # Lean shell for building ON a Box (see scripts/dev-pi.sh): the Rust
+        # toolchain and the binaries boxd shells out to, and nothing else. The
+        # default shell carries a browser and a Python env for driving the
+        # console, which have no business being fetched onto a Raspberry Pi.
+        build = pkgs.mkShell {
+          packages = with pkgs; [ cargo rustc pkg-config age git ];
+          RUST_BACKTRACE = "1";
+        };
       });
 
       # The composition entry point for generated per-box repos: hostgen emits
