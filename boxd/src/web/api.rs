@@ -29,8 +29,22 @@ pub fn router() -> Router<SharedState> {
         .route("/history", get(list_history))
         .route("/templates", get(list_templates))
         .route("/network", get(network_status).post(configure_network))
+        .route("/jobs/{id}", get(job_status))
         .route("/health", get(health))
         .route("/fleet", get(fleet))
+}
+
+/// Live state of one background operation: what the console polls while a
+/// deploy or platform update runs.
+async fn job_status(
+    State(state): State<SharedState>,
+    Path(id): Path<String>,
+) -> Result<Json<crate::jobs::Job>, AppError> {
+    state
+        .jobs
+        .get(&id)
+        .map(Json)
+        .ok_or_else(|| AppError(anyhow::anyhow!("no such job")))
 }
 
 /// Coarse public health — what peers read to render the fleet map. Public by
