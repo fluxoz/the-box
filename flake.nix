@@ -214,9 +214,15 @@
       };
 
       # Build one workspace crate as its own package from the filtered source.
+      # The one version literal for the whole platform, read from the Cargo
+      # workspace so the Nix packages, the binaries' own --version, and the
+      # release label stamped into /etc/box/platform.json can never disagree.
+      boxVersion =
+        (builtins.fromTOML (builtins.readFile ./Cargo.toml)).workspace.package.version;
+
       mkCrate = pkgs: crate: extra: pkgs.rustPlatform.buildRustPackage ({
         pname = crate;
-        version = "0.1.0";
+        version = boxVersion;
         src = rustSrc;
         cargoLock.lockFile = ./Cargo.lock;
         cargoBuildFlags = [ "-p" crate ];
@@ -467,6 +473,15 @@
             assert eq "firmware partition"
               runtime.config.fileSystems."/boot/firmware".device
               image.config.fileSystems."/boot/firmware".device;
+            # A box rebuilt by a channel update must report the release it is
+            # actually running. Nothing used to set this, so an updated box
+            # kept reporting "dev" forever.
+            assert eq "platform release"
+              runtime.config.services.the-box.platform.release
+              image.config.services.the-box.platform.release;
+            assert nixpkgs.lib.assertMsg
+              (runtime.config.services.the-box.platform.release == boxVersion)
+              "pi${model}: platform release label is not the workspace version (${boxVersion})";
             true;
         in
         assert nixpkgs.lib.all parityOk [ "3" "4" "5" ];
@@ -499,6 +514,11 @@
         imports = [ ./nix/module.nix agenix.nixosModules.default ];
         services.the-box.package =
           lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.boxd;
+        # Stamp which platform release this closure is. Set here, in the base
+        # every composition path imports, so an image AND a box rebuilt by a
+        # channel update (hostgen -> lib.boxSystem) both report the truth —
+        # previously nothing set it, so an updated box still said "dev".
+        services.the-box.platform.release = lib.mkDefault boxVersion;
         # So a channel update downloads the prebuilt platform closure from the
         # cache instead of compiling it on the box. Empty until a real key is set.
         services.the-box.platform.substituters =
