@@ -24,6 +24,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@main
+        with:
+          # Put the caches straight in nix.conf. Relying on the flake's declared
+          # nixConfig doesn't work in non-interactive CI (Nix ignores flake-
+          # provided substituters without accept-flake-config), which silently
+          # falls back to cache.nixos.org and recompiles the Pi kernel from
+          # source (~40 min). With these here, the kernel is a download.
+          extra-conf: |
+            extra-substituters = https://nixos-raspberrypi.cachix.org https://fluxoz.cachix.org
+            extra-trusted-public-keys = nixos-raspberrypi.cachix.org-1:4iMO9LXa8BqhU+Rpg6LQKiGa2lsNh/j2oiYLNOQ5sPI= fluxoz.cachix.org-1:yzuO7pZpCoHEIT6PQiYJ1eupby/rH3Ls3Q18+VA0Krc=
       # Optional: add a binary cache here later to speed builds.
 
       # Don't ship a trimmed installer that can't reach its cache: if a real key
@@ -129,6 +138,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@main
+        with:
+          # Put the caches straight in nix.conf. Relying on the flake's declared
+          # nixConfig doesn't work in non-interactive CI (Nix ignores flake-
+          # provided substituters without accept-flake-config), which silently
+          # falls back to cache.nixos.org and recompiles the Pi kernel from
+          # source (~40 min). With these here, the kernel is a download.
+          extra-conf: |
+            extra-substituters = https://nixos-raspberrypi.cachix.org https://fluxoz.cachix.org
+            extra-trusted-public-keys = nixos-raspberrypi.cachix.org-1:4iMO9LXa8BqhU+Rpg6LQKiGa2lsNh/j2oiYLNOQ5sPI= fluxoz.cachix.org-1:yzuO7pZpCoHEIT6PQiYJ1eupby/rH3Ls3Q18+VA0Krc=
       - name: Build + push aarch64 boxd to the cache
         env:
           CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
@@ -168,6 +186,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@main
+        with:
+          # Put the caches straight in nix.conf. Relying on the flake's declared
+          # nixConfig doesn't work in non-interactive CI (Nix ignores flake-
+          # provided substituters without accept-flake-config), which silently
+          # falls back to cache.nixos.org and recompiles the Pi kernel from
+          # source (~40 min). With these here, the kernel is a download.
+          extra-conf: |
+            extra-substituters = https://nixos-raspberrypi.cachix.org https://fluxoz.cachix.org
+            extra-trusted-public-keys = nixos-raspberrypi.cachix.org-1:4iMO9LXa8BqhU+Rpg6LQKiGa2lsNh/j2oiYLNOQ5sPI= fluxoz.cachix.org-1:yzuO7pZpCoHEIT6PQiYJ1eupby/rH3Ls3Q18+VA0Krc=
       - name: Build + compress the pi${{ matrix.model }} image
         run: |
           set -euo pipefail
