@@ -9,6 +9,7 @@ use anyhow::{bail, Context, Result};
 use chrono::Utc;
 use serde_json::{json, Value};
 
+use crate::catalog;
 use crate::config::{validate_domain, validate_service_name, BoxConfig, ServiceConfig};
 use crate::ports;
 use crate::history;
@@ -173,6 +174,14 @@ pub fn deploy(
     mut req: DeployRequest,
 ) -> Result<GenerationInfo> {
     validate_service_name(&req.name)?;
+
+    // A catalog preset (e.g. "postgres") resolves to its base primitive with the
+    // preset's defaults, under any params the caller passed.
+    if let Some(entry) = catalog::for_data_dir(&paths.data_dir).get(&req.template) {
+        let (base, params) = catalog::resolve(entry, &req.params);
+        req.template = base;
+        req.params = params;
+    }
 
     let template = templates::get(&req.template)
         .with_context(|| format!("unknown template {:?}", req.template))?;

@@ -1,0 +1,17 @@
+id = "postgres"
+title = "PostgreSQL"
+description = "A PostgreSQL database, reachable only by your other services on the box (loopback, never exposed)."
+category = "Databases"
+base = "container"
+icon = "elephant"
+
+[params]
+image = "postgres:16"
+container_port = 5432
+expose = "internal"
+volumes = ["/var/lib/box/postgres:/var/lib/postgresql/data"]
+
+[params.env]
+# Internal-only (loopback), so trust auth is safe out of the box; override with
+# POSTGRES_PASSWORD to require one.
+POSTGRES_HOST_AUTH_METHOD = "trust"

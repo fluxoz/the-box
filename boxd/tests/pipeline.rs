@@ -189,3 +189,39 @@ fn app_deploy_allocates_and_validates_ports() {
     req.port = Some(9000);
     assert!(ops::deploy(&paths, &builder, req).is_err(), "static-site must reject a port");
 }
+
+/// Deploying a catalog preset by id resolves to its base primitive with the
+/// preset's params (here from the box's own user catalog, no env needed).
+#[test]
+fn deploy_a_catalog_preset() {
+    let (_tmp, paths, builder) = setup();
+    let catdir = paths.data_dir.join("catalog");
+    std::fs::create_dir_all(&catdir).unwrap();
+    std::fs::write(
+        catdir.join("pg.toml"),
+        "id = \"pg\"\ntitle = \"PG\"\nbase = \"container\"\n[params]\nimage = \"postgres:16\"\ncontainer_port = 5432\nexpose = \"internal\"\n",
+    )
+    .unwrap();
+
+    ops::deploy(
+        &paths,
+        &builder,
+        DeployRequest {
+            name: "db".into(),
+            template: "pg".into(),
+            params: serde_json::json!({ "env": { "POSTGRES_DB": "app" } }),
+            domain: None,
+            public: false,
+            port: None,
+        },
+    )
+    .unwrap();
+
+    let m = current_manifest(&paths);
+    let db = m.services.iter().find(|s| s.name == "db").unwrap();
+    assert_eq!(db.template, "container"); // resolved to the primitive
+    assert_eq!(db.exposure, "internal");
+    assert_eq!(db.params["image"], serde_json::json!("postgres:16"));
+    assert_eq!(db.params["env"]["POSTGRES_DB"], serde_json::json!("app"));
+    assert!(db.port.is_some(), "internal service still gets a loopback port");
+}

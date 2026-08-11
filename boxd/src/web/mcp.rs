@@ -240,7 +240,7 @@ async fn execute(
         "list_services" => Ok(services(&state)),
         "list_generations" => Ok(generations(&state)),
         "list_history" => Ok(config_history(&state)),
-        "list_templates" => Ok(templates_list()),
+        "list_templates" => Ok(templates_list(&state)),
         "channel_status" => Ok(channel_status(&state)),
         "channel_check" => {
             let state = state.clone();
@@ -393,17 +393,29 @@ fn config_history(state: &SharedState) -> anyhow::Result<Value> {
     )?)?)
 }
 
-fn templates_list() -> anyhow::Result<Value> {
-    let list: Vec<Value> = templates::all()
+fn templates_list(state: &SharedState) -> anyhow::Result<Value> {
+    // Primitives (code) plus catalog presets (data) — deploy either by its id.
+    let mut list: Vec<Value> = templates::all()
         .iter()
         .map(|t| {
             json!({
                 "id": t.id(),
                 "title": t.title(),
                 "description": t.description(),
+                "kind": "primitive",
             })
         })
         .collect();
+    for e in crate::catalog::for_data_dir(&state.paths.data_dir).values() {
+        list.push(json!({
+            "id": e.id,
+            "title": e.title,
+            "description": e.description,
+            "category": e.category,
+            "base": e.base,
+            "kind": "preset",
+        }));
+    }
     Ok(json!(list))
 }
 
