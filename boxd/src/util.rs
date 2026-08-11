@@ -3,6 +3,17 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
+/// Give `target` the same owner as `reference`. Best-effort: a no-op when we
+/// already own it or lack privilege. Used so files created by an operator
+/// running `boxd …` as root over SSH stay readable by the boxd service user
+/// (whose data dir is the reference).
+pub fn chown_like(reference: &Path, target: &Path) {
+    if let Ok(meta) = fs::metadata(reference) {
+        use std::os::unix::fs::MetadataExt;
+        let _ = std::os::unix::fs::chown(target, Some(meta.uid()), Some(meta.gid()));
+    }
+}
+
 /// Recursively copy a directory tree. Follows symlinks (their targets are
 /// copied as regular files), which is what we want when snapshotting user
 /// sources or materializing content out of the Nix store.
