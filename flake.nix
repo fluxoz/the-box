@@ -293,6 +293,7 @@
                 # provision + manage a Box from these alone (llms.txt convention).
                 cp ${./site/llms.txt}                  $out/llms.txt
                 cp ${./site/llms-full.txt}             $out/llms-full.txt
+                cp ${./site/prompt.md}                 $out/prompt.md
                 # The pre-install Configurator (self-contained), served live so
                 # the install docs' references to it are real.
                 mkdir -p $out/configurator
