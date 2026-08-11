@@ -210,6 +210,11 @@ in
           User = "boxd";
           Group = "boxd";
           StateDirectory = "boxd";
+          # /run/boxd, tmpfs: where a secret that arrives in a request (the
+          # operator identity a restore re-keys with) is written for the length
+          # of the operation, so it never touches a disk.
+          RuntimeDirectory = "boxd";
+          RuntimeDirectoryMode = "0700";
           Restart = "on-failure";
           RestartSec = 2;
         };
