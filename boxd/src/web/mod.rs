@@ -113,9 +113,9 @@ pub fn router(state: SharedState) -> Router {
         .layer(from_fn_with_state(state, sites::host_dispatch))
 }
 
-/// Gate management behind operator auth: coarse-public paths pass; trusted local
-/// (loopback, non-proxied) access passes; otherwise a valid session is required.
-/// Browsers without one are sent to pair; machines get a 401.
+/// Gate management behind operator auth: coarse-public paths pass; everything
+/// else needs a valid session, wherever it came from. Browsers without one are
+/// sent to pair; machines get a 401.
 async fn require_auth(
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     State(state): State<SharedState>,
@@ -138,9 +138,15 @@ async fn require_auth(
         )
             .into_response();
     }
-    let authorized = crate::auth::is_trusted_local(peer.ip().is_loopback(), headers)
-        || crate::auth::extract_token(headers)
-            .is_some_and(|t| crate::auth::verify(&state.paths, &t));
+    // Authority comes from holding a session, never from where the connection
+    // came from. Loopback used to be treated as proof of ownership ("if you can
+    // reach it you already own the box"), but every service the Box runs can
+    // also reach 127.0.0.1:2693 — so a deployed app could mint a pairing code
+    // and take the console over. A session token requires reading the data dir
+    // (0700, boxd's own), which those services cannot do.
+    let authorized = crate::auth::extract_token(headers)
+        .is_some_and(|t| crate::auth::verify(&state.paths, &t));
+    let _ = peer;
     if authorized {
         return next.run(request).await;
     }

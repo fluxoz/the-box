@@ -20,21 +20,23 @@ fn local() -> ConnectInfo<SocketAddr> {
     ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 40000)))
 }
 
-fn app() -> (TempDir, Router) {
+fn app() -> (TempDir, Router, String) {
     let tmp = TempDir::new().unwrap();
     let paths = Paths::new(tmp.path().to_path_buf());
     paths.ensure().unwrap();
     let builder = LocalBuilder::new(&paths);
+    let token = boxd::auth::mint_session(&paths, "test-agent").unwrap();
     let state = AppState::new(paths, Box::new(builder));
-    (tmp, web::router(state))
+    (tmp, web::router(state), token)
 }
 
-async fn rpc(app: &Router, body: Value) -> Value {
+async fn rpc(app: &Router, token: &str, body: Value) -> Value {
     let response = app
         .clone()
         .oneshot(
             Request::post("/mcp")
                 .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {token}"))
                 .extension(local())
                 .body(Body::from(body.to_string()))
                 .unwrap(),
@@ -46,9 +48,10 @@ async fn rpc(app: &Router, body: Value) -> Value {
     serde_json::from_slice(&bytes).unwrap()
 }
 
-async fn call_tool(app: &Router, name: &str, arguments: Value) -> Value {
+async fn call_tool(app: &Router, token: &str, name: &str, arguments: Value) -> Value {
     rpc(
         app,
+        token,
         json!({
             "jsonrpc": "2.0", "id": 1, "method": "tools/call",
             "params": { "name": name, "arguments": arguments },
@@ -57,13 +60,17 @@ async fn call_tool(app: &Router, name: &str, arguments: Value) -> Value {
     .await
 }
 
-async fn get(app: &Router, path: &str, host: &str) -> (StatusCode, String) {
+/// GET as an operator. `token` is None for requests that should be judged
+/// without credentials (a public site, or checking that the console refuses).
+async fn get(app: &Router, path: &str, host: &str, token: Option<&str>) -> (StatusCode, String) {
+    let mut req = Request::get(path).header("host", host);
+    if let Some(t) = token {
+        req = req.header("authorization", format!("Bearer {t}"));
+    }
     let response = app
         .clone()
         .oneshot(
-            Request::get(path)
-                .header("host", host)
-                .extension(local())
+            req.extension(local())
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -76,10 +83,11 @@ async fn get(app: &Router, path: &str, host: &str) -> (StatusCode, String) {
 
 #[tokio::test]
 async fn mcp_handshake_and_tools() {
-    let (_tmp, app) = app();
+    let (_tmp, app, token) = app();
 
     let init = rpc(
         &app,
+        &token,
         json!({
             "jsonrpc": "2.0", "id": 0, "method": "initialize",
             "params": {
@@ -99,6 +107,7 @@ async fn mcp_handshake_and_tools() {
         .oneshot(
             Request::post("/mcp")
                 .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {token}"))
                 .extension(local())
                 .body(Body::from(
                     json!({"jsonrpc": "2.0", "method": "notifications/initialized"}).to_string(),
@@ -111,6 +120,7 @@ async fn mcp_handshake_and_tools() {
 
     let tools = rpc(
         &app,
+        &token,
         json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}),
     )
     .await;
@@ -131,17 +141,18 @@ async fn mcp_handshake_and_tools() {
         assert!(names.contains(&expected), "missing tool {expected}");
     }
 
-    let unknown = rpc(&app, json!({"jsonrpc": "2.0", "id": 2, "method": "nope"})).await;
+    let unknown = rpc(&app, &token, json!({"jsonrpc": "2.0", "id": 2, "method": "nope"})).await;
     assert_eq!(unknown["error"]["code"], -32601);
 }
 
 #[tokio::test]
 async fn mcp_deploy_host_routing_and_rollback() {
-    let (_tmp, app) = app();
+    let (_tmp, app, token) = app();
 
     // Deploy v1 with a public domain via MCP.
     let deploy = call_tool(
         &app,
+        &token,
         "deploy_static_site",
         json!({ "name": "hello", "index_html": "<h1>v1 via mcp</h1>", "domain": "hello.example.com" }),
     )
@@ -149,46 +160,53 @@ async fn mcp_deploy_host_routing_and_rollback() {
     assert_eq!(deploy["result"]["isError"], false, "{deploy}");
 
     // Local path routing still works.
-    let (status, body) = get(&app, "/sites/hello/", "127.0.0.1:2693").await;
+    let (status, body) = get(&app, "/sites/hello/", "127.0.0.1:2693", None).await;
     assert_eq!(status, StatusCode::OK);
     assert!(body.contains("v1 via mcp"));
 
     // Tunnel traffic: Host header routes straight to the service root.
-    let (status, body) = get(&app, "/", "hello.example.com").await;
+    let (status, body) = get(&app, "/", "hello.example.com", None).await;
     assert_eq!(status, StatusCode::OK);
     assert!(body.contains("v1 via mcp"));
 
     // The dashboard must NOT be reachable through a service domain...
-    let (_, body) = get(&app, "/generations", "hello.example.com").await;
+    let (_, body) = get(&app, "/generations", "hello.example.com", None).await;
     assert!(
         !body.contains("The Box"),
         "dashboard leaked through tunnel host"
     );
 
-    // ...but stays reachable locally.
-    let (status, body) = get(&app, "/", "localhost:2693").await;
+    // ...and now needs a session even from this machine: reaching loopback is
+    // not authority, because every service the Box runs can reach it too.
+    let (status, _) = get(&app, "/", "localhost:2693", None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    // With an operator session it is reachable as before.
+    let (status, body) = get(&app, "/", "localhost:2693", Some(&token)).await;
     assert_eq!(status, StatusCode::OK);
     assert!(body.contains("The Box"));
 
     // Update to v2, then roll back via MCP and confirm the host serves v1.
     let deploy2 = call_tool(
         &app,
+        &token,
         "deploy_static_site",
         json!({ "name": "hello", "index_html": "<h1>v2 via mcp</h1>", "domain": "hello.example.com" }),
     )
     .await;
     assert_eq!(deploy2["result"]["isError"], false, "{deploy2}");
-    let (_, body) = get(&app, "/", "hello.example.com").await;
+    let (_, body) = get(&app, "/", "hello.example.com", None).await;
     assert!(body.contains("v2 via mcp"));
 
-    let rollback = call_tool(&app, "rollback", json!({ "generation": 1 })).await;
+    let rollback = call_tool(&app, &token, "rollback", json!({ "generation": 1 })).await;
     assert_eq!(rollback["result"]["isError"], false, "{rollback}");
-    let (_, body) = get(&app, "/", "hello.example.com").await;
+    let (_, body) = get(&app, "/", "hello.example.com", None).await;
     assert!(body.contains("v1 via mcp"));
 
     // Domain conflicts are rejected as tool errors, not crashes.
     let conflict = call_tool(
         &app,
+        &token,
         "deploy_static_site",
         json!({ "name": "other", "index_html": "<p>x</p>", "domain": "hello.example.com" }),
     )
@@ -198,6 +216,7 @@ async fn mcp_deploy_host_routing_and_rollback() {
     // Invalid domains (that could shadow local access) are rejected.
     let bad_domain = call_tool(
         &app,
+        &token,
         "deploy_static_site",
         json!({ "name": "evil", "index_html": "<p>x</p>", "domain": "localhost" }),
     )
@@ -205,6 +224,6 @@ async fn mcp_deploy_host_routing_and_rollback() {
     assert_eq!(bad_domain["result"]["isError"], true);
 
     // Rollback to a missing generation is a tool error.
-    let missing = call_tool(&app, "rollback", json!({ "generation": 99 })).await;
+    let missing = call_tool(&app, &token, "rollback", json!({ "generation": 99 })).await;
     assert_eq!(missing["result"]["isError"], true);
 }
