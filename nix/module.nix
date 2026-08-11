@@ -47,6 +47,34 @@ in
       });
     };
 
+    apps = lib.mkOption {
+      default = { };
+      description = ''
+        Reverse-proxied apps: each reverse-proxied-app service becomes a systemd
+        service running `command` on 127.0.0.1:`port`, with nginx routing its
+        domain to it. The port is internal and the firewall stays closed; the
+        platform assigns it (see boxd's port allocator). Attribute name is the
+        service name.
+      '';
+      type = lib.types.attrsOf (lib.types.submodule {
+        options = {
+          command = lib.mkOption {
+            type = lib.types.str;
+            description = "Command that starts the app; it must listen on 127.0.0.1:$PORT.";
+          };
+          port = lib.mkOption {
+            type = lib.types.port;
+            description = "Internal loopback port the app listens on (platform-assigned).";
+          };
+          domain = lib.mkOption {
+            type = lib.types.nullOr lib.types.str;
+            default = null;
+            description = "Public hostname; when null the app is the default vhost.";
+          };
+        };
+      });
+    };
+
     platform = {
       release = lib.mkOption {
         type = lib.types.str;
@@ -224,16 +252,48 @@ in
       };
     })
 
-    (lib.mkIf (cfg.sites != { }) {
+    (lib.mkIf (cfg.sites != { } || cfg.apps != { }) {
       services.nginx = {
         enable = true;
-        virtualHosts = lib.mapAttrs (name: site: {
-          serverName = if site.domain != null then site.domain else name;
-          default = site.domain == null;
-          root = site.root;
-          locations."/".index = "index.html";
-        }) cfg.sites;
+        # File sites serve their directory; apps reverse-proxy to their loopback
+        # port. Both route by domain (or as the default vhost when no domain).
+        virtualHosts =
+          (lib.mapAttrs (name: site: {
+            serverName = if site.domain != null then site.domain else name;
+            default = site.domain == null;
+            root = site.root;
+            locations."/".index = "index.html";
+          }) cfg.sites)
+          // (lib.mapAttrs (name: app: {
+            serverName = if app.domain != null then app.domain else name;
+            default = app.domain == null;
+            locations."/".proxyPass = "http://127.0.0.1:${toString app.port}";
+          }) cfg.apps);
       };
+
+      # Each app runs as its own sandboxed service on loopback. The firewall is
+      # NOT opened for the app's port — only nginx (80) reaches it.
+      systemd.services = lib.mapAttrs' (name: app:
+        lib.nameValuePair "box-app-${name}" {
+          description = "The Box app: ${name}";
+          wantedBy = [ "multi-user.target" ];
+          after = [ "network.target" ];
+          environment.PORT = toString app.port;
+          serviceConfig = {
+            ExecStart = app.command;
+            DynamicUser = true;
+            Restart = "on-failure";
+            RestartSec = 2;
+            StateDirectory = "box-app-${name}";
+            # Sandbox: no privilege, no host filesystem writes beyond its state.
+            NoNewPrivileges = true;
+            ProtectSystem = "strict";
+            ProtectHome = true;
+            PrivateTmp = true;
+          };
+        }) cfg.apps;
+
+      # nginx is the only thing exposed for web services; app ports stay loopback.
       networking.firewall.allowedTCPPorts = [ 80 ];
     })
   ]);

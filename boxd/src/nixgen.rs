@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use chrono::Utc;
 
 use crate::config::BoxConfig;
@@ -55,6 +55,10 @@ pub fn write_gensrc(paths: &Paths, config: &BoxConfig) -> Result<PathBuf> {
                 params: s.params.clone(),
                 domain: s.domain.clone(),
                 public: s.public,
+                port: s.port,
+                exposure: templates::get(&s.template)
+                    .map(|t| t.exposure().as_str().to_string())
+                    .unwrap_or_default(),
             })
             .collect(),
         config_toml: config.to_toml()?,
@@ -72,9 +76,14 @@ pub fn write_gensrc(paths: &Paths, config: &BoxConfig) -> Result<PathBuf> {
     for service in &config.services {
         if let Some(t) = templates::get(&service.template) {
             let mut params = service.params.clone();
-            if let (Some(obj), Some(domain)) = (params.as_object_mut(), &service.domain) {
-                obj.entry("domain")
-                    .or_insert_with(|| serde_json::Value::String(domain.clone()));
+            if let Some(obj) = params.as_object_mut() {
+                if let Some(domain) = &service.domain {
+                    obj.entry("domain")
+                        .or_insert_with(|| serde_json::Value::String(domain.clone()));
+                }
+                if let Some(port) = service.port {
+                    obj.insert("port".into(), serde_json::Value::from(port));
+                }
             }
             fs::write(
                 modules_dir.join(format!("{}.nix", service.name)),
@@ -84,18 +93,15 @@ pub fn write_gensrc(paths: &Paths, config: &BoxConfig) -> Result<PathBuf> {
     }
 
     for service in &config.services {
+        // Process-backed services (reverse-proxied apps) have no file tree; only
+        // file services materialize a www directory to copy.
         let source = paths.source_dir(&service.name);
-        if !source.is_dir() {
-            bail!(
-                "missing source directory for service {:?} ({})",
-                service.name,
-                source.display()
-            );
+        if source.is_dir() {
+            util::copy_dir_recursive(
+                &source,
+                &gensrc.join("services").join(&service.name).join("www"),
+            )?;
         }
-        util::copy_dir_recursive(
-            &source,
-            &gensrc.join("services").join(&service.name).join("www"),
-        )?;
     }
 
     fs::write(gensrc.join("flake.nix"), render_flake(config))?;
@@ -128,6 +134,7 @@ mod tests {
                 params: serde_json::json!({}),
                 domain: None,
                 public: false,
+                port: None,
                 created_at: Utc::now(),
             }],
             ..Default::default()

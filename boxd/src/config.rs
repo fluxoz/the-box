@@ -103,6 +103,11 @@ pub struct ServiceConfig {
     pub domain: Option<String>,
     #[serde(default)]
     pub public: bool,
+    /// The port this service runs on, for templates that run a process
+    /// (reverse-proxied apps). Assigned and validated by [`crate::ports`];
+    /// `None` for file-served services like static-site.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -229,6 +234,7 @@ mod tests {
                 params: serde_json::json!({ "index_html": "<h1>hi</h1>" }),
                 domain: Some("hello.example.com".into()),
                 public: true,
+                port: None,
                 created_at: Utc::now(),
             }],
             ..Default::default()

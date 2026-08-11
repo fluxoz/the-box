@@ -114,7 +114,8 @@ fn tool_definitions() -> Value {
                     "template": { "type": "string", "description": "Template id from list_templates, e.g. 'static-site'" },
                     "params": { "type": "object", "description": "Template-specific parameters (see list_templates)" },
                     "domain": { "type": "string", "description": "Public domain to route to this service, e.g. site.example.com" },
-                    "public": { "type": "boolean", "description": "Whether the service is intended to be publicly exposed" }
+                    "public": { "type": "boolean", "description": "Whether the service is intended to be publicly exposed" },
+                    "port": { "type": "integer", "description": "For process-backed templates (reverse-proxied-app): an explicit port to run on. Omit to let the platform assign a free one. Rejected if reserved, privileged, colliding, or set on a file service." }
                 },
                 "required": ["name", "template"],
                 "additionalProperties": false,
@@ -299,6 +300,10 @@ async fn execute(
                 params: args.get("params").cloned().unwrap_or_else(|| json!({})),
                 domain: str_arg("domain"),
                 public: args.get("public").and_then(Value::as_bool).unwrap_or(false),
+                port: args
+                    .get("port")
+                    .and_then(Value::as_u64)
+                    .and_then(|p| u16::try_from(p).ok()),
             };
             Ok(run_locked(&state, move |s| {
                 let info = ops::deploy(&s.paths, s.builder.as_ref(), request)?;

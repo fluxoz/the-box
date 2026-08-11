@@ -137,3 +137,55 @@ fn config_history_tracks_generations() {
     assert!(hist.iter().any(|h| h.message.contains("deploy a")));
     assert!(hist.iter().any(|h| h.message.contains("deploy b")));
 }
+
+fn current_manifest(paths: &Paths) -> boxd::manifest::Manifest {
+    let g = store::current(paths).unwrap().expect("a current generation");
+    boxd::manifest::read_manifest(&g.store_path).unwrap()
+}
+
+/// A reverse-proxied app gets a validated, non-colliding, stable port; a file
+/// service gets none — and the same rules apply to an explicit request.
+#[test]
+fn app_deploy_allocates_and_validates_ports() {
+    let (_tmp, paths, builder) = setup();
+
+    ops::deploy(&paths, &builder, deploy_inline("site", "<h1>hi</h1>")).unwrap();
+    ops::deploy(
+        &paths,
+        &builder,
+        DeployRequest::app("api", "srv --bind $PORT", Some("api.example.com".into()), None, false),
+    )
+    .unwrap();
+
+    let m = current_manifest(&paths);
+    let api = m.services.iter().find(|s| s.name == "api").unwrap();
+    assert_eq!(api.exposure, "proxied");
+    let p = api.port.expect("app gets a port");
+    assert!((8000..=8999).contains(&p), "port {p} should be in the auto range");
+    let site = m.services.iter().find(|s| s.name == "site").unwrap();
+    assert_eq!(site.exposure, "files");
+    assert!(site.port.is_none(), "a static site takes no port");
+
+    // A second app gets a different port (no collision).
+    ops::deploy(&paths, &builder, DeployRequest::app("api2", "srv $PORT", None, None, false)).unwrap();
+    let p2 = current_manifest(&paths).services.iter().find(|s| s.name == "api2").unwrap().port.unwrap();
+    assert_ne!(p, p2);
+
+    // Redeploying keeps the same port stable.
+    ops::deploy(
+        &paths,
+        &builder,
+        DeployRequest::app("api", "srv --bind $PORT", Some("api.example.com".into()), None, false),
+    )
+    .unwrap();
+    assert_eq!(current_manifest(&paths).services.iter().find(|s| s.name == "api").unwrap().port, Some(p));
+
+    // An explicit reserved port is refused (agent or human, same rule).
+    let err = ops::deploy(&paths, &builder, DeployRequest::app("bad", "x", None, Some(80), false)).unwrap_err();
+    assert!(err.to_string().contains("reserved"), "expected a reserved-port error, got: {err}");
+
+    // A file service may not take a port at all.
+    let mut req = deploy_inline("site", "<h1>hi</h1>");
+    req.port = Some(9000);
+    assert!(ops::deploy(&paths, &builder, req).is_err(), "static-site must reject a port");
+}
