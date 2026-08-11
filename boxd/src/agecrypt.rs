@@ -49,17 +49,20 @@ pub fn recipients_from(host_key_pub: &Path, authorized_keys: &Path) -> Result<Ve
     Ok(r)
 }
 
+/// Recipient formats `age` actually accepts.
+///
+/// age supports exactly ssh-rsa and ssh-ed25519 as SSH recipients, plus native
+/// age1 recipients. This list previously also claimed
+/// `sk-ssh-ed25519@openssh.com` and `ecdsa-sha2-*`, which age rejects — so an
+/// operator who put a YubiKey-backed (sk-) or ECDSA key in
+/// /etc/box/authorized_keys made `age -r <that key>` fail, and with it EVERY
+/// secret write on the Box: no backup password, no service credentials, no
+/// config push. A hardware key belongs here as an age plugin identity
+/// (age-plugin-yubikey emits an age1yubikey1... recipient), not as its SSH form.
 fn is_ssh_key(line: &str) -> bool {
-    [
-        "ssh-ed25519",
-        "ssh-rsa",
-        "sk-ssh-ed25519@openssh.com",
-        "ecdsa-sha2-",
-        // Native age recipients are valid too (a box may carry an age key).
-        "age1",
-    ]
-    .iter()
-    .any(|p| line.starts_with(p))
+    ["ssh-ed25519", "ssh-rsa", "age1"]
+        .iter()
+        .any(|p| line.starts_with(p))
 }
 
 /// Encrypt `value` to `recipients`, writing the `.age` ciphertext to `out`.

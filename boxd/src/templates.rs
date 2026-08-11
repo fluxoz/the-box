@@ -286,6 +286,32 @@ impl Template for ReverseProxiedApp {
 /// loopback port is platform-assigned (see [`crate::ports`]); nginx routes the
 /// domain to it. This is the cloud-parity workhorse: any Docker image is a Box
 /// service, on the same port/firewall model as a native app.
+/// Refuse a container bind mount that hands out the host.
+///
+/// `volumes` compiles straight into the generated NixOS config, so
+/// `"/:/host"` mounts the entire root filesystem into a container — including
+/// the Box's secrets and the Nix store — which is a root-equivalent escalation
+/// for anyone who can deploy a service.
+fn validate_bind_mount(spec: &str) -> Result<()> {
+    let host = spec.split(':').next().unwrap_or("").trim();
+    if !host.starts_with('/') {
+        return Ok(()); // a named volume, not a host path
+    }
+    let path = Path::new(host);
+    if path == Path::new("/") {
+        bail!("container: refusing to mount the host root ({spec:?})");
+    }
+    for base in ["/etc", "/proc", "/sys", "/dev", "/boot", "/nix", "/root", "/run"] {
+        if path == Path::new(base) || path.starts_with(base) {
+            bail!("container: refusing to mount {base} into a container ({spec:?})");
+        }
+    }
+    if path.starts_with(crate::paths::default_data_dir()) {
+        bail!("container: refusing to mount the Box's own state directory ({spec:?})");
+    }
+    Ok(())
+}
+
 /// Refuse to publish a directory that holds the platform's own secrets.
 ///
 /// A static site's source tree is copied into `<data>/sources/<name>/`, which
@@ -338,9 +364,15 @@ impl Template for Container {
 
     fn validate(&self, params: &Value) -> Result<()> {
         match params.get("image").and_then(Value::as_str) {
-            Some(i) if !i.trim().is_empty() => Ok(()),
+            Some(i) if !i.trim().is_empty() => {}
             _ => bail!("container: 'image' is required (an OCI image reference, e.g. \"nginx:1.27\")"),
         }
+        if let Some(volumes) = params.get("volumes").and_then(Value::as_array) {
+            for v in volumes.iter().filter_map(Value::as_str) {
+                validate_bind_mount(v)?;
+            }
+        }
+        Ok(())
     }
 
     fn materialize(&self, _params: &Value, _source_dir: &Path) -> Result<()> {
