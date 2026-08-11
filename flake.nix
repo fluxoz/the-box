@@ -349,6 +349,10 @@
         inherit self nixpkgs;
         system = "x86_64-linux";
       };
+      checks.x86_64-linux.container = import ./nix/tests/container.nix {
+        inherit self nixpkgs;
+        system = "x86_64-linux";
+      };
 
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
