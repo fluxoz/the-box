@@ -1,6 +1,6 @@
 [package]
 name = "box-installer"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "The Box installer: disk probe, storage-layout wizard (TUI) and plan"
 license = "Apache-2.0"
