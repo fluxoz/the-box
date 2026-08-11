@@ -9,6 +9,7 @@ use anyhow::{bail, Context, Result};
 use chrono::Utc;
 use serde_json::{json, Value};
 
+use crate::agecrypt;
 use crate::catalog;
 use crate::config::{validate_domain, validate_service_name, BoxConfig, ServiceConfig};
 use crate::ports;
@@ -205,6 +206,30 @@ pub fn deploy(
     }
 
     template.materialize(&req.params, &paths.source_dir(&req.name))?;
+
+    // Secret env values are age-encrypted into <data>/secrets/<name>-env.age and
+    // stripped from the params, so no plaintext credential ever lands in the
+    // config, the manifest, git, or the Nix store. agenix decrypts them at
+    // runtime; nixgen ships the .age next to the service module.
+    if let Some(secret_env) = req
+        .params
+        .get("secret_env")
+        .and_then(Value::as_object)
+        .filter(|o| !o.is_empty())
+        .cloned()
+    {
+        let env_file: String = secret_env
+            .iter()
+            .filter_map(|(k, v)| v.as_str().map(|val| format!("{k}={val}\n")))
+            .collect();
+        let recipients = agecrypt::recipients()?;
+        let dir = paths.data_dir.join("secrets");
+        fs::create_dir_all(&dir)?;
+        agecrypt::encrypt(&env_file, &recipients, &dir.join(format!("{}-env.age", req.name)))?;
+    }
+    if let Some(obj) = req.params.as_object_mut() {
+        obj.remove("secret_env");
+    }
 
     let mut config = BoxConfig::load(paths)?;
 
