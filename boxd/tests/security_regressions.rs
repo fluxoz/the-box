@@ -266,7 +266,7 @@ async fn source_path_exfil_variants() {
 /// reachable) POST /system/update hands to the ROOT boxd-channel-update unit.
 #[tokio::test]
 async fn loopback_can_write_a_root_bind_mount_into_the_system_config() {
-    let (tmp, paths, app) = app();
+    let (_tmp, paths, app) = app();
 
     let (s, b, _) = send(
         &app,
