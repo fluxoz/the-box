@@ -157,3 +157,65 @@ async fn agent_pairs_over_http_then_drives_mcp_from_off_box() {
     let sessions = boxd::auth::list(&paths);
     assert!(sessions.iter().any(|s| s.label == "agent"));
 }
+
+async fn get_pair(app: &Router, proxied: bool) -> (StatusCode, String) {
+    let mut b = Request::get("/pair").extension(remote());
+    if proxied {
+        b = b.header("x-forwarded-for", "9.9.9.9");
+    }
+    let resp = app.clone().oneshot(b.body(Body::empty()).unwrap()).await.unwrap();
+    let status = resp.status();
+    let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    (status, String::from_utf8_lossy(&bytes).to_string())
+}
+
+async fn post_claim(app: &Router, proxied: bool) -> (StatusCode, Option<String>, Option<String>) {
+    let mut b = Request::post("/pair/claim").extension(remote());
+    if proxied {
+        b = b.header("x-forwarded-for", "9.9.9.9");
+    }
+    let resp = app.clone().oneshot(b.body(Body::empty()).unwrap()).await.unwrap();
+    let status = resp.status();
+    let s = |k: &str| {
+        resp.headers()
+            .get(k)
+            .and_then(|v| v.to_str().ok())
+            .map(String::from)
+    };
+    (status, s("location"), s("set-cookie"))
+}
+
+/// First-run claim: a freshly flashed Box (no code, no session) is claimable
+/// from the LAN, never through a tunnel, and locks down once claimed.
+#[tokio::test]
+async fn first_run_claim_flow() {
+    let (_tmp, paths, app) = app();
+
+    // Fresh box on the LAN: /pair offers to claim.
+    let (s, body) = get_pair(&app, false).await;
+    assert_eq!(s, StatusCode::OK);
+    assert!(body.contains("Claim this Box"), "fresh box should offer claim");
+
+    // Through a tunnel (proxied): no claim offered, and claiming is refused.
+    let (_s, pbody) = get_pair(&app, true).await;
+    assert!(!pbody.contains("Claim this Box"), "proxied /pair must not offer claim");
+    let (s, loc, cookie) = post_claim(&app, true).await;
+    assert_eq!(s, StatusCode::SEE_OTHER);
+    assert!(loc.unwrap().contains("local+network"));
+    assert!(cookie.is_none());
+    assert!(boxd::auth::is_claimable(&paths), "still unclaimed after a tunnel attempt");
+
+    // From the LAN: claiming mints the first session (a cookie) and redirects home.
+    let (s, loc, cookie) = post_claim(&app, false).await;
+    assert_eq!(s, StatusCode::SEE_OTHER);
+    assert_eq!(loc.as_deref(), Some("/?ok=Box+claimed"));
+    assert!(cookie.expect("claim sets a session cookie").contains("box_session="));
+
+    // Now claimed: /pair reverts to code entry, and a second claim is refused.
+    assert!(!boxd::auth::is_claimable(&paths));
+    let (_s, body) = get_pair(&app, false).await;
+    assert!(!body.contains("Claim this Box"));
+    assert!(body.contains("Pair this device"));
+    let (_s, loc, _c) = post_claim(&app, false).await;
+    assert!(loc.unwrap().contains("already+claimed"));
+}

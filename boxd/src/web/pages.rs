@@ -948,7 +948,16 @@ pub async fn system_update(State(_state): State<SharedState>) -> Redirect {
     }
 }
 
-pub async fn pair(Query(flash): Query<Flash>) -> Html<String> {
+pub async fn pair(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Query(flash): Query<Flash>,
+) -> Html<String> {
+    // First-run claim: a Box no one has set up yet can be claimed from the LAN
+    // without a code, but never through a tunnel (a public visitor must not be
+    // able to seize an unclaimed Box).
+    let claimable =
+        crate::auth::is_claimable(&state.paths) && !crate::auth::is_proxied(&headers);
     let page = html! {
         (DOCTYPE)
         html lang="en" {
@@ -969,23 +978,46 @@ pub async fn pair(Query(flash): Query<Flash>) -> Html<String> {
                     @if let Some(msg) = &flash.err { div.flash.err { (msg) } }
                     @if let Some(msg) = &flash.ok { div.flash.ok { (msg) } }
                     section style="max-width:34rem;margin:2.5rem auto" {
-                        h2 { "Pair this device" }
-                        p.muted {
-                            "Management on this Box answers to you. Enter your one-time pairing "
-                            "code — from your setup recovery kit, or from “Add device” on a device "
-                            "that's already paired."
-                        }
-                        form.stack method="post" action="/pair/redeem" {
-                            label {
-                                "Pairing code"
-                                input type="text" name="code" required autofocus
-                                    placeholder="abcd1234ef" autocomplete="one-time-code";
+                        @if claimable {
+                            h2 { "Claim this Box" }
+                            p.muted {
+                                "No one has set up this Box yet. Claim it to become its operator. "
+                                "After that, any other device needs a one-time code to pair, so do "
+                                "this now, from your own network."
                             }
-                            button.btn type="submit" { "Pair" }
-                        }
-                        p.muted style="margin-top:1.5rem" {
-                            "No code? On the Box run " code { "boxd auth enroll" }
-                            " (over SSH or its console) to mint one."
+                            form.stack method="post" action="/pair/claim" {
+                                button.btn type="submit" { "Claim this Box" }
+                            }
+                            details style="margin-top:1.5rem" {
+                                summary.muted { "Have a pairing code instead?" }
+                                form.stack method="post" action="/pair/redeem" style="margin-top:.8rem" {
+                                    label {
+                                        "Pairing code"
+                                        input type="text" name="code" required
+                                            placeholder="abcd1234ef" autocomplete="one-time-code";
+                                    }
+                                    button.btn type="submit" { "Pair" }
+                                }
+                            }
+                        } @else {
+                            h2 { "Pair this device" }
+                            p.muted {
+                                "Management on this Box answers to you. Enter your one-time pairing "
+                                "code, from your setup recovery kit, or from “Add device” on a device "
+                                "that is already paired."
+                            }
+                            form.stack method="post" action="/pair/redeem" {
+                                label {
+                                    "Pairing code"
+                                    input type="text" name="code" required autofocus
+                                        placeholder="abcd1234ef" autocomplete="one-time-code";
+                                }
+                                button.btn type="submit" { "Pair" }
+                            }
+                            p.muted style="margin-top:1.5rem" {
+                                "No code? On the Box run " code { "boxd auth enroll" }
+                                " (over SSH or its console) to mint one."
+                            }
                         }
                     }
                 }
@@ -994,6 +1026,43 @@ pub async fn pair(Query(flash): Query<Flash>) -> Html<String> {
         }
     };
     Html(page.into_string())
+}
+
+/// First-run claim: mint the first operator session for an unclaimed Box, from
+/// a direct LAN/loopback connection only. Once claimed, this is a no-op and
+/// callers fall back to code entry.
+pub async fn pair_claim(State(state): State<SharedState>, headers: HeaderMap) -> Response {
+    if crate::auth::is_proxied(&headers) {
+        return Redirect::to("/pair?err=This+Box+can+only+be+claimed+from+your+local+network")
+            .into_response();
+    }
+    let wants_json = headers
+        .get(header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|a| a.contains("application/json"));
+    match crate::auth::claim(&state.paths, "first device") {
+        Ok(Some(token)) => {
+            if wants_json {
+                axum::Json(serde_json::json!({ "token": token, "label": "first device" }))
+                    .into_response()
+            } else {
+                let mut resp = Redirect::to("/?ok=Box+claimed").into_response();
+                if let Ok(cookie) = HeaderValue::from_str(&crate::auth::session_cookie(&token)) {
+                    resp.headers_mut().insert(header::SET_COOKIE, cookie);
+                }
+                resp
+            }
+        }
+        Ok(None) => {
+            Redirect::to("/pair?err=This+Box+is+already+claimed.+Enter+a+pairing+code")
+                .into_response()
+        }
+        Err(err) => Redirect::to(&format!(
+            "/pair?err={}",
+            urlencoding::encode(&format!("{err:#}"))
+        ))
+        .into_response(),
+    }
 }
 
 #[derive(Deserialize)]
