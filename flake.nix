@@ -284,6 +284,10 @@
                 cp ${./installers/macos/README.md}     $out/mac.txt
                 cp ${./site/index.html}                $out/index.html
                 cp ${./site/docs.css}                  $out/docs.css
+                # Brand + social preview assets.
+                cp ${./site/favicon.svg}               $out/favicon.svg
+                cp ${./site/logo.svg}                  $out/logo.svg
+                cp ${./site/og.png}                    $out/og.png
                 cp -r ${./site/docs}                   $out/docs
                 # Agent entry points: point an agent at thebox.build and it can
                 # provision + manage a Box from these alone (llms.txt convention).
