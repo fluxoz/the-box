@@ -251,7 +251,7 @@
     el.style.color = bad ? "var(--critical)" : "var(--ok)";
   }
 
-  // Enrol, from the Devices page.
+  // Enroll, from the Devices page.
   document.addEventListener("click", function (e) {
     var btn = e.target.closest && e.target.closest("#keyadd");
     if (!btn) return;

@@ -171,7 +171,7 @@ fn discover_lan() -> Vec<Peer> {
 
 /// Extract `tag:box`-tagged peers from `tailscale status --json`: their hostname
 /// and first IPv4 tailnet address. Self is excluded (it's under `Self`, not
-/// `Peer`), matching mDNS's `-l` "ignore local" behaviour.
+/// `Peer`), matching mDNS's `-l` "ignore local" behavior.
 pub fn parse_tailscale_peers(status: &Value, tag: &str) -> Vec<(String, String)> {
     let Some(peers) = status.get("Peer").and_then(Value::as_object) else {
         return Vec::new();
