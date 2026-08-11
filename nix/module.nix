@@ -104,6 +104,20 @@ in
             default = 80;
             description = "Port the image listens on inside the container.";
           };
+          mode = lib.mkOption {
+            type = lib.types.enum [ "proxied" "internal" "exposed" ];
+            default = "proxied";
+            description = ''
+              How the container is reached: "proxied" (nginx routes its domain,
+              firewall closed), "internal" (loopback only, for a database other
+              services use), or "exposed" (its port is opened on the firewall).
+            '';
+          };
+          cmd = lib.mkOption {
+            type = lib.types.listOf lib.types.str;
+            default = [ ];
+            description = "Command/args to run in the container (overrides the image default).";
+          };
           domain = lib.mkOption {
             type = lib.types.nullOr lib.types.str;
             default = null;
@@ -345,25 +359,39 @@ in
       networking.firewall.allowedTCPPorts = [ 80 ];
     })
 
-    (lib.mkIf (cfg.containers != { }) {
-      virtualisation.podman.enable = true;
-      virtualisation.oci-containers.backend = "podman";
-      virtualisation.oci-containers.containers = lib.mapAttrs (_: c: {
-        inherit (c) image environment volumes;
-        imageFile = lib.mkIf (c.imageFile != null) c.imageFile;
-        # Bind only to loopback; nginx is the front door, the port never LAN-exposed.
-        ports = [ "127.0.0.1:${toString c.port}:${toString c.containerPort}" ];
-      }) cfg.containers;
-
-      services.nginx = {
-        enable = true;
-        virtualHosts = lib.mapAttrs (name: c: {
-          serverName = if c.domain != null then c.domain else name;
-          default = c.domain == null;
-          locations."/".proxyPass = "http://127.0.0.1:${toString c.port}";
+    (lib.mkIf (cfg.containers != { }) (
+      let
+        vals = lib.attrValues cfg.containers;
+        anyProxied = lib.any (c: c.mode == "proxied") vals;
+        exposedPorts = map (c: c.port) (lib.filter (c: c.mode == "exposed") vals);
+      in
+      {
+        virtualisation.podman.enable = true;
+        virtualisation.oci-containers.backend = "podman";
+        virtualisation.oci-containers.containers = lib.mapAttrs (_: c: {
+          inherit (c) image environment volumes cmd;
+          imageFile = lib.mkIf (c.imageFile != null) c.imageFile;
+          # proxied/internal stay on loopback (nginx is the only front door);
+          # exposed binds all interfaces so the opened firewall port reaches it.
+          ports = [
+            "${lib.optionalString (c.mode != "exposed") "127.0.0.1:"}${toString c.port}:${toString c.containerPort}"
+          ];
         }) cfg.containers;
-      };
-      networking.firewall.allowedTCPPorts = [ 80 ];
-    })
+
+        # Only proxied containers get an nginx vhost.
+        services.nginx = lib.mkIf anyProxied {
+          enable = true;
+          virtualHosts = lib.mapAttrs (name: c: {
+            serverName = if c.domain != null then c.domain else name;
+            default = c.domain == null;
+            locations."/".proxyPass = "http://127.0.0.1:${toString c.port}";
+          }) (lib.filterAttrs (_: c: c.mode == "proxied") cfg.containers);
+        };
+
+        # nginx (80) when anything is proxied; plus each exposed container's port.
+        # Internal containers open nothing.
+        networking.firewall.allowedTCPPorts = (lib.optional anyProxied 80) ++ exposedPorts;
+      }
+    ))
   ]);
 }

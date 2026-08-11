@@ -203,7 +203,7 @@ pub fn deploy(
     // agent or a person gets the same rules: honor an explicit validated
     // request, keep an existing allocation stable, or assign a free one. File
     // services (static-site) take no port.
-    let port = if template.exposure().needs_port() {
+    let port = if template.exposure(&req.params).needs_port() {
         let in_use: std::collections::BTreeMap<u16, String> = config
             .services
             .iter()

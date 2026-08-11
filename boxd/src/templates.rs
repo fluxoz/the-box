@@ -10,27 +10,41 @@ use serde_json::Value;
 
 use crate::util;
 
-/// How a service is reached, which decides whether it gets a port and whether
-/// the firewall opens it. (A future `Exposed` mode — a raw port opened through
-/// the firewall — extends this for non-HTTP services; see [`crate::ports`].)
+/// How a service is reached, which decides whether it gets a port, whether nginx
+/// proxies it, and whether the firewall opens it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Exposure {
     /// No port of its own; the platform proxy serves it from files (static-site).
     Files,
-    /// Runs on `127.0.0.1:<port>`, reverse-proxied to by domain. The port is
-    /// internal and the firewall stays closed.
+    /// Runs on `127.0.0.1:<port>`, reverse-proxied to by domain. Firewall closed.
     Proxied,
+    /// Runs on `127.0.0.1:<port>` for other services on the box to reach (a
+    /// database). No proxy, no domain, firewall closed — never leaves the box.
+    Internal,
+    /// Binds `<port>` opened through the firewall — a non-HTTP service whose
+    /// port is its interface, reachable from the LAN.
+    Exposed,
 }
 
 impl Exposure {
     /// Does a service of this kind get a port allocated?
     pub fn needs_port(self) -> bool {
-        matches!(self, Exposure::Proxied)
+        !matches!(self, Exposure::Files)
     }
     pub fn as_str(self) -> &'static str {
         match self {
             Exposure::Files => "files",
             Exposure::Proxied => "proxied",
+            Exposure::Internal => "internal",
+            Exposure::Exposed => "exposed",
+        }
+    }
+    /// Parse an `expose` param value; defaults to proxied (the web-app case).
+    pub fn parse(s: &str) -> Exposure {
+        match s {
+            "internal" => Exposure::Internal,
+            "exposed" => Exposure::Exposed,
+            _ => Exposure::Proxied,
         }
     }
 }
@@ -40,10 +54,12 @@ pub trait Template: Send + Sync {
     fn title(&self) -> &'static str;
     fn description(&self) -> &'static str;
 
-    /// How this template's service is reached. Decides whether it is assigned a
-    /// port and whether the firewall opens it. Default: served from files by the
-    /// platform proxy (no port, firewall closed), like a static site.
-    fn exposure(&self) -> Exposure {
+    /// How this template's service is reached, given its params. Decides whether
+    /// it is assigned a port, whether nginx proxies it, and whether the firewall
+    /// opens it. Default: served from files by the platform proxy (no port,
+    /// firewall closed), like a static site. A container reads its `expose` param
+    /// so the same primitive can be a proxied web app or a loopback database.
+    fn exposure(&self, _params: &Value) -> Exposure {
         Exposure::Files
     }
 
@@ -225,7 +241,7 @@ impl Template for ReverseProxiedApp {
     fn description(&self) -> &'static str {
         "Run a web app. The platform assigns it a port, runs it as a service, and routes your domain to it."
     }
-    fn exposure(&self) -> Exposure {
+    fn exposure(&self, _params: &Value) -> Exposure {
         Exposure::Proxied
     }
 
@@ -279,10 +295,10 @@ impl Template for Container {
         "Container"
     }
     fn description(&self) -> &'static str {
-        "Run any OCI/Docker image as a service. The platform runs it, assigns a port, and routes your domain to it."
+        "Run any OCI/Docker image as a service. The platform runs it, assigns a port, and routes your domain to it (or keeps it loopback-only for a database)."
     }
-    fn exposure(&self) -> Exposure {
-        Exposure::Proxied
+    fn exposure(&self, params: &Value) -> Exposure {
+        Exposure::parse(params.get("expose").and_then(Value::as_str).unwrap_or(""))
     }
 
     fn validate(&self, params: &Value) -> Result<()> {
@@ -303,10 +319,17 @@ impl Template for Container {
             .get("container_port")
             .and_then(Value::as_u64)
             .unwrap_or(80);
+        let mode = self.exposure(params).as_str();
         let domain = params
             .get("domain")
             .and_then(Value::as_str)
             .map(|d| format!("\n    domain = \"{}\";", nix_escape(d)))
+            .unwrap_or_default();
+        let cmd = params
+            .get("cmd")
+            .and_then(Value::as_array)
+            .filter(|a| !a.is_empty())
+            .map(|a| format!("\n    cmd = {};", nix_list(a)))
             .unwrap_or_default();
         let env = params
             .get("env")
@@ -325,7 +348,7 @@ impl Template for Container {
              {{ ... }}:\n\
              {{\n  services.the-box.containers.\"{name}\" = {{\n    \
              image = \"{image}\";\n    port = {host_port};\n    \
-             containerPort = {container_port};{domain}{env}{volumes}\n  }};\n}}\n"
+             containerPort = {container_port};\n    mode = \"{mode}\";{domain}{cmd}{env}{volumes}\n  }};\n}}\n"
         )
     }
 
@@ -360,15 +383,22 @@ mod tests {
         assert!(get("container").is_some());
         assert!(get("nope").is_none());
         assert_eq!(all().len(), 3);
-        assert_eq!(get("container").unwrap().exposure(), Exposure::Proxied);
-        // Exposure drives port allocation + firewall.
-        assert_eq!(get("static-site").unwrap().exposure(), Exposure::Files);
-        assert!(!get("static-site").unwrap().exposure().needs_port());
+        assert_eq!(get("container").unwrap().exposure(&json!({})), Exposure::Proxied);
+        // A container's exposure is per-instance: a database runs loopback-only.
         assert_eq!(
-            get("reverse-proxied-app").unwrap().exposure(),
+            get("container")
+                .unwrap()
+                .exposure(&json!({ "expose": "internal" })),
+            Exposure::Internal
+        );
+        // Exposure drives port allocation + firewall.
+        assert_eq!(get("static-site").unwrap().exposure(&json!({})), Exposure::Files);
+        assert!(!get("static-site").unwrap().exposure(&json!({})).needs_port());
+        assert_eq!(
+            get("reverse-proxied-app").unwrap().exposure(&json!({})),
             Exposure::Proxied
         );
-        assert!(get("reverse-proxied-app").unwrap().exposure().needs_port());
+        assert!(get("reverse-proxied-app").unwrap().exposure(&json!({})).needs_port());
     }
 
     #[test]

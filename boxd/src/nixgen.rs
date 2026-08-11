@@ -57,7 +57,7 @@ pub fn write_gensrc(paths: &Paths, config: &BoxConfig) -> Result<PathBuf> {
                 public: s.public,
                 port: s.port,
                 exposure: templates::get(&s.template)
-                    .map(|t| t.exposure().as_str().to_string())
+                    .map(|t| t.exposure(&s.params).as_str().to_string())
                     .unwrap_or_default(),
             })
             .collect(),
