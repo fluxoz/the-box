@@ -1,0 +1,17 @@
+id = "minio"
+title = "MinIO object storage"
+description = "S3-compatible object storage served at your domain. Set your own root credentials before deploying."
+category = "Storage"
+base = "container"
+icon = "bucket"
+
+[params]
+image = "minio/minio"
+container_port = 9000
+expose = "proxied"
+volumes = ["/var/lib/box/minio:/data"]
+cmd = ["server", "/data", "--console-address", ":9001"]
+
+[params.env]
+MINIO_ROOT_USER = "boxadmin"
+MINIO_ROOT_PASSWORD = "change-me-please"

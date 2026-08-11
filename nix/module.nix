@@ -188,9 +188,14 @@ in
         # boxd shells out to nix (generation builds), cloudflared (BYO tunnel),
         # and avahi-browse + curl (LAN fleet discovery).
         path = [ pkgs.nix pkgs.cloudflared pkgs.avahi pkgs.curl pkgs.systemd ];
-        # nix (invoked by boxd for generation builds) needs a writable cache
-        # under $HOME; the boxd system user's default home is /var/empty.
-        environment.HOME = cfg.dataDir;
+        environment = {
+          # nix (invoked by boxd for generation builds) needs a writable cache
+          # under $HOME; the boxd system user's default home is /var/empty.
+          HOME = cfg.dataDir;
+          # The platform service catalog (presets), shipped in the closure. boxd
+          # merges it with the box's own user catalog under the data dir.
+          BOX_CATALOG_DIR = "${../catalog}";
+        };
         serviceConfig = {
           ExecStart = "${lib.getExe cfg.package} --data-dir ${cfg.dataDir} serve --listen ${cfg.listen}";
           User = "boxd";

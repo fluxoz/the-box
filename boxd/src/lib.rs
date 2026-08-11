@@ -6,6 +6,7 @@
 
 pub mod auth;
 pub mod backup;
+pub mod catalog;
 pub mod channel;
 pub mod cloud;
 pub mod config;

@@ -1,0 +1,13 @@
+id = "redis"
+title = "Redis"
+description = "A Redis in-memory data store, reachable only by your other services on the box."
+category = "Databases"
+base = "container"
+icon = "brick"
+
+[params]
+image = "redis:7"
+container_port = 6379
+expose = "internal"
+volumes = ["/var/lib/box/redis:/data"]
+cmd = ["redis-server", "--appendonly", "yes"]
