@@ -69,14 +69,14 @@ fn layout(title: &str, flash: &Flash, body: Markup) -> Html<String> {
             head {
                 meta charset="utf-8";
                 meta name="viewport" content="width=device-width, initial-scale=1";
-                title { (title) " · The Box Configurator" }
+                title { (title) " · The Box Console" }
                 style { (PreEscaped(CSS)) }
             }
             body {
                 header.top {
                     a.brand href="/" {
                         span.mark { (PreEscaped(MARK_SVG)) " THE " b { "BOX" } }
-                        span.sub { "Configurator" }
+                        span.sub { "Console" }
                     }
                     div.top-right {
                         div.stamp {
@@ -105,7 +105,7 @@ fn layout(title: &str, flash: &Flash, body: Markup) -> Html<String> {
                     (body)
                 }
                 footer {
-                    "THE BOX CONFIGURATOR · boxd " (env!("CARGO_PKG_VERSION"))
+                    "THE BOX CONSOLE · boxd " (env!("CARGO_PKG_VERSION"))
                     " · LOCAL · API " code { "/api/v1" } " · MCP " code { "/mcp" }
                 }
                 script { (PreEscaped(JS)) }
@@ -1423,14 +1423,14 @@ pub async fn pair(
             head {
                 meta charset="utf-8";
                 meta name="viewport" content="width=device-width, initial-scale=1";
-                title { "Pair · The Box Configurator" }
+                title { "Pair · The Box Console" }
                 style { (PreEscaped(CSS)) }
             }
             body {
                 header.top {
                     a.brand href="/pair" {
                         span.mark { (PreEscaped(MARK_SVG)) " THE " b { "BOX" } }
-                        span.sub { "Configurator" }
+                        span.sub { "Console" }
                     }
                 }
                 main {
@@ -1480,7 +1480,7 @@ pub async fn pair(
                         }
                     }
                 }
-                footer { "THE BOX CONFIGURATOR · pairing" }
+                footer { "THE BOX CONSOLE · pairing" }
             }
         }
     };
