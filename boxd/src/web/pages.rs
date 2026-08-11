@@ -93,6 +93,7 @@ fn layout(title: &str, flash: &Flash, body: Markup) -> Html<String> {
                     a.active[title == "Fleet"] href="/fleet" { "Fleet" }
                     a.active[title == "Backup"] href="/backup" { "Backup" }
                     a.active[title == "Networking"] href="/network" { "Networking" }
+                    a.active[title == "Devices"] href="/devices" { "Devices" }
                     a.btn.active[title == "Deploy"] href="/services/new" { "+ Deploy" }
                 }
                 main {
@@ -1569,7 +1570,7 @@ pub async fn system(
         .ok()
         .flatten();
     let release = platform_release();
-    let os_available = ostier::available();
+    let os_available = ostier::available() && channel_update_available();
 
     let body = html! {
         h2 { "System" }
@@ -1622,8 +1623,10 @@ pub async fn system(
                             form method="post" action="/system/check" {
                                 button.btn type="submit" { "Check for updates" }
                             }
-                            form method="post" action="/system/update" {
-                                button.btn.primary type="submit" { "Update now" }
+                            @if os_available {
+                                form method="post" action="/system/update" {
+                                    button.btn.primary type="submit" { "Update now" }
+                                }
                             }
                         }
                     }
@@ -1863,7 +1866,36 @@ pub async fn system_check(State(state): State<SharedState>) -> Redirect {
 /// narrow polkit rule permits exactly this one unit). It runs in the background:
 /// the Box rebuilds, switches, health-checks, and rolls back if unhealthy.
 /// `channel update` no-ops when already current, so this is safe to click.
+/// Is the root-only unit that applies a platform update actually installed?
+///
+/// A NixOS system profile is not enough to judge by: a developer's own NixOS
+/// machine has one, but not this unit, which ships with the Box's platform
+/// module. Checking the profile alone is what produced "Unit
+/// boxd-channel-update.service not found" from a button that should not have
+/// been there.
+fn channel_update_available() -> bool {
+    std::process::Command::new("systemctl")
+        .args(["cat", "boxd-channel-update.service"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
 pub async fn system_update(State(_state): State<SharedState>) -> Redirect {
+    // Applying a platform update means switching the whole NixOS system, which
+    // a root-only systemd unit does. That unit is part of the Box's own OS, so
+    // it does not exist on a development machine — say that, rather than
+    // surfacing "Unit boxd-channel-update.service not found".
+    if !channel_update_available() {
+        return Redirect::to(&format!(
+            "/system?err={}",
+            urlencoding::encode(
+                "This machine is not a Box: the platform update service is not installed, so there is no whole-system update to apply here. This works on a Box."
+            )
+        ));
+    }
     let out = std::process::Command::new("systemctl")
         .args(["start", "--no-block", "boxd-channel-update.service"])
         .output();
