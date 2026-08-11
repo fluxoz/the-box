@@ -1,6 +1,6 @@
 id = "minio"
 title = "MinIO object storage"
-description = "S3-compatible object storage served at your domain. Set your own root credentials before deploying."
+description = "Your own file storage, like a private S3. Login details are created for you."
 category = "Storage"
 base = "container"
 icon = "bucket"

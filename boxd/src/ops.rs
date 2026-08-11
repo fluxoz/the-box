@@ -211,6 +211,23 @@ pub fn deploy(
     // stripped from the params, so no plaintext credential ever lands in the
     // config, the manifest, git, or the Nix store. agenix decrypts them at
     // runtime; nixgen ships the .age next to the service module.
+    // A catalog preset declares the credentials its service needs. Asking a
+    // person to invent a root password is how "change-me-please" ends up in
+    // production, so any placeholder left untouched is replaced with a real
+    // generated one before it is encrypted. The operator never has to know the
+    // service's credential conventions to run it safely.
+    if let Some(obj) = req.params.get_mut("secret_env").and_then(Value::as_object_mut) {
+        for (key, value) in obj.iter_mut() {
+            let weak = value
+                .as_str()
+                .map(|v| v.trim().is_empty() || is_placeholder(v))
+                .unwrap_or(false);
+            if weak && looks_secret(key) {
+                *value = Value::String(generated_secret()?);
+            }
+        }
+    }
+
     if let Some(secret_env) = req
         .params
         .get("secret_env")
@@ -345,6 +362,33 @@ pub fn restore(
     Ok(info)
 }
 
+/// Does this secret name hold something that must be strong (as opposed to a
+/// username or a bucket name, which a preset legitimately hard-codes)?
+fn looks_secret(key: &str) -> bool {
+    let k = key.to_ascii_uppercase();
+    ["PASSWORD", "SECRET", "TOKEN", "KEY", "PASS"]
+        .iter()
+        .any(|needle| k.contains(needle))
+}
+
+/// Catalog presets ship obvious stand-ins so the file reads clearly. Treat
+/// those as "not set" rather than as a credential.
+fn is_placeholder(value: &str) -> bool {
+    let v = value.to_ascii_lowercase();
+    v.contains("change") || v.contains("replace") || v.contains("example") || v == "password"
+}
+
+/// A generated credential: 24 bytes of urandom, hex. Long enough that nobody
+/// needs to think about it, and safe in a shell or a URL.
+fn generated_secret() -> Result<String> {
+    use std::io::Read;
+    let mut buf = [0u8; 24];
+    std::fs::File::open("/dev/urandom")
+        .and_then(|mut f| f.read_exact(&mut buf))
+        .context("generating a credential")?;
+    Ok(buf.iter().map(|b| format!("{b:02x}")).collect())
+}
+
 /// Re-key every `.age` directly in `dir` (non-recursive) to `recipients`,
 /// decrypting with `identity`. A missing dir is fine (no secrets of that kind).
 fn rekey_age_dir(dir: &std::path::Path, identity: &std::path::Path, recipients: &[String]) -> Result<()> {
@@ -410,6 +454,31 @@ mod tests {
             }],
             ..Default::default()
         }
+    }
+
+    /// Nobody should have to invent a root password to run a database, and a
+    /// preset's stand-in must never reach a real service.
+    #[test]
+    fn placeholder_credentials_are_replaced_with_generated_ones() {
+        assert!(is_placeholder("change-me-please"));
+        assert!(is_placeholder("REPLACE_ME"));
+        assert!(is_placeholder("example"));
+        assert!(!is_placeholder("s7f3a91c2b"));
+
+        // Only things that must be strong are generated; a preset may hard-code
+        // a username or a bucket name on purpose.
+        assert!(looks_secret("MINIO_ROOT_PASSWORD"));
+        assert!(looks_secret("POSTGRES_PASSWORD"));
+        assert!(looks_secret("API_TOKEN"));
+        assert!(looks_secret("SECRET_KEY"));
+        assert!(!looks_secret("MINIO_ROOT_USER"));
+        assert!(!looks_secret("POSTGRES_DB"));
+
+        let a = generated_secret().unwrap();
+        let b = generated_secret().unwrap();
+        assert_eq!(a.len(), 48, "24 bytes of hex");
+        assert_ne!(a, b, "must not be deterministic");
+        assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
     }
 
     #[test]

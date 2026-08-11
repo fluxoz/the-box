@@ -341,25 +341,39 @@ pub async fn new_service(
 fn common_fields(domain_hint: &str) -> Markup {
     html! {
         label {
-            "Domain " span.muted { "(optional" @if !domain_hint.is_empty() { "; " (domain_hint) } ")" }
+            "Web address"
+            span.hint {
+                "A domain you own, if you want to reach this from a browser"
+                @if !domain_hint.is_empty() { " — " (domain_hint) }
+                ". Leave blank to keep it on your Box only."
+            }
             input type="text" name="domain" placeholder="app.example.com";
         }
-        label {
+        label.check {
             input type="checkbox" name="public";
-            " Public — serve on your domain through the tunnel (otherwise LAN-only)"
+            span {
+                "Let people outside your home reach it"
+                span.hint { "Off means only devices on your own network can. Needs a tunnel set up under Networking." }
+            }
         }
     }
 }
 
-fn env_fields(secret_placeholder: &str) -> Markup {
+fn env_fields() -> Markup {
     html! {
         label {
-            "Environment " span.muted { "(one KEY=value per line)" }
+            "Settings passed to the app"
+            span.hint { "One NAME=value per line. Most people never need this." }
             textarea name="env" rows="3" spellcheck="false" placeholder="TZ=UTC" {}
         }
         label {
-            "Secret environment " span.muted { "(one KEY=value per line — encrypted on the Box, never stored in config or git)" }
-            textarea name="secret_env" rows="3" spellcheck="false" placeholder=(secret_placeholder) {}
+            "Passwords and keys"
+            span.hint {
+                "One NAME=value per line. Encrypted on the Box, never written to "
+                "config or pushed to your repo. Anything the service needs and you "
+                "leave out is generated for you."
+            }
+            textarea name="secret_env" rows="3" spellcheck="false" {}
         }
     }
 }
@@ -377,14 +391,13 @@ pub async fn new_service_form(
     // A catalog preset: identity + env/secret-env overrides; the preset's
     // params supply the rest (image, exposure, volumes…).
     if let Some(entry) = catalog.get(&template) {
-        // Prefill secret keys the preset declares, so the operator can see
-        // exactly what credentials it expects (values are theirs to fill).
-        let secret_keys: Vec<String> = entry
-            .params
-            .get("secret_env")
-            .and_then(|v| v.as_object())
-            .map(|o| o.keys().map(|k| format!("{k}=")).collect())
-            .unwrap_or_default();
+        // A preset already knows how it wants to run. Someone deploying
+        // "PostgreSQL" should not have to answer questions about ports,
+        // exposure or environment variables to get a database — the whole point
+        // of the catalog is that those answers are already made. Credentials it
+        // needs are generated on the Box (see secret_env handling in deploy),
+        // so the form asks for a name and nothing else. Everything that CAN be
+        // overridden still can be, one disclosure away.
         let defaults = serde_json::to_string_pretty(&entry.params).unwrap_or_default();
         let body = html! {
             h2 { "Deploy " (entry.title) }
@@ -393,19 +406,27 @@ pub async fn new_service_form(
                 input type="hidden" name="template" value=(entry.id);
                 label {
                     "Name"
+                    span.hint { "What you will call it on this Box. Fine as it is." }
                     input type="text" name="name" required value=(entry.id) pattern="[a-z0-9-]+" autofocus;
                 }
-                (common_fields("for web-facing presets"))
-                label {
-                    "Port " span.muted { "(optional — the platform allocates and validates one)" }
-                    input type="number" name="port" min="1" max="65535" placeholder="auto";
+                button.btn type="submit" { "Deploy " (entry.title) }
+
+                details.adv {
+                    summary { "Advanced" }
+                    div.fields {
+                        (common_fields("only matters if this should be reachable in a browser"))
+                        label {
+                            "Port"
+                            span.hint { "Leave blank and the Box picks a free one and checks it does not clash." }
+                            input type="number" name="port" min="1" max="65535" placeholder="chosen for you";
+                        }
+                        (env_fields())
+                        details.adv {
+                            summary { "What this preset sets up" }
+                            pre { (defaults) }
+                        }
+                    }
                 }
-                (env_fields(&secret_keys.join("\n")))
-                details {
-                    summary.muted { "Preset defaults (merged under your values)" }
-                    pre { (defaults) }
-                }
-                button.btn type="submit" { "Deploy" }
             }
         };
         return Ok(layout("Deploy", &flash, body));
@@ -413,28 +434,37 @@ pub async fn new_service_form(
 
     let body = match template.as_str() {
         "static-site" => html! {
-            h2 { "Deploy a static site" }
+            h2 { "Put a web page online" }
+            p.muted { "A page or a whole site, served by your Box. Edit it here or point at a folder." }
             form.stack method="post" action="/services" {
                 input type="hidden" name="template" value="static-site";
                 label {
                     "Name"
+                    span.hint { "Used in the address on your Box, like /sites/my-site/." }
                     input type="text" name="name" required placeholder="my-site" pattern="[a-z0-9-]+" autofocus;
                 }
-                (common_fields(""))
                 label {
-                    "index.html"
-                    textarea name="content" rows="14" spellcheck="false" { (ops::DEFAULT_INDEX) }
-                }
-                label {
-                    "…or copy a local directory " span.muted { "(absolute path on the Box; overrides the content above)" }
-                    input type="text" name="source_path" placeholder="/home/me/mysite/dist";
+                    "The page"
+                    textarea name="content" rows="12" spellcheck="false" { (ops::DEFAULT_INDEX) }
                 }
                 button.btn type="submit" { "Deploy" }
+
+                details.adv {
+                    summary { "Advanced" }
+                    div.fields {
+                        label {
+                            "Use a folder instead"
+                            span.hint { "A path on the Box. If set, its contents replace the page above." }
+                            input type="text" name="source_path" placeholder="/home/me/mysite/dist";
+                        }
+                        (common_fields(""))
+                    }
+                }
             }
         },
         "container" => html! {
-            h2 { "Deploy a container" }
-            p.muted { "Any OCI/Docker image. The platform runs it, wires its port, and routes traffic per the exposure you pick." }
+            h2 { "Run an app from an image" }
+            p.muted { "Point the Box at any published app image and it runs it, keeps it running, and puts it where you say." }
             form.stack method="post" action="/services" {
                 input type="hidden" name="template" value="container";
                 label {
@@ -443,40 +473,51 @@ pub async fn new_service_form(
                 }
                 label {
                     "Image"
+                    span.hint { "The app to run, from a container registry — for example nginx:1.27." }
                     input type="text" name="image" required placeholder="nginx:1.27";
                 }
                 label {
-                    "Container port " span.muted { "(the port the app listens on inside the container)" }
+                    "Port inside the container"
+                    span.hint { "What the app listens on. Its documentation will say; 80 is typical." }
                     input type="number" name="container_port" min="1" max="65535" placeholder="80";
                 }
                 label {
-                    "Exposure"
+                    "Who should be able to reach it?"
                     select name="expose" {
-                        option value="proxied" selected { "Proxied — behind the platform web proxy (web apps)" }
-                        option value="internal" { "Internal — loopback only (databases, caches)" }
-                        option value="exposed" { "Exposed — LAN-reachable on its own port" }
+                        option value="proxied" selected { "Anyone I give the web address to" }
+                        option value="internal" { "Only my other apps on this Box" }
+                        option value="exposed" { "Devices on my home network, on its own port" }
                     }
                 }
-                label {
-                    "Port " span.muted { "(optional — the platform allocates and validates one)" }
-                    input type="number" name="port" min="1" max="65535" placeholder="auto";
-                }
-                (common_fields("proxied containers only"))
-                label {
-                    "Command " span.muted { "(optional override, whitespace-separated)" }
-                    input type="text" name="cmd" placeholder="redis-server --appendonly yes";
-                }
-                (env_fields("DB_PASSWORD=…"))
-                label {
-                    "Volumes " span.muted { "(one host:container per line; host paths persist across updates)" }
-                    textarea name="volumes" rows="2" spellcheck="false" placeholder="/var/lib/box/my-app:/data" {}
-                }
                 button.btn type="submit" { "Deploy" }
+
+                details.adv {
+                    summary { "Advanced" }
+                    div.fields {
+                        (common_fields("only if you chose the web address option above"))
+                        label {
+                            "Port"
+                            span.hint { "Leave blank and the Box picks a free one and checks it does not clash." }
+                            input type="number" name="port" min="1" max="65535" placeholder="chosen for you";
+                        }
+                        label {
+                            "Start command"
+                            span.hint { "Only if the app needs something other than its default." }
+                            input type="text" name="cmd" placeholder="redis-server --appendonly yes";
+                        }
+                        (env_fields())
+                        label {
+                            "Folders to keep"
+                            span.hint { "One per line, as on-the-Box:in-the-app. Anything written here survives updates." }
+                            textarea name="volumes" rows="2" spellcheck="false" placeholder="/var/lib/box/my-app:/data" {}
+                        }
+                    }
+                }
             }
         },
         "reverse-proxied-app" => html! {
-            h2 { "Deploy a reverse-proxied app" }
-            p.muted { "A process the platform supervises and serves behind its web proxy on an allocated port ($PORT)." }
+            h2 { "Run a program you already have" }
+            p.muted { "The Box starts it, keeps it running, restarts it if it dies, and serves it on the web." }
             form.stack method="post" action="/services" {
                 input type="hidden" name="template" value="reverse-proxied-app";
                 label {
@@ -484,15 +525,23 @@ pub async fn new_service_form(
                     input type="text" name="name" required placeholder="my-app" pattern="[a-z0-9-]+" autofocus;
                 }
                 label {
-                    "Command " span.muted { "(started with $PORT set to the allocated port)" }
+                    "How to start it"
+                    span.hint { "The command to run. $PORT is filled in with the port the Box picked." }
                     input type="text" name="command" required placeholder="/usr/bin/my-app --listen 127.0.0.1:$PORT";
                 }
-                label {
-                    "Port " span.muted { "(optional — the platform allocates and validates one)" }
-                    input type="number" name="port" min="1" max="65535" placeholder="auto";
-                }
-                (common_fields(""))
                 button.btn type="submit" { "Deploy" }
+
+                details.adv {
+                    summary { "Advanced" }
+                    div.fields {
+                        label {
+                            "Port"
+                            span.hint { "Leave blank and the Box picks a free one and checks it does not clash." }
+                            input type="number" name="port" min="1" max="65535" placeholder="chosen for you";
+                        }
+                        (common_fields(""))
+                    }
+                }
             }
         },
         _ => html! {
