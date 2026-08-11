@@ -193,6 +193,35 @@ pub fn redeem_code(paths: &Paths, code: &str, session_label: &str) -> Result<Str
     Ok(token)
 }
 
+/// A Box no one has claimed yet: no operator sessions and no pending codes. A
+/// freshly flashed Box (no Configurator recovery kit) is claimable; a Box set
+/// up with orders (which seed an enrollment code) or already paired is not.
+pub fn is_claimable(paths: &Paths) -> bool {
+    let store = load(paths);
+    store.sessions.is_empty() && store.codes.is_empty()
+}
+
+/// First-run claim: on a still-unclaimed Box, mint the first operator session
+/// without a code, so a freshly flashed appliance is reachable from a browser
+/// with no SSH and no recovery kit. Returns `None` if the Box was already
+/// claimed or has a pending code (the caller then falls back to code entry).
+/// The check and the mint share one load/save so the claim window stays small.
+pub fn claim(paths: &Paths, label: &str) -> Result<Option<String>> {
+    let mut store = load(paths);
+    if !store.sessions.is_empty() || !store.codes.is_empty() {
+        return Ok(None);
+    }
+    let token = random_hex(32)?;
+    store.sessions.push(StoredSession {
+        id: random_hex(4)?,
+        label: label.to_string(),
+        hash: hash(&token),
+        created_at: now(),
+    });
+    save(paths, &store)?;
+    Ok(Some(token))
+}
+
 // --- request classification (used by the middleware) ----------------------
 
 /// Paths reachable without a session: coarse health, deployed public sites, the
@@ -205,15 +234,20 @@ pub fn is_public_path(path: &str) -> bool {
         || path == "/favicon.ico"
 }
 
-/// Trusted local access = a loopback peer that is NOT a proxied request. The
-/// BYO Cloudflare tunnel also connects from loopback, but cloudflared forwards
-/// these headers while direct/SSH-tunnel access does not — so tunnel traffic is
-/// never mistaken for trusted local access.
+/// True when the request arrived through a proxy/tunnel — cloudflared and the
+/// like forward these headers; a direct LAN or loopback connection does not.
+pub fn is_proxied(headers: &HeaderMap) -> bool {
+    headers.contains_key("x-forwarded-for")
+        || headers.contains_key("cf-connecting-ip")
+        || headers.contains_key("x-forwarded-host")
+}
+
+/// Trusted local access = a loopback peer on a direct (non-proxied) connection.
+/// The BYO Cloudflare tunnel also connects from loopback, but cloudflared
+/// forwards proxy headers while direct/SSH-tunnel access does not — so tunnel
+/// traffic is never mistaken for trusted local access.
 pub fn is_trusted_local(peer_is_loopback: bool, headers: &HeaderMap) -> bool {
-    peer_is_loopback
-        && !headers.contains_key("x-forwarded-for")
-        && !headers.contains_key("cf-connecting-ip")
-        && !headers.contains_key("x-forwarded-host")
+    peer_is_loopback && !is_proxied(headers)
 }
 
 /// Pull a session token from a Bearer header (agents) or the session cookie
@@ -296,5 +330,37 @@ mod tests {
         c.insert("cookie", "foo=1; box_session=tok; bar=2".parse().unwrap());
         assert_eq!(extract_token(&c).as_deref(), Some("tok"));
         assert_eq!(extract_token(&HeaderMap::new()), None);
+    }
+
+    #[test]
+    fn first_run_claim_mints_then_locks() {
+        let (_t, p) = paths();
+        // Fresh box: claimable, and the claim mints the first operator session.
+        assert!(is_claimable(&p));
+        let token = claim(&p, "first device")
+            .unwrap()
+            .expect("a fresh box is claimable");
+        assert!(verify(&p, &token));
+        // Now claimed: not claimable, and a second claim is refused.
+        assert!(!is_claimable(&p));
+        assert!(claim(&p, "again").unwrap().is_none());
+    }
+
+    #[test]
+    fn a_pending_code_blocks_claim() {
+        let (_t, p) = paths();
+        // A Box provisioned with orders has an enrollment code but no session; it
+        // must NOT be claimable, since the operator already holds a code.
+        mint_code(&p, "enrollment").unwrap();
+        assert!(!is_claimable(&p));
+        assert!(claim(&p, "x").unwrap().is_none());
+    }
+
+    #[test]
+    fn proxied_requests_are_detected() {
+        assert!(!is_proxied(&HeaderMap::new()));
+        let mut h = HeaderMap::new();
+        h.insert("x-forwarded-for", "1.2.3.4".parse().unwrap());
+        assert!(is_proxied(&h)); // tunnel traffic: never claimable
     }
 }

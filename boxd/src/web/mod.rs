@@ -57,6 +57,7 @@ pub fn router(state: SharedState) -> Router {
         .route("/fleet", get(pages::fleet))
         .route("/pair", get(pages::pair))
         .route("/pair/redeem", post(pages::pair_redeem))
+        .route("/pair/claim", post(pages::pair_claim))
         .route("/devices", get(pages::devices))
         .route("/devices/add", post(pages::add_device))
         .route("/devices/{id}/revoke", post(pages::revoke_device))
