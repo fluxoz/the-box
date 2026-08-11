@@ -233,21 +233,18 @@ jobs:
           sha256sum "thebox-pi${{ matrix.model }}.img.xz" > "thebox-pi${{ matrix.model }}.img.xz.sha256"
           ls -la thebox-pi${{ matrix.model }}.img.xz*
 
-      # Cache what the NEXT release would otherwise recompile.
+      # Push the system toplevel so a Pi running `boxd channel update` DOWNLOADS
+      # this release instead of compiling Rust on a Raspberry Pi. (CI itself
+      # gains nothing from it: the closure contains boxd, so its hash changes
+      # every release and a later run can never substitute it.) We deliberately
+      # do not push the sdImage closure — a 4.6 GiB leaf artifact that already
+      # ships on the Release and that nothing will ever substitute.
       #
-      # Pi 3/4 spend ~1h33m compiling the bcm2711 kernel while Pi 5 doesn't, and
-      # the reason is subtle: the vendor kernel is a multi-output derivation
-      # (out/modules/dev) and the upstream cache carries out+modules but not dev.
-      # Nix cannot substitute a subset of a derivation's outputs, so one missing
-      # dev forces a full kernel rebuild. The only thing that wants dev is
-      # zfs-kernel — and Pi 5 is fast purely because ITS zfs-kernel output
-      # happens to be cached, so dev is never requested.
-      #
-      # So we push the system toplevel (which carries zfs-kernel, the kernel,
-      # modules and boxd) AND the kernel's dev output explicitly. Both are
-      # already built here, so realising them is free. We deliberately do NOT
-      # push the sdImage closure: it is a 4.6 GiB leaf artifact that already
-      # ships on the Release and nothing will ever substitute it.
+      # This step must NEVER cause a build. Realising the kernel's `dev` output
+      # here, for instance, looks harmless but forces a full ~1h30m kernel
+      # rebuild: `dev` is on no binary cache and, with ZFS off, nothing else
+      # asks for it, so Nix would compile the whole multi-output derivation just
+      # to produce it. Only ever push paths this job already produced.
       - name: Cache the pi${{ matrix.model }} closure (fluxoz)
         continue-on-error: true
         env:
@@ -255,16 +252,15 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${CACHIX_AUTH_TOKEN:-}" ]; then
-            echo "CACHIX_AUTH_TOKEN not set — skipping pi${{ matrix.model }} cache push (next release recompiles the kernel)."
+            echo "CACHIX_AUTH_TOKEN not set — skipping pi${{ matrix.model }} cache push."
             exit 0
           fi
           nix profile install nixpkgs#cachix
           cachix authtoken "$CACHIX_AUTH_TOKEN"
-          cfg=".#nixosConfigurations.box-os-pi${{ matrix.model }}.config"
-          sys=$(nix build "$cfg.system.build.toplevel" --no-link --print-out-paths)
-          dev=$(nix build "$cfg.boot.kernelPackages.kernel.dev" --no-link --print-out-paths)
+          # eval, not build: resolve the path without realising anything.
+          sys=$(nix eval --raw \
+            ".#nixosConfigurations.box-os-pi${{ matrix.model }}.config.system.build.toplevel")
           .github/scripts/push-closure.sh "$sys" https://nixos-raspberrypi.cachix.org
-          .github/scripts/push-closure.sh "$dev" https://nixos-raspberrypi.cachix.org
 
       - name: Attach the pi${{ matrix.model }} image to the Release
         uses: softprops/action-gh-release@v2
