@@ -29,4 +29,5 @@ pub mod store;
 pub mod templates;
 pub mod tunnel;
 pub mod util;
+pub mod words;
 pub mod web;

@@ -96,6 +96,30 @@ pub fn get(paths: &Paths, name: &str) -> Result<Option<String>> {
     Ok(None)
 }
 
+/// Every stored secret whose name starts with `prefix`, decrypted, sorted by
+/// name. Used to show the credentials the platform generated for a service —
+/// the operator never chose them, so the console has to be able to hand them
+/// back.
+pub fn with_prefix(paths: &Paths, prefix: &str) -> Vec<(String, String)> {
+    let Ok(entries) = fs::read_dir(op_dir(paths)) else {
+        return Vec::new();
+    };
+    let mut out: Vec<(String, String)> = entries
+        .flatten()
+        .filter_map(|e| {
+            let file = e.file_name();
+            let name = file.to_str()?.strip_suffix(".age")?;
+            if !name.starts_with(prefix) {
+                return None;
+            }
+            let value = get(paths, name).ok().flatten()?;
+            Some((name.to_string(), value))
+        })
+        .collect();
+    out.sort();
+    out
+}
+
 pub fn exists(paths: &Paths, name: &str) -> bool {
     matches!(get(paths, name), Ok(Some(_)))
 }

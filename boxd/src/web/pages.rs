@@ -189,6 +189,8 @@ pub async fn index(
                     }
                     tbody {
                         @for s in &config.services {
+                            @let creds = crate::secrets::with_prefix(
+                                &state.paths, &format!("service-{}-", s.name));
                             tr {
                                 td { strong { (s.name) } }
                                 td { (s.template) }
@@ -216,6 +218,31 @@ pub async fn index(
                                 td {
                                     form method="post" action={ "/services/" (s.name) "/delete" } {
                                         button.danger type="submit" { "Delete" }
+                                    }
+                                }
+                            }
+                            @if !creds.is_empty() {
+                                tr.credrow {
+                                    td colspan="6" {
+                                        details {
+                                            summary.muted { "Sign-in details the Box created for " (s.name) }
+                                            div.creds {
+                                                p.hint {
+                                                    "Generated when this was deployed, because nobody should have "
+                                                    "to invent a password to run a database. Written down here so "
+                                                    "you can actually sign in."
+                                                }
+                                                @for (slot, value) in &creds {
+                                                    div.cred {
+                                                        span.credkey {
+                                                            (slot.trim_start_matches(&format!("service-{}-", s.name))
+                                                                 .replace('-', "_").to_uppercase())
+                                                        }
+                                                        code { (value) }
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
