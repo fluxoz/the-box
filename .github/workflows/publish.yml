@@ -14,12 +14,35 @@ permissions:
   pages: write # deploy Pages
   id-token: write # Pages OIDC
 
+# Per-ref, so two different releases never queue behind each other (v0.3.1 sat
+# waiting for an hour while v0.3.0's Pi kernel compiled). Re-pushing the SAME
+# ref still serializes, which is what the lock is actually for.
 concurrency:
-  group: publish
+  group: publish-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
+  # The tag and the platform's one version literal must agree, or a release
+  # ships boxes that misreport what they run (which is exactly how every box
+  # ended up displaying 0.1.0 / "dev"). Cheap, and it gates the whole publish.
+  version-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag must match the workspace version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version *= *"\(.*\)"/\1/p' Cargo.toml | head -1)
+          [ -n "$version" ] || { echo "::error::could not read [workspace.package] version from Cargo.toml"; exit 1; }
+          if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match Cargo workspace version ${version} (expected tag v${version}). Bump [workspace.package] version in Cargo.toml, or retag."
+            exit 1
+          fi
+          echo "tag ${GITHUB_REF_NAME} matches version ${version}"
+
   build:
+    needs: version-guard
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -64,16 +87,7 @@ jobs:
           nix profile install nixpkgs#cachix
           cachix authtoken "$CACHIX_AUTH_TOKEN"
           sys=$(nix build .#nixosConfigurations.box-os.config.system.build.toplevel --no-link --print-out-paths)
-          # Only push OUR paths, not the nixpkgs deps: the installer and boxes
-          # also use cache.nixos.org, so pushing paths it already has just wastes
-          # the cache's storage. This keeps fluxoz to ~hundreds of MB.
-          nix-store -qR "$sys" | sort -u > /tmp/closure
-          : > /tmp/on_upstream
-          while read -r p; do
-            nix path-info --store https://cache.nixos.org "$p" >/dev/null 2>&1 && echo "$p" >> /tmp/on_upstream
-          done < /tmp/closure
-          comm -23 /tmp/closure <(sort -u /tmp/on_upstream) | cachix push fluxoz
-          echo "pushed $(comm -23 /tmp/closure <(sort -u /tmp/on_upstream) | wc -l) box-specific paths (nixpkgs deps left to cache.nixos.org)"
+          .github/scripts/push-closure.sh "$sys"
 
       - name: Stage the bundle + stamp the Release URL into install.sh
         run: |
@@ -147,6 +161,7 @@ jobs:
   # parallel with build/deploy — an emulated aarch64 compile is slow, so it must
   # never delay the release, and a failure here is non-fatal.
   cache-aarch64:
+    needs: version-guard
     # Native ARM runner (free for public repos) — builds aarch64 boxd in minutes,
     # not ~an hour under QEMU emulation.
     runs-on: ubuntu-24.04-arm
@@ -174,13 +189,7 @@ jobs:
           cachix authtoken "$CACHIX_AUTH_TOKEN"
           boxd=$(nix build .#packages.aarch64-linux.boxd --no-link --print-out-paths) || {
             echo "aarch64 boxd build failed under emulation — skipping (non-fatal)."; exit 0; }
-          nix-store -qR "$boxd" | sort -u > /tmp/aclosure
-          : > /tmp/aupstream
-          while read -r p; do
-            nix path-info --store https://cache.nixos.org "$p" >/dev/null 2>&1 && echo "$p" >> /tmp/aupstream
-          done < /tmp/aclosure
-          comm -23 /tmp/aclosure <(sort -u /tmp/aupstream) | cachix push fluxoz
-          echo "pushed $(comm -23 /tmp/aclosure <(sort -u /tmp/aupstream) | wc -l) aarch64 box paths"
+          .github/scripts/push-closure.sh "$boxd"
 
   # Build ready-to-flash Raspberry Pi images and attach them to the Release, so a
   # user downloads a .img.xz and flashes it (Raspberry Pi Imager / dd) instead of
@@ -188,6 +197,7 @@ jobs:
   # the vendor kernel a download, not an emulated compile. Parallel with build/
   # deploy so it never delays the Pages deploy.
   pi-images:
+    needs: version-guard
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-24.04-arm
     # One parallel job per model: the images are independent, so build them
@@ -243,15 +253,8 @@ jobs:
           fi
           nix profile install nixpkgs#cachix
           cachix authtoken "$CACHIX_AUTH_TOKEN"
-          nix-store -qR "${{ steps.build.outputs.out }}" | sort -u > /tmp/closure
-          : > /tmp/have
-          for cache in https://cache.nixos.org https://nixos-raspberrypi.cachix.org; do
-            while read -r p; do
-              nix path-info --store "$cache" "$p" >/dev/null 2>&1 && echo "$p" >> /tmp/have
-            done < /tmp/closure
-          done
-          comm -23 /tmp/closure <(sort -u /tmp/have) | cachix push fluxoz
-          echo "pushed $(comm -23 /tmp/closure <(sort -u /tmp/have) | wc -l) pi${{ matrix.model }}-specific paths (kernel + our bits)"
+          .github/scripts/push-closure.sh "${{ steps.build.outputs.out }}" \
+            https://nixos-raspberrypi.cachix.org
 
       - name: Attach the pi${{ matrix.model }} image to the Release
         uses: softprops/action-gh-release@v2
