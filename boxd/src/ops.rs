@@ -216,6 +216,7 @@ pub fn deploy(
     // production, so any placeholder left untouched is replaced with a real
     // generated one before it is encrypted. The operator never has to know the
     // service's credential conventions to run it safely.
+    let mut generated: Vec<(String, String)> = Vec::new();
     if let Some(obj) = req.params.get_mut("secret_env").and_then(Value::as_object_mut) {
         for (key, value) in obj.iter_mut() {
             let weak = value
@@ -223,8 +224,25 @@ pub fn deploy(
                 .map(|v| v.trim().is_empty() || is_placeholder(v))
                 .unwrap_or(false);
             if weak && looks_secret(key) {
-                *value = Value::String(generated_secret()?);
+                let secret = generated_secret()?;
+                generated.push((key.clone(), secret.clone()));
+                *value = Value::String(secret);
             }
+        }
+    }
+    // Keep a copy of anything WE invented, so the console can show it later.
+    //
+    // Service secrets are encrypted to the box's SSH host key and decrypted by
+    // agenix as root; boxd cannot read them back, which is the right shape for
+    // a credential the operator supplied. But a credential the platform
+    // generated is one nobody has ever seen — without this it would be
+    // unknowable, and you could never log in to the thing you just deployed.
+    // The copy lives in boxd's own encrypted store (see crate::secrets), so it
+    // is readable by the console, which already has full authority anyway.
+    for (key, value) in &generated {
+        let slot = format!("service-{}-{}", req.name, key.to_ascii_lowercase().replace('_', "-"));
+        if let Err(e) = crate::secrets::set(paths, &slot, value) {
+            tracing::warn!("could not record generated credential {slot}: {e:#}");
         }
     }
 
@@ -378,15 +396,42 @@ fn is_placeholder(value: &str) -> bool {
     v.contains("change") || v.contains("replace") || v.contains("example") || v == "password"
 }
 
-/// A generated credential: 24 bytes of urandom, hex. Long enough that nobody
-/// needs to think about it, and safe in a shell or a URL.
+/// A generated credential, in the shape a person can actually deal with:
+/// five short words and two digits, `crisp-walnut-meadow-gusto-plaza-47`.
+///
+/// Hex is stronger per character and useless in practice — nobody reads 48 hex
+/// digits off a screen and types them into a phone correctly. Five words from
+/// the embedded list carry ~51.7 bits, plus ~6.6 from the digits: comfortably
+/// beyond anything a person would have chosen, while staying readable aloud.
+/// Lowercase letters, digits and hyphens only, so it is safe unquoted in an env
+/// file, a URL or a shell.
 fn generated_secret() -> Result<String> {
+    let words = crate::words::WORDS;
+    let mut parts: Vec<String> = Vec::with_capacity(6);
+    for _ in 0..5 {
+        parts.push(words[uniform_below(words.len() as u32)? as usize].to_string());
+    }
+    parts.push(format!("{:02}", uniform_below(100)?));
+    Ok(parts.join("-"))
+}
+
+/// A uniform value in `0..n`, drawn from the system CSPRNG.
+///
+/// Rejection sampling, not `% n`: the modulo shortcut skews toward low indices
+/// whenever n does not divide the range, which for a 1295-word list would make
+/// some words measurably likelier than others and quietly cost entropy.
+fn uniform_below(n: u32) -> Result<u32> {
     use std::io::Read;
-    let mut buf = [0u8; 24];
-    std::fs::File::open("/dev/urandom")
-        .and_then(|mut f| f.read_exact(&mut buf))
-        .context("generating a credential")?;
-    Ok(buf.iter().map(|b| format!("{b:02x}")).collect())
+    let mut file = std::fs::File::open("/dev/urandom").context("opening /dev/urandom")?;
+    let limit = u32::MAX - (u32::MAX % n) - 1;
+    loop {
+        let mut buf = [0u8; 4];
+        file.read_exact(&mut buf).context("reading /dev/urandom")?;
+        let value = u32::from_le_bytes(buf);
+        if value <= limit {
+            return Ok(value % n);
+        }
+    }
 }
 
 /// Re-key every `.age` directly in `dir` (non-recursive) to `recipients`,
@@ -476,9 +521,36 @@ mod tests {
 
         let a = generated_secret().unwrap();
         let b = generated_secret().unwrap();
-        assert_eq!(a.len(), 48, "24 bytes of hex");
         assert_ne!(a, b, "must not be deterministic");
-        assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
+
+        // Readable: five words and a two-digit number, joined by hyphens.
+        let parts: Vec<&str> = a.split('-').collect();
+        assert_eq!(parts.len(), 6, "got {a}");
+        assert!(
+            parts[..5].iter().all(|w| w.chars().all(|c| c.is_ascii_lowercase())),
+            "got {a}"
+        );
+        assert!(parts[5].len() == 2 && parts[5].chars().all(|c| c.is_ascii_digit()));
+        // Safe unquoted in an env file, a URL or a shell.
+        assert!(a.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'));
+        assert!(a.len() >= 20, "too short to be a credential: {a}");
+    }
+
+    /// The draw must be uniform. `% n` would bias toward low indices and
+    /// quietly cost entropy on a list whose length is not a power of two.
+    #[test]
+    fn word_choice_is_uniform_enough() {
+        use std::collections::HashMap;
+        let mut counts: HashMap<String, usize> = HashMap::new();
+        for _ in 0..400 {
+            for w in generated_secret().unwrap().split('-').take(5) {
+                *counts.entry(w.to_string()).or_default() += 1;
+            }
+        }
+        // 2000 draws from 1295 words: a healthy spread, and nothing dominating.
+        assert!(counts.len() > 900, "only {} distinct words", counts.len());
+        let worst = counts.values().max().copied().unwrap_or(0);
+        assert!(worst < 15, "one word came up {worst} times");
     }
 
     #[test]

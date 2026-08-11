@@ -318,3 +318,15 @@ code {
 ol, ul { padding-left: 1.3rem; }
 
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* ---- generated sign-in details ----
+   A credential the platform invented is one nobody has ever seen, so it has to
+   be readable and copyable, not squeezed into a table cell. */
+tr.credrow td { padding-top: 0; }
+.creds { padding: .5rem 0 .2rem; display: flex; flex-direction: column; gap: .5rem; }
+.cred { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.credkey {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--faint); min-width: 12rem;
+}
+.cred code { font-size: 14px; user-select: all; padding: 3px 8px; }
