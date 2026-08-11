@@ -192,6 +192,7 @@ mod tests {
                 params: serde_json::json!({ "index_html": "<h1>hi</h1>" }),
                 domain: Some("blog.example.com".into()),
                 public: true,
+                port: None,
                 created_at: Utc::now(),
             }],
             ..Default::default()

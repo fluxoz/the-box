@@ -10,6 +10,7 @@ use chrono::Utc;
 use serde_json::{json, Value};
 
 use crate::config::{validate_domain, validate_service_name, BoxConfig, ServiceConfig};
+use crate::ports;
 use crate::history;
 use crate::manifest;
 use crate::nixgen;
@@ -29,6 +30,9 @@ pub struct DeployRequest {
     pub params: Value,
     pub domain: Option<String>,
     pub public: bool,
+    /// An explicit port request for a process-backed service. `None` lets the
+    /// platform allocate one. Ignored (and rejected if set) for file services.
+    pub port: Option<u16>,
 }
 
 impl DeployRequest {
@@ -54,6 +58,25 @@ impl DeployRequest {
             params: Value::Object(params),
             domain,
             public,
+            port: None,
+        }
+    }
+
+    /// Convenience constructor for the reverse-proxied-app template.
+    pub fn app(
+        name: impl Into<String>,
+        command: impl Into<String>,
+        domain: Option<String>,
+        port: Option<u16>,
+        public: bool,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            template: "reverse-proxied-app".into(),
+            params: json!({ "command": command.into() }),
+            domain,
+            public,
+            port,
         }
     }
 }
@@ -175,12 +198,36 @@ pub fn deploy(
     template.materialize(&req.params, &paths.source_dir(&req.name))?;
 
     let mut config = BoxConfig::load(paths)?;
+
+    // Resolve the service's port through the central allocator/validator, so an
+    // agent or a person gets the same rules: honor an explicit validated
+    // request, keep an existing allocation stable, or assign a free one. File
+    // services (static-site) take no port.
+    let port = if template.exposure().needs_port() {
+        let in_use: std::collections::BTreeMap<u16, String> = config
+            .services
+            .iter()
+            .filter(|s| s.name != req.name)
+            .filter_map(|s| s.port.map(|p| (p, s.name.clone())))
+            .collect();
+        Some(ports::resolve(req.port, &in_use, &req.name)?)
+    } else {
+        if req.port.is_some() {
+            bail!(
+                "template {:?} does not use a port (it is served by the platform proxy)",
+                req.template
+            );
+        }
+        None
+    };
+
     match config.services.iter_mut().find(|s| s.name == req.name) {
         Some(existing) => {
             existing.template = req.template.clone();
             existing.params = req.params.clone();
             existing.domain = req.domain.clone();
             existing.public = req.public;
+            existing.port = port;
         }
         None => config.services.push(ServiceConfig {
             name: req.name.clone(),
@@ -188,6 +235,7 @@ pub fn deploy(
             params: req.params.clone(),
             domain: req.domain.clone(),
             public: req.public,
+            port,
             created_at: Utc::now(),
         }),
     }
@@ -266,6 +314,7 @@ mod tests {
                 params: json!({}),
                 domain: domain.map(Into::into),
                 public: false,
+                port: None,
                 created_at: Utc::now(),
             }],
             ..Default::default()

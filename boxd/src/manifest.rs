@@ -28,6 +28,14 @@ pub struct ManifestService {
     pub domain: Option<String>,
     #[serde(default)]
     pub public: bool,
+    /// Assigned port for process-backed services (reverse-proxied apps); None
+    /// for file-served services.
+    #[serde(default)]
+    pub port: Option<u16>,
+    /// How the service is reached: "files" | "proxied". Drives the nginx vhost
+    /// and firewall rendering.
+    #[serde(default)]
+    pub exposure: String,
 }
 
 pub fn read_manifest(generation_path: &Path) -> Result<Manifest> {
