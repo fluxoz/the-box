@@ -6,6 +6,8 @@
 #
 # Usage: push-closure.sh <store-path> [extra-public-cache-url ...]
 #        PUSH_DRY_RUN=1 to classify and report without pushing.
+#        PIN_NAME=<name> PIN_KEEP=<n> to also pin the root, so cachix's GC
+#        cannot evict the release a Box is about to download.
 #
 # Speed matters here: the obvious implementation, `nix path-info --store
 # <cache> <path>` once per path, is a serial HTTPS round trip per path and
@@ -75,3 +77,13 @@ if [ -z "${CACHIX_AUTH_TOKEN:-}" ]; then
 fi
 
 cachix push fluxoz < "$tmp/ours"
+
+# Cachix GC is automatic, fires only at the quota, and evicts oldest-accessed
+# first — so a full cache could drop the very closure a Box is about to fetch,
+# turning a channel update into a Rust compile on a Raspberry Pi. A pin with a
+# rolling revision window keeps the last few releases immune and lets older ones
+# age out on their own.
+if [ -n "${PIN_NAME:-}" ]; then
+  cachix pin fluxoz "$PIN_NAME" "$root" --keep-revisions "${PIN_KEEP:-5}" \
+    || echo "pin failed (non-fatal): $PIN_NAME"
+fi

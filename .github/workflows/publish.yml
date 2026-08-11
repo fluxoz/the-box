@@ -90,7 +90,7 @@ jobs:
           nix profile install nixpkgs#cachix
           cachix authtoken "$CACHIX_AUTH_TOKEN"
           sys=$(nix build .#nixosConfigurations.box-os.config.system.build.toplevel --no-link --print-out-paths)
-          .github/scripts/push-closure.sh "$sys"
+          PIN_NAME=box-os PIN_KEEP=10 .github/scripts/push-closure.sh "$sys"
 
       - name: Stage the bundle + stamp the Release URL into install.sh
         run: |
@@ -158,9 +158,21 @@ jobs:
     needs: [build, cache-aarch64]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      # Move the ref through the API rather than `git push`. A push is refused
+      # outright when the new commit touches .github/workflows — "refusing to
+      # allow a GitHub App to create or update workflow ... without `workflows`
+      # permission" — and GITHUB_TOKEN cannot be granted that permission, so any
+      # release that edits CI would silently fail to advance the channel (v0.3.3
+      # did). Updating a ref only re-points it at a commit that already exists in
+      # the repo, so it introduces no workflow content.
       - name: Fast-forward release to ${{ github.ref_name }}
-        run: git push --force origin "HEAD:refs/heads/release"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api -X PATCH "repos/${GITHUB_REPOSITORY}/git/refs/heads/release" \
+            -f sha="${GITHUB_SHA}" -F force=true \
+            --jq '"release -> " + .object.sha'
 
   # Publish aarch64 boxd so `nix build …#pi{3,4,5}-image` and Pi channel-updates
   # fetch it instead of compiling it (the vendor kernel already comes from
@@ -199,7 +211,7 @@ jobs:
           cachix authtoken "$CACHIX_AUTH_TOKEN"
           boxd=$(nix build .#packages.aarch64-linux.boxd --no-link --print-out-paths) || {
             echo "aarch64 boxd build failed under emulation — skipping (non-fatal)."; exit 0; }
-          .github/scripts/push-closure.sh "$boxd"
+          PIN_NAME=boxd-aarch64 PIN_KEEP=5 .github/scripts/push-closure.sh "$boxd"
 
   # Build ready-to-flash Raspberry Pi images and attach them to the Release, so a
   # user downloads a .img.xz and flashes it (Raspberry Pi Imager / dd) instead of
@@ -273,7 +285,9 @@ jobs:
           # eval, not build: resolve the path without realising anything.
           sys=$(nix eval --raw \
             ".#nixosConfigurations.box-os-pi${{ matrix.model }}.config.system.build.toplevel")
-          .github/scripts/push-closure.sh "$sys" https://nixos-raspberrypi.cachix.org
+          PIN_NAME=box-os-pi${{ matrix.model }} PIN_KEEP=3 \
+
+            .github/scripts/push-closure.sh "$sys" https://nixos-raspberrypi.cachix.org
 
       - name: Attach the pi${{ matrix.model }} image to the Release
         uses: softprops/action-gh-release@v3
