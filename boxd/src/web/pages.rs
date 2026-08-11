@@ -115,10 +115,6 @@ fn layout(title: &str, flash: &Flash, body: Markup) -> Html<String> {
     Html(page.into_string())
 }
 
-fn ok_redirect(msg: &str) -> Redirect {
-    Redirect::to(&format!("/?ok={}", urlencoding::encode(msg)))
-}
-
 fn err_redirect(err: &anyhow::Error) -> Redirect {
     Redirect::to(&format!(
         "/?err={}",
@@ -230,6 +226,61 @@ pub async fn index(
         }
     };
     Ok(layout("Services", &flash, body))
+}
+
+/// Live view of a running operation. The page renders the current phase and
+/// log server-side (so it works with JS off, and on first paint), and the
+/// console's script refreshes it in place until the job ends, then moves on to
+/// wherever the job said it was going.
+pub async fn job_view(
+    State(state): State<SharedState>,
+    Path(id): Path<String>,
+    Query(flash): Query<Flash>,
+) -> Html<String> {
+    let Some(job) = state.jobs.get(&id) else {
+        return layout(
+            "Working",
+            &flash,
+            html! {
+                h2 { "That job is gone" }
+                p.muted {
+                    "Jobs are only kept while the daemon is running. Whatever it "
+                    "did is recorded in " a href="/generations" { "Generations" } "."
+                }
+            },
+        );
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let running = job.state == crate::jobs::State::Running;
+    let failed = job.state == crate::jobs::State::Failed;
+
+    let body = html! {
+        section.job data-job=(job.id) data-state=(format!("{:?}", job.state).to_lowercase())
+                    data-target=(job.target) {
+            div.section-head {
+                h2 { (job.label) }
+                span.muted { (job.elapsed_secs(now)) "s" }
+            }
+            @if running {
+                div.bar { div.fill {} }
+                p.phase { (job.phase) }
+            } @else if failed {
+                div.flash.err { (job.message) }
+            } @else {
+                div.flash.ok { (job.message) }
+            }
+            @if !job.log.is_empty() {
+                pre.joblog { @for line in &job.log { (line) "\n" } }
+            }
+            @if !running {
+                p { a.btn href=(job.target) { "Continue" } }
+            }
+        }
+    };
+    layout(&job.label, &flash, body)
 }
 
 /// The lead sentence of a description. Card grids want one scannable line;
@@ -596,43 +647,49 @@ pub async fn create_service(
         Err(msg) => return err_redirect(&anyhow::anyhow!(msg)),
     };
     let name = request.name.clone();
-    let result = {
-        let state = state.clone();
-        blocking(move || {
+    // A deploy runs a build; it does not belong inside the request. Start it and
+    // send the browser to the job view, which follows the phases live.
+    let jobs = state.jobs.clone();
+    let id = jobs.start(
+        "deploy",
+        format!("Deploying {name}"),
+        "/",
+        move |p| {
+            p.phase("waiting for other changes to finish");
             let _guard = state.apply_lock.lock().unwrap();
-            ops::deploy(&state.paths, state.builder.as_ref(), request)
-        })
-        .await
-    };
-    match result {
-        Ok(info) => ok_redirect(&format!(
-            "Deployed {name} — now at generation #{}",
-            info.number
-        )),
-        Err(err) => err_redirect(&err),
-    }
+            p.phase(format!("building generation for {name}"));
+            let info = ops::deploy(&state.paths, state.builder.as_ref(), request)?;
+            p.phase("activated");
+            Ok(format!(
+                "Deployed {name} — now at generation #{}",
+                info.number
+            ))
+        },
+    );
+    Redirect::to(&format!("/jobs/{id}"))
 }
 
 pub async fn delete_service(
     State(state): State<SharedState>,
     Path(name): Path<String>,
 ) -> Redirect {
-    let result = {
+    let id = {
         let state = state.clone();
         let name = name.clone();
-        blocking(move || {
-            let _guard = state.apply_lock.lock().unwrap();
-            ops::delete_service(&state.paths, state.builder.as_ref(), &name)
-        })
-        .await
+        state.jobs.clone().start(
+            "delete",
+            format!("Removing {name}"),
+            "/",
+            move |p| {
+                p.phase("waiting for other changes to finish");
+                let _guard = state.apply_lock.lock().unwrap();
+                p.phase(format!("rebuilding without {name}"));
+                let info = ops::delete_service(&state.paths, state.builder.as_ref(), &name)?;
+                Ok(format!("Deleted {name} — now at generation #{}", info.number))
+            },
+        )
     };
-    match result {
-        Ok(info) => ok_redirect(&format!(
-            "Deleted {name} — now at generation #{}",
-            info.number
-        )),
-        Err(err) => err_redirect(&err),
-    }
+    Redirect::to(&format!("/jobs/{id}"))
 }
 
 pub async fn generations(
@@ -1232,27 +1289,26 @@ pub async fn recreate_run(
         return redirect("err", "A repo URL and an operator key are both required");
     }
 
-    let result = {
+    let id = {
         let state = state.clone();
         let repo = repo_url.clone();
-        blocking(move || {
-            let key = crate::util::TransientSecret::new("restore-identity", &identity)?;
-            let _guard = state.apply_lock.lock().unwrap();
-            ops::restore(&state.paths, state.builder.as_ref(), &repo, key.path())
-            // `key` drops here: overwritten and unlinked, however this returned.
-        })
-        .await
+        state.jobs.clone().start(
+            "recreate",
+            "Recreating this Box from its config repo",
+            "/",
+            move |p| {
+                let key = crate::util::TransientSecret::new("restore-identity", &identity)?;
+                p.phase("waiting for other changes to finish");
+                let _guard = state.apply_lock.lock().unwrap();
+                p.phase("cloning config and secrets");
+                let info = ops::restore(&state.paths, state.builder.as_ref(), &repo, key.path())?;
+                p.phase("re-keyed secrets, generation built");
+                Ok(format!("Restored — now at generation #{}", info.number))
+                // `key` drops here: overwritten and unlinked, however this ended.
+            },
+        )
     };
-    match result {
-        Ok(info) => Redirect::to(&format!(
-            "/?ok={}",
-            urlencoding::encode(&format!(
-                "Restored from {repo_url} — now at generation #{}",
-                info.number
-            ))
-        )),
-        Err(err) => redirect("err", &format!("{err:#}")),
-    }
+    Redirect::to(&format!("/jobs/{id}"))
 }
 
 #[derive(Deserialize)]
@@ -1378,19 +1434,22 @@ pub async fn configure_backup(
 }
 
 pub async fn run_backup_now(State(state): State<SharedState>) -> Redirect {
+    // This used to be fire-and-forget: the page said "started" and then told you
+    // nothing until you came back and refreshed. As a job it reports what it is
+    // doing and whether it worked.
     let paths = state.paths.clone();
-    tokio::spawn(async move {
-        let _ = crate::web::blocking(move || {
-            let config = BoxConfig::load(&paths)?;
-            let bc = config
-                .backup
-                .clone()
-                .ok_or_else(|| anyhow::anyhow!("no backup configured"))?;
-            crate::backup::run(&paths, &config, &bc)
-        })
-        .await;
+    let id = state.jobs.clone().start("backup", "Backing up", "/backup", move |p| {
+        p.phase("reading config");
+        let config = BoxConfig::load(&paths)?;
+        let bc = config
+            .backup
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("no backup configured"))?;
+        p.phase(format!("sending to {}", bc.backend.kind));
+        crate::backup::run(&paths, &config, &bc)?;
+        Ok("Backup complete".to_string())
     });
-    backup_redirect(Ok(()), "Backup started — snapshots update when it finishes")
+    Redirect::to(&format!("/jobs/{id}"))
 }
 
 #[derive(Deserialize)]
@@ -2079,16 +2138,17 @@ pub async fn fleet(
 }
 
 pub async fn rollback(State(state): State<SharedState>, Path(number): Path<u64>) -> Redirect {
-    let result = {
-        let state = state.clone();
-        blocking(move || {
+    let id = state.jobs.clone().start(
+        "rollback",
+        format!("Rolling back to generation #{number}"),
+        "/generations",
+        move |p| {
+            p.phase("waiting for other changes to finish");
             let _guard = state.apply_lock.lock().unwrap();
-            ops::rollback(&state.paths, number)
-        })
-        .await
-    };
-    match result {
-        Ok(info) => ok_redirect(&format!("Rolled back to generation #{}", info.number)),
-        Err(err) => err_redirect(&err),
-    }
+            p.phase(format!("switching to generation #{number}"));
+            let info = ops::rollback(&state.paths, number)?;
+            Ok(format!("Rolled back to generation #{}", info.number))
+        },
+    );
+    Redirect::to(&format!("/jobs/{id}"))
 }

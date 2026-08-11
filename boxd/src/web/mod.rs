@@ -24,6 +24,10 @@ pub struct AppState {
     pub paths: Paths,
     pub builder: Box<dyn Builder>,
     pub tunnel: Arc<TunnelManager>,
+    /// Long operations (deploy, rollback, recreate, backup, platform update)
+    /// run here instead of inside the request, so the console can show progress
+    /// rather than hanging on a Nix build.
+    pub jobs: Arc<crate::jobs::Registry>,
     /// Serializes apply/deploy/rollback so concurrent requests cannot race
     /// on the generation-src directory or profile numbering.
     pub apply_lock: Mutex<()>,
@@ -36,6 +40,7 @@ impl AppState {
             paths,
             builder,
             tunnel,
+            jobs: crate::jobs::Registry::new(),
             apply_lock: Mutex::new(()),
         })
     }
@@ -50,6 +55,7 @@ pub fn router(state: SharedState) -> Router {
         .route("/services/new/{template}", get(pages::new_service_form))
         .route("/services", post(pages::create_service))
         .route("/services/{name}/delete", post(pages::delete_service))
+        .route("/jobs/{id}", get(pages::job_view))
         .route("/generations", get(pages::generations))
         .route("/generations/{number}/rollback", post(pages::rollback))
         .route("/system", get(pages::system))
