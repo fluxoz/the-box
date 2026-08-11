@@ -345,6 +345,10 @@
         inherit self nixpkgs;
         system = "x86_64-linux";
       };
+      checks.x86_64-linux.service-proxy = import ./nix/tests/service-proxy.nix {
+        inherit self nixpkgs;
+        system = "x86_64-linux";
+      };
 
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
