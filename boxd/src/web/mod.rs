@@ -53,6 +53,7 @@ pub fn router(state: SharedState) -> Router {
         .route("/generations", get(pages::generations))
         .route("/generations/{number}/rollback", post(pages::rollback))
         .route("/system", get(pages::system))
+        .route("/system/channel", post(pages::system_set_channel))
         .route("/system/check", post(pages::system_check))
         .route("/system/update", post(pages::system_update))
         .route("/fleet", get(pages::fleet))
@@ -66,6 +67,8 @@ pub fn router(state: SharedState) -> Router {
         .route("/backup/configure", post(pages::configure_backup))
         .route("/backup/run", post(pages::run_backup_now))
         .route("/backup/restore", post(pages::restore_backup))
+        .route("/backup/config-remote", post(pages::set_config_remote))
+        .route("/backup/config-push", post(pages::push_config_now))
         .route("/network", get(pages::network))
         .route("/network/cloudflare", post(pages::configure_cloudflare))
         .route(

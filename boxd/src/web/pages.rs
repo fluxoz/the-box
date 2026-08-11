@@ -950,8 +950,101 @@ pub async fn backup(State(state): State<SharedState>, Query(flash): Query<Flash>
                 (backup_form(&config, "Save & enable"))
             }
         }
+
+        @let remote = crate::history::remote(&state.paths);
+        section {
+            div.section-head {
+                h2 { "Config repo" }
+                @if remote.is_some() {
+                    form method="post" action="/backup/config-push" {
+                        button.btn type="submit" { "Push now" }
+                    }
+                }
+            }
+            p.muted {
+                "Your declarative config and encrypted secrets, pushed to a git repo you own "
+                "(GitHub, Gitea, anywhere). With it, a lost or wiped Box is recreated with "
+                code { "boxd restore <repo-url>" }
+                " — config, services and secrets included. Plaintext never leaves the Box."
+            }
+            @match &remote {
+                Some(url) => {
+                    p { "Pushing to " code { (url) } " on every change." }
+                    details {
+                        summary.muted { "Change or remove the remote" }
+                        form.stack method="post" action="/backup/config-remote" {
+                            label {
+                                "Remote URL " span.muted { "(empty to stop pushing)" }
+                                input type="text" name="url" value=(url);
+                            }
+                            button.btn type="submit" { "Save remote" }
+                        }
+                    }
+                },
+                None => {
+                    form.stack method="post" action="/backup/config-remote" {
+                        label {
+                            "Remote URL"
+                            input type="text" name="url" placeholder="git@github.com:you/box-config.git";
+                        }
+                        button.btn type="submit" { "Set remote & push" }
+                    }
+                },
+            }
+        }
     };
     layout("Backup", &flash, body)
+}
+
+#[derive(Deserialize)]
+pub struct ConfigRemoteForm {
+    #[serde(default)]
+    url: Option<String>,
+}
+
+pub async fn set_config_remote(
+    State(state): State<SharedState>,
+    Form(form): Form<ConfigRemoteForm>,
+) -> Redirect {
+    let redirect =
+        |key: &str, msg: &str| Redirect::to(&format!("/backup?{key}={}", urlencoding::encode(msg)));
+    let url = none_if_empty(form.url);
+    let result = {
+        let state = state.clone();
+        let url = url.clone();
+        blocking(move || -> anyhow::Result<()> {
+            crate::history::set_remote(&state.paths, url.as_deref())?;
+            if url.is_some() {
+                // Prove the remote works right away rather than on the next deploy.
+                crate::history::commit(&state.paths, "config push")?;
+                crate::history::push(&state.paths)?;
+            }
+            Ok(())
+        })
+        .await
+    };
+    match (result, url) {
+        (Ok(()), Some(u)) => redirect("ok", &format!("Config repo remote set — pushed to {u}")),
+        (Ok(()), None) => redirect("ok", "Config repo remote removed"),
+        (Err(e), _) => redirect("err", &format!("{e:#}")),
+    }
+}
+
+pub async fn push_config_now(State(state): State<SharedState>) -> Redirect {
+    let redirect =
+        |key: &str, msg: &str| Redirect::to(&format!("/backup?{key}={}", urlencoding::encode(msg)));
+    let result = {
+        let state = state.clone();
+        blocking(move || -> anyhow::Result<()> {
+            crate::history::commit(&state.paths, "config push")?;
+            crate::history::push(&state.paths)
+        })
+        .await
+    };
+    match result {
+        Ok(()) => redirect("ok", "Config + encrypted secrets pushed"),
+        Err(e) => redirect("err", &format!("{e:#}")),
+    }
 }
 
 #[derive(Deserialize)]
@@ -1155,21 +1248,26 @@ pub async fn system(
                             }
                             tr { th { "Auto-update" } td { @if c.auto_update { "on" } @else { "off" } } }
                             tr { th { "System" } td { (c.system) } }
+                            tr { th { "Board" } td { (c.board.as_deref().unwrap_or("generic")) } }
                             tr { th { "Host id" } td { (c.host_id) } }
                         }
+                    }
+                    details {
+                        summary.muted { "Change the channel binding" }
+                        (channel_form(Some(c)))
                     }
                 }
             },
             None => {
                 section {
-                    div.empty {
-                        p { "This Box manages service content only — no platform update channel is configured." }
-                        p.muted {
-                            "Set one on the Box with "
-                            code { "boxd channel set --host-id <id>" }
-                            " to pull platform updates with automatic rollback."
-                        }
+                    div.section-head { h2 { "Bind the update channel" } }
+                    p.muted {
+                        "This Box manages service content only until it's bound to a platform "
+                        "channel. Binding enables \"Update now\": whole-system updates with a "
+                        "health check and automatic rollback. The hardware board is detected "
+                        "automatically."
                     }
+                    (channel_form(None))
                 }
             },
         }
@@ -1185,6 +1283,79 @@ pub async fn system(
         }
     };
     Ok(layout("System", &flash, body))
+}
+
+/// The channel-binding form, blank for first-time setup or prefilled to edit.
+/// Board and system are detected server-side, so a person can't bind a Pi to a
+/// generic build by mistake (the same guard the CLI has).
+fn channel_form(current: Option<&ChannelConfig>) -> Markup {
+    let hostname = std::fs::read_to_string("/proc/sys/kernel/hostname")
+        .map(|h| h.trim().to_string())
+        .unwrap_or_default();
+    let host_id = current.map(|c| c.host_id.clone()).unwrap_or(hostname);
+    let platform = current
+        .map(|c| c.platform_ref.clone())
+        .unwrap_or_else(|| channel::DEFAULT_PLATFORM_REF.to_string());
+    let auto = current.is_some_and(|c| c.auto_update);
+    html! {
+        form.stack method="post" action="/system/channel" {
+            label {
+                "Host id"
+                input type="text" name="host_id" required value=(host_id) pattern="[a-z0-9-]+";
+            }
+            label {
+                "Platform channel " span.muted { "(a flake ref; ours by default, or your fork/mirror/pin)" }
+                input type="text" name="platform" required value=(platform);
+            }
+            label {
+                @if auto { input type="checkbox" name="auto_update" checked; }
+                @else { input type="checkbox" name="auto_update"; }
+                " Apply platform updates automatically (always health-checked, auto-rollback)"
+            }
+            button.btn type="submit" { @if current.is_some() { "Save channel" } @else { "Bind channel" } }
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct ChannelForm {
+    host_id: String,
+    platform: String,
+    #[serde(default)]
+    auto_update: Option<String>,
+}
+
+pub async fn system_set_channel(
+    State(state): State<SharedState>,
+    Form(form): Form<ChannelForm>,
+) -> Redirect {
+    let result = (|| -> anyhow::Result<ChannelConfig> {
+        crate::hostgen::validate_host_id(form.host_id.trim())?;
+        // Detect the hardware here, exactly like `channel set --board auto`:
+        // binding a Pi to a generic build must be impossible from the GUI too.
+        let board = crate::board::detect()?;
+        let mut cfg = ChannelConfig::new(form.host_id.trim().to_string());
+        cfg.platform_ref = form.platform.trim().to_string();
+        cfg.system = format!("{}-linux", std::env::consts::ARCH);
+        cfg.board = board;
+        cfg.auto_update = form.auto_update.is_some();
+        cfg.save(&state.paths)?;
+        Ok(cfg)
+    })();
+    let redirect =
+        |key: &str, msg: &str| Redirect::to(&format!("/system?{key}={}", urlencoding::encode(msg)));
+    match result {
+        Ok(cfg) => redirect(
+            "ok",
+            &format!(
+                "Channel bound — {} tracking {} ({})",
+                cfg.host_id,
+                short_ref(&cfg.platform_ref),
+                cfg.board.as_deref().unwrap_or("generic")
+            ),
+        ),
+        Err(e) => redirect("err", &format!("{e:#}")),
+    }
 }
 
 pub async fn system_check(State(state): State<SharedState>) -> Redirect {
