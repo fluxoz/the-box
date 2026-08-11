@@ -54,22 +54,38 @@ async fn fleet(State(state): State<SharedState>) -> Result<Json<FleetView>, AppE
 
 #[derive(Serialize)]
 struct TemplateView {
-    id: &'static str,
-    title: &'static str,
-    description: &'static str,
+    id: String,
+    title: String,
+    description: String,
+    /// "primitive" or "preset"; presets also carry the primitive they configure.
+    kind: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    base: Option<String>,
 }
 
-async fn list_templates() -> Json<Vec<TemplateView>> {
-    Json(
-        templates::all()
-            .iter()
-            .map(|t| TemplateView {
-                id: t.id(),
-                title: t.title(),
-                description: t.description(),
-            })
-            .collect(),
-    )
+/// Everything deployable: the primitives plus the box's catalog presets — the
+/// same set the dashboard chooser and MCP `list_templates` show.
+async fn list_templates(State(state): State<SharedState>) -> Json<Vec<TemplateView>> {
+    let mut views: Vec<TemplateView> = templates::all()
+        .iter()
+        .map(|t| TemplateView {
+            id: t.id().into(),
+            title: t.title().into(),
+            description: t.description().into(),
+            kind: "primitive",
+            base: None,
+        })
+        .collect();
+    for entry in crate::catalog::for_data_dir(&state.paths.data_dir).values() {
+        views.push(TemplateView {
+            id: entry.id.clone(),
+            title: entry.title.clone(),
+            description: entry.description.clone(),
+            kind: "preset",
+            base: Some(entry.base.clone()),
+        });
+    }
+    Json(views)
 }
 
 async fn list_history(
@@ -143,6 +159,16 @@ async fn list_services(
 #[derive(Deserialize)]
 struct DeployBody {
     name: String,
+    /// Template or catalog-preset id. Absent → static-site (the historical
+    /// shape of this endpoint, kept for existing clients).
+    #[serde(default)]
+    template: Option<String>,
+    /// Template params, passed through to the same central deploy an agent's
+    /// MCP `deploy` uses (validation, ports, secret encryption included).
+    #[serde(default)]
+    params: Option<serde_json::Value>,
+    #[serde(default)]
+    port: Option<u16>,
     #[serde(default)]
     domain: Option<String>,
     #[serde(default)]
@@ -164,13 +190,25 @@ async fn create_service(
     State(state): State<SharedState>,
     Json(body): Json<DeployBody>,
 ) -> Result<Json<DeployResult>, AppError> {
-    let request = ops::DeployRequest::static_site(
-        body.name.trim().to_string(),
-        body.index_html,
-        body.source_path,
-        body.domain,
-        body.public,
-    );
+    let request = match body.template {
+        // Any template or catalog preset, same as MCP deploy.
+        Some(template) => ops::DeployRequest {
+            name: body.name.trim().to_string(),
+            template,
+            params: body.params.unwrap_or_else(|| serde_json::json!({})),
+            domain: body.domain,
+            public: body.public,
+            port: body.port,
+        },
+        // Historical shape: no template → a static site.
+        None => ops::DeployRequest::static_site(
+            body.name.trim().to_string(),
+            body.index_html,
+            body.source_path,
+            body.domain,
+            body.public,
+        ),
+    };
     let name = request.name.clone();
     let info = {
         let state = state.clone();
