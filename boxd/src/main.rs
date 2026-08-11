@@ -94,6 +94,13 @@ enum Command {
         #[command(subcommand)]
         action: ConfigCmd,
     },
+    /// Operational secret store (internal): decrypt-on-demand for tools like
+    /// restic. Not for interactive use.
+    #[command(hide = true)]
+    Secret {
+        #[command(subcommand)]
+        action: SecretCmd,
+    },
     /// Recreate this box from a config repo — the second half of
     /// destroy-and-recreate. Clones the config + encrypted secrets, re-keys each
     /// secret to this box with your operator key, then builds and switches.
@@ -198,6 +205,13 @@ enum AuthCmd {
         #[arg(long, default_value = "enrollment")]
         label: String,
     },
+}
+
+#[derive(Subcommand)]
+enum SecretCmd {
+    /// Print a decrypted operational secret to stdout (used by
+    /// RESTIC_PASSWORD_COMMAND). Prints nothing if the secret is unset.
+    Print { name: String },
 }
 
 #[derive(Subcommand)]
@@ -444,6 +458,14 @@ fn main() -> Result<()> {
                     None => println!(
                         "no config remote set — run `boxd config remote <url>` first"
                     ),
+                }
+                Ok(())
+            }
+        },
+        Command::Secret { action } => match action {
+            SecretCmd::Print { name } => {
+                if let Some(value) = boxd::secrets::get(&paths, &name)? {
+                    println!("{value}");
                 }
                 Ok(())
             }
@@ -811,6 +833,8 @@ fn make_builder(choice: BackendArg, paths: &Paths) -> Box<dyn Builder> {
 }
 
 fn run_server(paths: Paths, builder: Box<dyn Builder>, listen: SocketAddr) -> Result<()> {
+    // Move any pre-encryption operational secrets to encryption-at-rest.
+    boxd::secrets::migrate_plaintext(&paths);
     let state = AppState::new(paths, builder);
     state.tunnel.startup();
     let runtime = tokio::runtime::Runtime::new()?;

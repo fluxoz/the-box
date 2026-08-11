@@ -16,9 +16,12 @@ use crate::paths::Paths;
 
 const GITIGNORE: &str = "\
 # boxd: track declarative config + encrypted (.age) secrets only — never
-# plaintext secrets or heavy runtime state.
+# plaintext secrets, the box identity key, or heavy runtime state.
 /secrets/*
 !/secrets/*.age
+!/secrets/op/
+/secrets/op/*
+!/secrets/op/*.age
 /store/
 /profiles/
 /generation-src/
