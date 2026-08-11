@@ -187,7 +187,7 @@ in
         after = [ "network.target" ];
         # boxd shells out to nix (generation builds), cloudflared (BYO tunnel),
         # and avahi-browse + curl (LAN fleet discovery).
-        path = [ pkgs.nix pkgs.cloudflared pkgs.avahi pkgs.curl pkgs.systemd ];
+        path = [ pkgs.nix pkgs.cloudflared pkgs.avahi pkgs.curl pkgs.systemd pkgs.age ];
         environment = {
           # nix (invoked by boxd for generation builds) needs a writable cache
           # under $HOME; the boxd system user's default home is /var/empty.

@@ -11,6 +11,12 @@
   networking.networkmanager.enable = true;
   networking.firewall.allowedTCPPorts = [ 2693 ];
 
+  # Secrets are age-encrypted (agenix) and decrypted at runtime to /run/agenix
+  # with the box's own SSH host key. boxd encrypts each secret to this key plus
+  # the operator's key(s), so config + secrets can live in a git repo the user
+  # owns without ever exposing a plaintext value in git or the Nix store.
+  age.identityPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
+
   # NM must not reset a runtime-assigned hostname from /etc/hostname or DHCP.
   environment.etc."NetworkManager/conf.d/box-hostname.conf".text = ''
     [main]

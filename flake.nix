@@ -27,9 +27,15 @@
     # Mac boots this through Asahi (there is no blow-away Apple-Silicon image;
     # peripheral firmware must be extracted from the target Mac).
     apple-silicon.url = "github:nix-community/nixos-apple-silicon";
+    # age-based secrets, decrypted at runtime to /run/agenix (never in the Nix
+    # store or plaintext in git). The Box encrypts each secret to the box's own
+    # host key plus the operator's key(s), so config + secrets can live in a git
+    # repo the user owns.
+    agenix.url = "github:ryantm/agenix";
+    agenix.inputs.nixpkgs.follows = "nixpkgs";
   };
 
-  outputs = { self, nixpkgs, disko, nixos-raspberrypi, apple-silicon }:
+  outputs = { self, nixpkgs, disko, nixos-raspberrypi, apple-silicon, agenix }:
     let
       systems = [ "x86_64-linux" "aarch64-linux" ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
@@ -370,7 +376,10 @@
       });
 
       nixosModules.default = { pkgs, lib, ... }: {
-        imports = [ ./nix/module.nix ];
+        # module.nix is the boxd service; agenix provides the age.* secret
+        # options every Box uses. Both are part of the universal base so any
+        # composition path (box-os, per-box flakes, the installer) gets them.
+        imports = [ ./nix/module.nix agenix.nixosModules.default ];
         services.the-box.package =
           lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.boxd;
         # So a channel update downloads the prebuilt platform closure from the
