@@ -19,6 +19,14 @@ root="${1:?usage: push-closure.sh <store-path> [cache-url ...]}"
 shift || true
 caches=(https://cache.nixos.org "$@")
 
+# Never realise anything from here: a cache step that triggers a build can cost
+# more than the build it was meant to save (asking for the Pi kernel's `dev`
+# output, which no cache carries, rebuilds the entire kernel).
+if [ ! -e "$root" ]; then
+  echo "not in this store: $root — nothing to push (refusing to build it)"
+  exit 0
+fi
+
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
