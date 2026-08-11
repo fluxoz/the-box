@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::path::PathBuf;
 
 use axum::{
     extract::{Path, Query, State},
@@ -233,45 +232,247 @@ pub async fn index(
     Ok(layout("Services", &flash, body))
 }
 
+/// The template/preset chooser: everything deployable from a browser — the
+/// catalog's presets plus the raw primitives, same set an agent sees over MCP.
 pub async fn new_service(
-    State(_state): State<SharedState>,
+    State(state): State<SharedState>,
     Query(flash): Query<Flash>,
 ) -> Html<String> {
+    let catalog = crate::catalog::for_data_dir(&state.paths.data_dir);
     let body = html! {
-        h2 { "Deploy a static site" }
+        h2 { "Deploy a service" }
         p.muted { "Creates or updates a service, builds a new generation and activates it atomically. Roll back any time from the Generations page." }
-        form.stack method="post" action="/services" {
-            label {
-                "Name"
-                input type="text" name="name" required placeholder="my-site" pattern="[a-z0-9-]+" autofocus;
+        @if !catalog.is_empty() {
+            div.section-head { h3 { "From the catalog" } }
+            section.cards {
+                @for entry in catalog.values() {
+                    a.card href={ "/services/new/" (entry.id) } {
+                        h3 {
+                            @if !entry.icon.is_empty() { (entry.icon) " " }
+                            (entry.title)
+                        }
+                        p.muted { (entry.description) }
+                        @if !entry.category.is_empty() { span.badge { (entry.category) } }
+                    }
+                }
             }
-            label {
-                "Domain " span.muted { "(optional, used when exposing publicly)" }
-                input type="text" name="domain" placeholder="site.example.com";
+        }
+        div.section-head { h3 { "From a primitive" } }
+        section.cards {
+            @for t in crate::templates::all() {
+                a.card href={ "/services/new/" (t.id()) } {
+                    h3 { (t.title()) }
+                    p.muted { (t.description()) }
+                }
             }
-            label {
-                "index.html"
-                textarea name="content" rows="14" spellcheck="false" { (ops::DEFAULT_INDEX) }
-            }
-            label {
-                "…or copy a local directory " span.muted { "(absolute path on the Box; overrides the content above)" }
-                input type="text" name="source_path" placeholder="/home/me/mysite/dist";
-            }
-            button.btn type="submit" { "Deploy" }
         }
     };
     layout("Deploy", &flash, body)
+}
+
+/// Shared form fields every deploy shape offers: exposure identity + overrides.
+fn common_fields(domain_hint: &str) -> Markup {
+    html! {
+        label {
+            "Domain " span.muted { "(optional" @if !domain_hint.is_empty() { "; " (domain_hint) } ")" }
+            input type="text" name="domain" placeholder="app.example.com";
+        }
+        label {
+            input type="checkbox" name="public";
+            " Public — serve on your domain through the tunnel (otherwise LAN-only)"
+        }
+    }
+}
+
+fn env_fields(secret_placeholder: &str) -> Markup {
+    html! {
+        label {
+            "Environment " span.muted { "(one KEY=value per line)" }
+            textarea name="env" rows="3" spellcheck="false" placeholder="TZ=UTC" {}
+        }
+        label {
+            "Secret environment " span.muted { "(one KEY=value per line — encrypted on the Box, never stored in config or git)" }
+            textarea name="secret_env" rows="3" spellcheck="false" placeholder=(secret_placeholder) {}
+        }
+    }
+}
+
+/// The per-template deploy form. `template` is a primitive id or a catalog
+/// preset id — the same names `ops::deploy` accepts, so what the form submits
+/// goes through exactly the central validation an agent's deploy does.
+pub async fn new_service_form(
+    State(state): State<SharedState>,
+    Path(template): Path<String>,
+    Query(flash): Query<Flash>,
+) -> Result<Html<String>, AppError> {
+    let catalog = crate::catalog::for_data_dir(&state.paths.data_dir);
+
+    // A catalog preset: identity + env/secret-env overrides; the preset's
+    // params supply the rest (image, exposure, volumes…).
+    if let Some(entry) = catalog.get(&template) {
+        // Prefill secret keys the preset declares, so the operator can see
+        // exactly what credentials it expects (values are theirs to fill).
+        let secret_keys: Vec<String> = entry
+            .params
+            .get("secret_env")
+            .and_then(|v| v.as_object())
+            .map(|o| o.keys().map(|k| format!("{k}=")).collect())
+            .unwrap_or_default();
+        let defaults = serde_json::to_string_pretty(&entry.params).unwrap_or_default();
+        let body = html! {
+            h2 { "Deploy " (entry.title) }
+            p.muted { (entry.description) }
+            form.stack method="post" action="/services" {
+                input type="hidden" name="template" value=(entry.id);
+                label {
+                    "Name"
+                    input type="text" name="name" required value=(entry.id) pattern="[a-z0-9-]+" autofocus;
+                }
+                (common_fields("for web-facing presets"))
+                label {
+                    "Port " span.muted { "(optional — the platform allocates and validates one)" }
+                    input type="number" name="port" min="1" max="65535" placeholder="auto";
+                }
+                (env_fields(&secret_keys.join("\n")))
+                details {
+                    summary.muted { "Preset defaults (merged under your values)" }
+                    pre { (defaults) }
+                }
+                button.btn type="submit" { "Deploy" }
+            }
+        };
+        return Ok(layout("Deploy", &flash, body));
+    }
+
+    let body = match template.as_str() {
+        "static-site" => html! {
+            h2 { "Deploy a static site" }
+            form.stack method="post" action="/services" {
+                input type="hidden" name="template" value="static-site";
+                label {
+                    "Name"
+                    input type="text" name="name" required placeholder="my-site" pattern="[a-z0-9-]+" autofocus;
+                }
+                (common_fields(""))
+                label {
+                    "index.html"
+                    textarea name="content" rows="14" spellcheck="false" { (ops::DEFAULT_INDEX) }
+                }
+                label {
+                    "…or copy a local directory " span.muted { "(absolute path on the Box; overrides the content above)" }
+                    input type="text" name="source_path" placeholder="/home/me/mysite/dist";
+                }
+                button.btn type="submit" { "Deploy" }
+            }
+        },
+        "container" => html! {
+            h2 { "Deploy a container" }
+            p.muted { "Any OCI/Docker image. The platform runs it, wires its port, and routes traffic per the exposure you pick." }
+            form.stack method="post" action="/services" {
+                input type="hidden" name="template" value="container";
+                label {
+                    "Name"
+                    input type="text" name="name" required placeholder="my-app" pattern="[a-z0-9-]+" autofocus;
+                }
+                label {
+                    "Image"
+                    input type="text" name="image" required placeholder="nginx:1.27";
+                }
+                label {
+                    "Container port " span.muted { "(the port the app listens on inside the container)" }
+                    input type="number" name="container_port" min="1" max="65535" placeholder="80";
+                }
+                label {
+                    "Exposure"
+                    select name="expose" {
+                        option value="proxied" selected { "Proxied — behind the platform web proxy (web apps)" }
+                        option value="internal" { "Internal — loopback only (databases, caches)" }
+                        option value="exposed" { "Exposed — LAN-reachable on its own port" }
+                    }
+                }
+                label {
+                    "Port " span.muted { "(optional — the platform allocates and validates one)" }
+                    input type="number" name="port" min="1" max="65535" placeholder="auto";
+                }
+                (common_fields("proxied containers only"))
+                label {
+                    "Command " span.muted { "(optional override, whitespace-separated)" }
+                    input type="text" name="cmd" placeholder="redis-server --appendonly yes";
+                }
+                (env_fields("DB_PASSWORD=…"))
+                label {
+                    "Volumes " span.muted { "(one host:container per line; host paths persist across updates)" }
+                    textarea name="volumes" rows="2" spellcheck="false" placeholder="/var/lib/box/my-app:/data" {}
+                }
+                button.btn type="submit" { "Deploy" }
+            }
+        },
+        "reverse-proxied-app" => html! {
+            h2 { "Deploy a reverse-proxied app" }
+            p.muted { "A process the platform supervises and serves behind its web proxy on an allocated port ($PORT)." }
+            form.stack method="post" action="/services" {
+                input type="hidden" name="template" value="reverse-proxied-app";
+                label {
+                    "Name"
+                    input type="text" name="name" required placeholder="my-app" pattern="[a-z0-9-]+" autofocus;
+                }
+                label {
+                    "Command " span.muted { "(started with $PORT set to the allocated port)" }
+                    input type="text" name="command" required placeholder="/usr/bin/my-app --listen 127.0.0.1:$PORT";
+                }
+                label {
+                    "Port " span.muted { "(optional — the platform allocates and validates one)" }
+                    input type="number" name="port" min="1" max="65535" placeholder="auto";
+                }
+                (common_fields(""))
+                button.btn type="submit" { "Deploy" }
+            }
+        },
+        _ => html! {
+            h2 { "Unknown template" }
+            p { "No template or catalog preset named " code { (template) } "." }
+            p { a href="/services/new" { "← Back to the chooser" } }
+        },
+    };
+    Ok(layout("Deploy", &flash, body))
 }
 
 #[derive(Deserialize)]
 pub struct NewServiceForm {
     name: String,
     #[serde(default)]
+    template: Option<String>,
+    #[serde(default)]
     domain: Option<String>,
+    /// HTML checkbox: present ("on") when checked, absent otherwise.
+    #[serde(default)]
+    public: Option<String>,
+    #[serde(default)]
+    port: Option<String>,
+    // static-site
     #[serde(default)]
     content: Option<String>,
     #[serde(default)]
     source_path: Option<String>,
+    // container
+    #[serde(default)]
+    image: Option<String>,
+    #[serde(default)]
+    container_port: Option<String>,
+    #[serde(default)]
+    expose: Option<String>,
+    #[serde(default)]
+    cmd: Option<String>,
+    #[serde(default)]
+    volumes: Option<String>,
+    // reverse-proxied-app
+    #[serde(default)]
+    command: Option<String>,
+    // shared
+    #[serde(default)]
+    env: Option<String>,
+    #[serde(default)]
+    secret_env: Option<String>,
 }
 
 fn none_if_empty(value: Option<String>) -> Option<String> {
@@ -280,17 +481,104 @@ fn none_if_empty(value: Option<String>) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+/// `KEY=value` lines → a JSON object (blank lines and `#` comments ignored).
+fn parse_env_lines(text: &str) -> serde_json::Map<String, serde_json::Value> {
+    text.lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .filter_map(|l| {
+            l.split_once('=')
+                .map(|(k, v)| (k.trim().to_string(), serde_json::Value::from(v.trim())))
+        })
+        .filter(|(k, _)| !k.is_empty())
+        .collect()
+}
+
+/// Turn the submitted form into the same `DeployRequest` an agent's MCP deploy
+/// produces — all validation (template params, ports, domains, secret
+/// encryption) stays central in `ops::deploy`.
+fn deploy_request_from_form(form: NewServiceForm) -> Result<ops::DeployRequest, String> {
+    let template = none_if_empty(form.template).unwrap_or_else(|| "static-site".into());
+
+    let port = match none_if_empty(form.port) {
+        None => None,
+        Some(p) => Some(
+            p.parse::<u16>()
+                .map_err(|_| format!("invalid port {p:?}"))?,
+        ),
+    };
+
+    let mut params = serde_json::Map::new();
+    if let Some(content) = none_if_empty(form.content) {
+        params.insert("index_html".into(), content.into());
+    }
+    if let Some(path) = none_if_empty(form.source_path) {
+        params.insert("source_path".into(), path.into());
+    }
+    if let Some(image) = none_if_empty(form.image) {
+        params.insert("image".into(), image.into());
+    }
+    if let Some(cp) = none_if_empty(form.container_port) {
+        let cp: u64 = cp
+            .parse()
+            .map_err(|_| format!("invalid container port {cp:?}"))?;
+        params.insert("container_port".into(), cp.into());
+    }
+    if let Some(expose) = none_if_empty(form.expose) {
+        params.insert("expose".into(), expose.into());
+    }
+    if let Some(cmd) = none_if_empty(form.cmd) {
+        let argv: Vec<serde_json::Value> =
+            cmd.split_whitespace().map(serde_json::Value::from).collect();
+        params.insert("cmd".into(), argv.into());
+    }
+    if let Some(volumes) = none_if_empty(form.volumes) {
+        let vols: Vec<serde_json::Value> = volumes
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(serde_json::Value::from)
+            .collect();
+        params.insert("volumes".into(), vols.into());
+    }
+    if let Some(command) = none_if_empty(form.command) {
+        params.insert("command".into(), command.into());
+    }
+    if let Some(env) = none_if_empty(form.env) {
+        let map = parse_env_lines(&env);
+        if !map.is_empty() {
+            params.insert("env".into(), map.into());
+        }
+    }
+    if let Some(secret) = none_if_empty(form.secret_env) {
+        // Entries left as bare "KEY=" prefills are not credentials; drop them.
+        let map: serde_json::Map<_, _> = parse_env_lines(&secret)
+            .into_iter()
+            .filter(|(_, v)| v.as_str().is_some_and(|s| !s.is_empty()))
+            .collect();
+        if !map.is_empty() {
+            params.insert("secret_env".into(), map.into());
+        }
+    }
+
+    Ok(ops::DeployRequest {
+        name: form.name.trim().to_string(),
+        template,
+        params: serde_json::Value::Object(params),
+        domain: none_if_empty(form.domain),
+        public: form.public.is_some(),
+        port,
+    })
+}
+
 pub async fn create_service(
     State(state): State<SharedState>,
     Form(form): Form<NewServiceForm>,
 ) -> Redirect {
-    let request = ops::DeployRequest::static_site(
-        form.name.trim().to_string(),
-        none_if_empty(form.content),
-        none_if_empty(form.source_path).map(PathBuf::from),
-        none_if_empty(form.domain),
-        false,
-    );
+    let request = match deploy_request_from_form(form) {
+        Ok(r) => r,
+        Err(msg) => return err_redirect(&anyhow::anyhow!(msg)),
+    };
     let name = request.name.clone();
     let result = {
         let state = state.clone();

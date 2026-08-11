@@ -47,6 +47,7 @@ pub fn router(state: SharedState) -> Router {
     Router::new()
         .route("/", get(pages::index))
         .route("/services/new", get(pages::new_service))
+        .route("/services/new/{template}", get(pages::new_service_form))
         .route("/services", post(pages::create_service))
         .route("/services/{name}/delete", post(pages::delete_service))
         .route("/generations", get(pages::generations))
