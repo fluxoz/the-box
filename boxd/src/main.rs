@@ -58,7 +58,7 @@ enum Command {
         #[arg(long)]
         host_id: String,
         /// Platform flake ref for the `the-box` input (the update channel)
-        #[arg(long, default_value = "github:fluxoz/the-box")]
+        #[arg(long, default_value = "github:fluxoz/the-box/release")]
         platform: String,
         /// Nix system double
         #[arg(long, default_value = "x86_64-linux")]
@@ -76,7 +76,7 @@ enum Command {
     OsSwitch {
         #[arg(long)]
         host_id: String,
-        #[arg(long, default_value = "github:fluxoz/the-box")]
+        #[arg(long, default_value = "github:fluxoz/the-box/release")]
         platform: String,
         #[arg(long, default_value = "x86_64-linux")]
         system: String,
@@ -327,7 +327,7 @@ enum ChannelCmd {
     Set {
         #[arg(long)]
         host_id: String,
-        #[arg(long, default_value = "github:fluxoz/the-box")]
+        #[arg(long, default_value = "github:fluxoz/the-box/release")]
         platform: String,
         #[arg(long, default_value = "x86_64-linux")]
         system: String,
