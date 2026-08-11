@@ -1,4 +1,4 @@
-// The Box Configurator — clock + theme toggle (matches the pre-install configurator).
+// The Box Console — clock + theme toggle (matches the pre-install configurator).
 (function () {
   "use strict";
   var root = document.documentElement;
