@@ -196,15 +196,48 @@ jobs:
             extra-substituters = https://nixos-raspberrypi.cachix.org https://fluxoz.cachix.org
             extra-trusted-public-keys = nixos-raspberrypi.cachix.org-1:4iMO9LXa8BqhU+Rpg6LQKiGa2lsNh/j2oiYLNOQ5sPI= fluxoz.cachix.org-1:yzuO7pZpCoHEIT6PQiYJ1eupby/rH3Ls3Q18+VA0Krc=
       - name: Build + compress the pi${{ matrix.model }} image
+        id: build
         run: |
           set -euo pipefail
           out=$(nix build ".#packages.aarch64-linux.pi${{ matrix.model }}-image" --no-link --print-out-paths)
+          echo "out=$out" >> "$GITHUB_OUTPUT"
           img=$(echo "$out"/sd-image/*.img)
           # .xz is the format Raspberry Pi Imager and `dd` users expect; the
           # image is mostly empty so it shrinks a lot.
           xz -T0 -6 -c "$img" > "thebox-pi${{ matrix.model }}.img.xz"
           sha256sum "thebox-pi${{ matrix.model }}.img.xz" > "thebox-pi${{ matrix.model }}.img.xz.sha256"
           ls -la thebox-pi${{ matrix.model }}.img.xz*
+
+      # Push this model's image closure to fluxoz so the NEXT release fetches it
+      # instead of recompiling. Pi 3/4 share a bcm2711 kernel whose exact
+      # derivation (a regenerated kernel config) is on no public cache, so it
+      # recompiles (~10+ min) every release; Pi 5's bcm2712 kernel is already
+      # cached upstream, which is why Pi 5 finishes ~2x faster. We only push
+      # paths not already on the public caches, so fluxoz stays lean (the
+      # compiled kernel + our own bits). Skips cleanly without a token; a failure
+      # here must never fail the release.
+      - name: Cache the pi${{ matrix.model }} closure (fluxoz)
+        continue-on-error: true
+        env:
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CACHIX_AUTH_TOKEN:-}" ]; then
+            echo "CACHIX_AUTH_TOKEN not set — skipping pi${{ matrix.model }} cache push (next release recompiles the kernel)."
+            exit 0
+          fi
+          nix profile install nixpkgs#cachix
+          cachix authtoken "$CACHIX_AUTH_TOKEN"
+          nix-store -qR "${{ steps.build.outputs.out }}" | sort -u > /tmp/closure
+          : > /tmp/have
+          for cache in https://cache.nixos.org https://nixos-raspberrypi.cachix.org; do
+            while read -r p; do
+              nix path-info --store "$cache" "$p" >/dev/null 2>&1 && echo "$p" >> /tmp/have
+            done < /tmp/closure
+          done
+          comm -23 /tmp/closure <(sort -u /tmp/have) | cachix push fluxoz
+          echo "pushed $(comm -23 /tmp/closure <(sort -u /tmp/have) | wc -l) pi${{ matrix.model }}-specific paths (kernel + our bits)"
+
       - name: Attach the pi${{ matrix.model }} image to the Release
         uses: softprops/action-gh-release@v2
         with:
