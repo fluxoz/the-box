@@ -54,6 +54,8 @@ pub fn router(state: SharedState) -> Router {
         .route("/generations/{number}/rollback", post(pages::rollback))
         .route("/system", get(pages::system))
         .route("/system/channel", post(pages::system_set_channel))
+        .route("/system/cloud", post(pages::cloud_enroll))
+        .route("/system/cloud/provision", post(pages::cloud_provision))
         .route("/system/check", post(pages::system_check))
         .route("/system/update", post(pages::system_update))
         .route("/fleet", get(pages::fleet))
@@ -71,6 +73,8 @@ pub fn router(state: SharedState) -> Router {
         .route("/backup/config-push", post(pages::push_config_now))
         .route("/recreate", get(pages::recreate_page).post(pages::recreate_run))
         .route("/network", get(pages::network))
+        .route("/network/connect", post(pages::connect_enroll))
+        .route("/network/connect/down", post(pages::connect_down))
         .route("/network/cloudflare", post(pages::configure_cloudflare))
         .route(
             "/network/cloudflare/disable",
