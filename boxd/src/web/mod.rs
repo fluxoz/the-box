@@ -69,6 +69,7 @@ pub fn router(state: SharedState) -> Router {
         .route("/backup/restore", post(pages::restore_backup))
         .route("/backup/config-remote", post(pages::set_config_remote))
         .route("/backup/config-push", post(pages::push_config_now))
+        .route("/recreate", get(pages::recreate_page).post(pages::recreate_run))
         .route("/network", get(pages::network))
         .route("/network/cloudflare", post(pages::configure_cloudflare))
         .route(

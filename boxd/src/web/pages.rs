@@ -963,8 +963,8 @@ pub async fn backup(State(state): State<SharedState>, Query(flash): Query<Flash>
             }
             p.muted {
                 "Your declarative config and encrypted secrets, pushed to a git repo you own "
-                "(GitHub, Gitea, anywhere). With it, a lost or wiped Box is recreated with "
-                code { "boxd restore <repo-url>" }
+                "(GitHub, Gitea, anywhere). With it, a lost or wiped Box is recreated from "
+                a href="/recreate" { "Recreate" }
                 " — config, services and secrets included. Plaintext never leaves the Box."
             }
             @match &remote {
@@ -994,6 +994,152 @@ pub async fn backup(State(state): State<SharedState>, Query(flash): Query<Flash>
         }
     };
     layout("Backup", &flash, body)
+}
+
+/// Whether it is safe to accept a private key over THIS connection. The
+/// operator identity is the crown jewel of the whole secrets model, and the
+/// console is plain HTTP on the LAN — so the paste form is offered only on a
+/// loopback connection (the on-box browser or an SSH port-forward) or through
+/// the TLS-terminated tunnel. Everywhere else we point at the CLI instead of
+/// inviting someone to put their key on the wire in the clear.
+fn key_entry_is_safe(peer: std::net::SocketAddr, headers: &HeaderMap) -> bool {
+    crate::auth::is_trusted_local(peer.ip().is_loopback(), headers)
+        || crate::auth::is_proxied(headers)
+}
+
+// Named "recreate", not "restore": the Backup page already restores FILES from
+// a snapshot. This rebuilds the whole Box from its config repo. Two different
+// operations should not share one word in the UI.
+pub async fn recreate_page(
+    State(state): State<SharedState>,
+    axum::extract::ConnectInfo(peer): axum::extract::ConnectInfo<std::net::SocketAddr>,
+    headers: HeaderMap,
+    Query(flash): Query<Flash>,
+) -> Html<String> {
+    let remote = crate::history::remote(&state.paths);
+    let safe = key_entry_is_safe(peer, &headers);
+    let services = BoxConfig::load(&state.paths)
+        .map(|c| c.services.len())
+        .unwrap_or(0);
+
+    let body = html! {
+        h2 { "Restore this Box" }
+        p.muted {
+            "Rebuild this Box from a config repo: its services, its declarative "
+            "config, and its encrypted secrets, which are re-keyed to this Box as "
+            "part of the restore. This is the second half of destroy-and-recreate "
+            "— the machine that made the backup does not have to be the machine "
+            "that comes back."
+        }
+
+        @if services > 0 {
+            div.flash.err {
+                "This Box already runs " (services) " service"
+                @if services != 1 { "s" }
+                ". Restoring REPLACES its config with the repo's."
+            }
+        }
+
+        @if !safe {
+            div.empty {
+                p { strong { "Restore is not offered over this connection." } }
+                p.muted {
+                    "It needs your operator private key, and this page reached you "
+                    "over plain HTTP on the local network, where the key would "
+                    "travel in the clear. Use a connection that protects it:"
+                }
+                ul {
+                    li { "SSH to the Box and run " code { "boxd restore <repo-url> --identity <key>" } }
+                    li { "or forward the console over SSH: " code { "ssh -L 2693:localhost:2693 <box>" } ", then open " code { "http://localhost:2693/recreate" } }
+                    li { "or reach the console through your tunnel, which is encrypted end to end" }
+                }
+            }
+        } @else {
+            form.stack method="post" action="/recreate" {
+                label {
+                    "Config repo URL"
+                    @match &remote {
+                        Some(u) => input type="text" name="repo_url" required value=(u);,
+                        None => input type="text" name="repo_url" required placeholder="git@github.com:you/box-config.git";,
+                    }
+                }
+                label {
+                    "Operator private key " span.muted { "(the SSH or age key that can decrypt this repo's secrets)" }
+                    textarea name="identity" rows="6" required spellcheck="false"
+                        placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" {}
+                }
+                p.muted {
+                    "The key is written to memory-backed storage for the length of the "
+                    "restore, used to re-encrypt each secret to this Box's own host key, "
+                    "then overwritten and deleted. It is never written to the config, "
+                    "the repo, or the Nix store."
+                }
+                label {
+                    input type="checkbox" name="confirm" required;
+                    " I understand this replaces this Box's configuration with the repo's."
+                }
+                button.btn type="submit" { "Restore this Box" }
+            }
+        }
+    };
+    layout("Recreate", &flash, body)
+}
+
+#[derive(Deserialize)]
+pub struct RecreateForm {
+    repo_url: String,
+    identity: String,
+    #[serde(default)]
+    confirm: Option<String>,
+}
+
+pub async fn recreate_run(
+    State(state): State<SharedState>,
+    axum::extract::ConnectInfo(peer): axum::extract::ConnectInfo<std::net::SocketAddr>,
+    headers: HeaderMap,
+    Form(form): Form<RecreateForm>,
+) -> Redirect {
+    let redirect =
+        |key: &str, msg: &str| Redirect::to(&format!("/recreate?{key}={}", urlencoding::encode(msg)));
+
+    // Enforced server-side too: the form is merely hidden on an unsafe
+    // connection, and a hidden control is not a security boundary.
+    if !key_entry_is_safe(peer, &headers) {
+        return redirect(
+            "err",
+            "Restore needs your operator key and this connection is not encrypted. Use the CLI over SSH, or forward the console over SSH.",
+        );
+    }
+    if form.confirm.is_none() {
+        return redirect("err", "Confirm the replacement before restoring");
+    }
+    let repo_url = form.repo_url.trim().to_string();
+    let identity = form.identity.trim().to_string();
+    if repo_url.is_empty() || identity.is_empty() {
+        return redirect("err", "A repo URL and an operator key are both required");
+    }
+
+    let result = {
+        let state = state.clone();
+        let repo = repo_url.clone();
+        blocking(move || {
+            let key = crate::util::TransientSecret::new("restore-identity", &identity)?;
+            let _guard = state.apply_lock.lock().unwrap();
+            ops::restore(&state.paths, state.builder.as_ref(), &repo, key.path())
+            // `key` drops here: overwritten and unlinked, however this returned.
+        })
+        .await
+    };
+    match result {
+        Ok(info) => Redirect::to(&format!(
+            "/?ok={}",
+            urlencoding::encode(&format!(
+                "Restored from {repo_url} — now at generation #{}",
+                info.number
+            ))
+        )),
+        Err(err) => redirect("err", &format!("{err:#}")),
+    }
 }
 
 #[derive(Deserialize)]

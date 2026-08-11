@@ -1,7 +1,59 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+
+/// A secret that exists as a file only while a command needs it — the operator
+/// identity a restore re-keys with, for instance, which arrives in a request
+/// body and must not be persisted.
+///
+/// Prefers the service's `RuntimeDirectory` (a 0700 tmpfs), so the bytes never
+/// reach a disk; off-box it falls back to the system temp dir. The file is
+/// 0600, overwritten and unlinked on drop, and deliberately never placed under
+/// the data dir — that is a git repo.
+pub struct TransientSecret {
+    path: PathBuf,
+}
+
+impl TransientSecret {
+    pub fn new(name: &str, contents: &str) -> Result<Self> {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+
+        let runtime = Path::new("/run/boxd");
+        let dir = if runtime.is_dir() {
+            runtime.to_path_buf()
+        } else {
+            std::env::temp_dir()
+        };
+        let path = dir.join(format!("{name}-{}", std::process::id()));
+        let _ = fs::remove_file(&path);
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&path)
+            .with_context(|| format!("creating {}", path.display()))?;
+        file.write_all(contents.as_bytes())?;
+        file.flush()?;
+        Ok(Self { path })
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for TransientSecret {
+    fn drop(&mut self) {
+        // Overwrite before unlinking: on tmpfs the pages are freed either way,
+        // but the off-box fallback may be a real disk.
+        if let Ok(meta) = fs::metadata(&self.path) {
+            let _ = fs::write(&self.path, vec![0u8; meta.len() as usize]);
+        }
+        let _ = fs::remove_file(&self.path);
+    }
+}
 
 /// Give `target` the same owner as `reference`. Best-effort: a no-op when we
 /// already own it or lack privilege. Used so files created by an operator
