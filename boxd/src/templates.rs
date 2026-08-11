@@ -331,6 +331,13 @@ impl Template for Container {
             .filter(|a| !a.is_empty())
             .map(|a| format!("\n    cmd = {};", nix_list(a)))
             .unwrap_or_default();
+        // A path literal (unquoted) injected by nixgen when the service has an
+        // encrypted env file next to its module. The name is validated, so safe.
+        let secret_env = params
+            .get("secret_env_file")
+            .and_then(Value::as_str)
+            .map(|p| format!("\n    secretEnvFile = {p};"))
+            .unwrap_or_default();
         let env = params
             .get("env")
             .and_then(Value::as_object)
@@ -348,7 +355,7 @@ impl Template for Container {
              {{ ... }}:\n\
              {{\n  services.the-box.containers.\"{name}\" = {{\n    \
              image = \"{image}\";\n    port = {host_port};\n    \
-             containerPort = {container_port};\n    mode = \"{mode}\";{domain}{cmd}{env}{volumes}\n  }};\n}}\n"
+             containerPort = {container_port};\n    mode = \"{mode}\";{domain}{cmd}{secret_env}{env}{volumes}\n  }};\n}}\n"
         )
     }
 

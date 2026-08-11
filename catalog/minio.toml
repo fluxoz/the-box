@@ -12,6 +12,8 @@ expose = "proxied"
 volumes = ["/var/lib/box/minio:/data"]
 cmd = ["server", "/data", "--console-address", ":9001"]
 
-[params.env]
+# Credentials go through the encrypted secret env (age), never plaintext config.
+# Override these at deploy; the values you set are what get encrypted.
+[params.secret_env]
 MINIO_ROOT_USER = "boxadmin"
 MINIO_ROOT_PASSWORD = "change-me-please"

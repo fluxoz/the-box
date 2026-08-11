@@ -118,6 +118,15 @@ in
             default = [ ];
             description = "Command/args to run in the container (overrides the image default).";
           };
+          secretEnvFile = lib.mkOption {
+            type = lib.types.nullOr lib.types.path;
+            default = null;
+            description = ''
+              An age-encrypted (.age) env file of secret KEY=value lines. agenix
+              decrypts it at runtime to /run/agenix and the container reads it,
+              so secret values never enter box.toml or the Nix store.
+            '';
+          };
           domain = lib.mkOption {
             type = lib.types.nullOr lib.types.str;
             default = null;
@@ -369,19 +378,29 @@ in
         vals = lib.attrValues cfg.containers;
         anyProxied = lib.any (c: c.mode == "proxied") vals;
         exposedPorts = map (c: c.port) (lib.filter (c: c.mode == "exposed") vals);
+        secretName = name: "box-container-${name}-env";
       in
       {
         virtualisation.podman.enable = true;
         virtualisation.oci-containers.backend = "podman";
-        virtualisation.oci-containers.containers = lib.mapAttrs (_: c: {
+        virtualisation.oci-containers.containers = lib.mapAttrs (name: c: {
           inherit (c) image environment volumes cmd;
           imageFile = lib.mkIf (c.imageFile != null) c.imageFile;
+          # Secret env comes from the agenix-decrypted file, never box.toml.
+          environmentFiles =
+            lib.optional (c.secretEnvFile != null) config.age.secrets.${secretName name}.path;
           # proxied/internal stay on loopback (nginx is the only front door);
           # exposed binds all interfaces so the opened firewall port reaches it.
           ports = [
             "${lib.optionalString (c.mode != "exposed") "127.0.0.1:"}${toString c.port}:${toString c.containerPort}"
           ];
         }) cfg.containers;
+
+        # Each container's secret env file is an agenix secret, decrypted at
+        # runtime to /run/agenix (root, 0400) where the container service reads it.
+        age.secrets = lib.mapAttrs'
+          (name: c: lib.nameValuePair (secretName name) { file = c.secretEnvFile; })
+          (lib.filterAttrs (_: c: c.secretEnvFile != null) cfg.containers);
 
         # Only proxied containers get an nginx vhost.
         services.nginx = lib.mkIf anyProxied {

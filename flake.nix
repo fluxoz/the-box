@@ -360,6 +360,10 @@
         inherit self nixpkgs;
         system = "x86_64-linux";
       };
+      checks.x86_64-linux.secret-env = import ./nix/tests/secret-env.nix {
+        inherit self nixpkgs;
+        system = "x86_64-linux";
+      };
 
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {

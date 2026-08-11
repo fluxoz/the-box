@@ -85,6 +85,24 @@ pub fn write_gensrc(paths: &Paths, config: &BoxConfig) -> Result<PathBuf> {
                     obj.insert("port".into(), serde_json::Value::from(port));
                 }
             }
+            // If the service has an encrypted env file, ship it next to its
+            // module and point the module at it (a relative path literal).
+            let age_src = paths
+                .data_dir
+                .join("secrets")
+                .join(format!("{}-env.age", service.name));
+            if age_src.exists() {
+                fs::copy(
+                    &age_src,
+                    modules_dir.join(format!("{}-env.age", service.name)),
+                )?;
+                if let Some(obj) = params.as_object_mut() {
+                    obj.insert(
+                        "secret_env_file".into(),
+                        serde_json::Value::String(format!("./{}-env.age", service.name)),
+                    );
+                }
+            }
             fs::write(
                 modules_dir.join(format!("{}.nix", service.name)),
                 t.nix_module(&service.name, &params),
@@ -142,5 +160,37 @@ mod tests {
         let flake = render_flake(&config);
         assert!(flake.contains("cp -r ${./services/blog/www}"));
         assert!(flake.contains("flake:nixpkgs"));
+    }
+
+    #[test]
+    fn secret_env_file_is_shipped_and_referenced() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let paths = crate::paths::Paths::new(tmp.path().to_path_buf());
+        paths.ensure().unwrap();
+        // A pre-existing encrypted env file for service "web".
+        let secrets = paths.data_dir.join("secrets");
+        std::fs::create_dir_all(&secrets).unwrap();
+        std::fs::write(secrets.join("web-env.age"), b"ciphertext").unwrap();
+
+        let config = BoxConfig {
+            services: vec![ServiceConfig {
+                name: "web".into(),
+                template: "container".into(),
+                params: serde_json::json!({ "image": "nginx", "container_port": 80 }),
+                domain: None,
+                public: false,
+                port: Some(8000),
+                created_at: Utc::now(),
+            }],
+            ..Default::default()
+        };
+        let gensrc = write_gensrc(&paths, &config).unwrap();
+        // The .age is shipped next to the module, and the module points at it.
+        assert!(gensrc.join("modules/web-env.age").exists());
+        let module = std::fs::read_to_string(gensrc.join("modules/web.nix")).unwrap();
+        assert!(
+            module.contains("secretEnvFile = ./web-env.age;"),
+            "module should reference the secret env file: {module}"
+        );
     }
 }
