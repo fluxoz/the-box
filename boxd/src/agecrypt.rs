@@ -15,10 +15,13 @@ use anyhow::{bail, Context, Result};
 /// every operator key. age accepts ssh ed25519/rsa public keys as recipients
 /// directly, so these are the keys the box already has.
 pub fn recipients() -> Result<Vec<String>> {
-    recipients_from(
-        Path::new("/etc/ssh/ssh_host_ed25519_key.pub"),
-        Path::new("/etc/box/authorized_keys"),
-    )
+    // Overridable so a test (or an unusual deployment) can point at other key
+    // files; a real box uses the well-known SSH host key + operator keys.
+    let host = std::env::var("BOX_HOST_KEY_PUB")
+        .unwrap_or_else(|_| "/etc/ssh/ssh_host_ed25519_key.pub".into());
+    let auth =
+        std::env::var("BOX_AUTHORIZED_KEYS").unwrap_or_else(|_| "/etc/box/authorized_keys".into());
+    recipients_from(Path::new(&host), Path::new(&auth))
 }
 
 /// Testable core: read the host public key and the operator authorized_keys.
@@ -50,6 +53,8 @@ fn is_ssh_key(line: &str) -> bool {
         "ssh-rsa",
         "sk-ssh-ed25519@openssh.com",
         "ecdsa-sha2-",
+        // Native age recipients are valid too (a box may carry an age key).
+        "age1",
     ]
     .iter()
     .any(|p| line.starts_with(p))
@@ -57,6 +62,11 @@ fn is_ssh_key(line: &str) -> bool {
 
 /// Encrypt `value` to `recipients`, writing the `.age` ciphertext to `out`.
 pub fn encrypt(value: &str, recipients: &[String], out: &Path) -> Result<()> {
+    encrypt_bytes(value.as_bytes(), recipients, out)
+}
+
+/// Encrypt raw bytes (used when re-keying an existing secret).
+pub fn encrypt_bytes(value: &[u8], recipients: &[String], out: &Path) -> Result<()> {
     let mut cmd = Command::new("age");
     for r in recipients {
         cmd.args(["-r", r]);
@@ -65,15 +75,40 @@ pub fn encrypt(value: &str, recipients: &[String], out: &Path) -> Result<()> {
     let mut child = cmd
         .spawn()
         .context("running age (is it installed and on PATH?)")?;
-    child
-        .stdin
-        .take()
-        .context("age stdin")?
-        .write_all(value.as_bytes())?;
+    child.stdin.take().context("age stdin")?.write_all(value)?;
     if !child.wait()?.success() {
         bail!("age encryption failed");
     }
     Ok(())
+}
+
+/// Decrypt a `.age` file with an identity (an SSH or age private key). Used on
+/// restore, where the operator's key decrypts secrets the fresh box can't yet.
+pub fn decrypt(age_file: &Path, identity: &Path) -> Result<Vec<u8>> {
+    let out = Command::new("age")
+        .arg("-d")
+        .arg("-i")
+        .arg(identity)
+        .arg(age_file)
+        .output()
+        .context("running age -d")?;
+    if !out.status.success() {
+        bail!(
+            "age decryption failed for {}: {}",
+            age_file.display(),
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(out.stdout)
+}
+
+/// Re-encrypt a secret to a new recipient set, decrypting with `identity`. On
+/// restore the fresh box isn't a recipient of the cloned secrets, so it re-keys
+/// each one (with the operator's key) to `[new host key + operator]`, after
+/// which it decrypts them unattended forever.
+pub fn rekey(age_file: &Path, identity: &Path, recipients: &[String]) -> Result<()> {
+    let plaintext = decrypt(age_file, identity)?;
+    encrypt_bytes(&plaintext, recipients, age_file)
 }
 
 #[cfg(test)]
@@ -101,5 +136,59 @@ mod tests {
 
         // No keys anywhere is an error, not an empty recipient set.
         assert!(recipients_from(&tmp.path().join("x"), &tmp.path().join("y")).is_err());
+    }
+
+    fn age_available() -> bool {
+        Command::new("age")
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+            && Command::new("age-keygen")
+                .arg("--version")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+    }
+
+    // Generate an age identity; return (identity_path, recipient_string).
+    fn keygen(dir: &Path, name: &str) -> (std::path::PathBuf, String) {
+        let key = dir.join(name);
+        let out = Command::new("age-keygen").arg("-o").arg(&key).output().unwrap();
+        assert!(out.status.success());
+        let pub_out = Command::new("age-keygen").arg("-y").arg(&key).output().unwrap();
+        let recipient = String::from_utf8_lossy(&pub_out.stdout).trim().to_string();
+        (key, recipient)
+    }
+
+    #[test]
+    fn rekey_swaps_the_recipient_set() {
+        if !age_available() {
+            return;
+        }
+        let tmp = TempDir::new().unwrap();
+        let (op_id, op_rcpt) = keygen(tmp.path(), "operator");
+        let (box1_id, box1_rcpt) = keygen(tmp.path(), "box1");
+        let (box2_id, box2_rcpt) = keygen(tmp.path(), "box2");
+
+        // box1 encrypts a secret to [box1 host + operator], as deploy() does.
+        let secret = tmp.path().join("db-env.age");
+        encrypt(
+            "POSTGRES_PASSWORD=hunter2",
+            &[box1_rcpt.clone(), op_rcpt.clone()],
+            &secret,
+        )
+        .unwrap();
+
+        // box2 (fresh, not a recipient) cannot read it yet.
+        assert!(decrypt(&secret, &box2_id).is_err());
+
+        // On restore, box2 re-keys with the operator's key to [box2 host + operator].
+        rekey(&secret, &op_id, &[box2_rcpt.clone(), op_rcpt.clone()]).unwrap();
+
+        // Now box2 decrypts unattended, the operator still can, and the old box can't.
+        assert_eq!(decrypt(&secret, &box2_id).unwrap(), b"POSTGRES_PASSWORD=hunter2");
+        assert_eq!(decrypt(&secret, &op_id).unwrap(), b"POSTGRES_PASSWORD=hunter2");
+        assert!(decrypt(&secret, &box1_id).is_err());
     }
 }

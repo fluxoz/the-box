@@ -304,6 +304,47 @@ pub fn delete_service(paths: &Paths, builder: &dyn Builder, name: &str) -> Resul
     Ok(info)
 }
 
+/// Recreate a box from its config repo — the second half of destroy-and-recreate.
+///
+/// Clones the config + encrypted secrets from `repo_url`, then re-keys every
+/// secret: the cloned `.age` files are readable by the operator (who kept their
+/// key) but not by this fresh box, so we decrypt each with the operator
+/// `identity` and re-encrypt to `[this box's host key + operator]`. After that
+/// the box decrypts them unattended forever, exactly as if it had deployed them
+/// itself. Finally we build and switch to the restored generation.
+pub fn restore(
+    paths: &Paths,
+    builder: &dyn Builder,
+    repo_url: &str,
+    identity: &std::path::Path,
+) -> Result<GenerationInfo> {
+    paths.ensure()?;
+    history::fetch_checkout(paths, repo_url)
+        .with_context(|| format!("cloning config repo {repo_url}"))?;
+
+    let recipients = agecrypt::recipients()?;
+    let secrets_dir = paths.data_dir.join("secrets");
+    if secrets_dir.is_dir() {
+        for entry in fs::read_dir(&secrets_dir)? {
+            let path = entry?.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("age") {
+                agecrypt::rekey(&path, identity, &recipients)
+                    .with_context(|| format!("re-keying secret {}", path.display()))?;
+            }
+        }
+    }
+
+    // Keep pushing future generations back to the same repo.
+    history::set_remote(paths, Some(repo_url))?;
+
+    let info = apply_checked(paths, builder, &default_health)?;
+    history::commit_soft(
+        paths,
+        &format!("generation #{}: restore from {repo_url}", info.number),
+    );
+    Ok(info)
+}
+
 /// Switch to an existing generation and restore the declarative state (config
 /// and sources) that generation was built from, so a later apply starts from
 /// the rolled-back world, not the abandoned one.
