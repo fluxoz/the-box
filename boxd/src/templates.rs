@@ -189,6 +189,7 @@ impl Template for StaticSite {
             if !from.is_dir() {
                 bail!("source_path {} is not a directory", from.display());
             }
+            reject_sensitive_source(&from)?;
             util::copy_dir_recursive(&from, source_dir)?;
         } else {
             let html = params
@@ -285,6 +286,40 @@ impl Template for ReverseProxiedApp {
 /// loopback port is platform-assigned (see [`crate::ports`]); nginx routes the
 /// domain to it. This is the cloud-parity workhorse: any Docker image is a Box
 /// service, on the same port/firewall model as a native app.
+/// Refuse to publish a directory that holds the platform's own secrets.
+///
+/// A static site's source tree is copied into `<data>/sources/<name>/`, which
+/// is committed to the config repo, pushed to the operator's remote, copied
+/// into the world-readable Nix store, and served at `/sites/<name>/` — a path
+/// that needs no credential. Pointing that at `<data>/secrets` would therefore
+/// hand out `boxd-identity.key`, which decrypts every operational secret, to
+/// anyone who can reach the Box. This is the check that stops it; note that
+/// `copy_dir_recursive` no longer follows symlinks out of the tree, so the
+/// directory cannot smuggle one of these in either.
+fn reject_sensitive_source(from: &Path) -> Result<()> {
+    let forbidden = [
+        "/etc", "/proc", "/sys", "/dev", "/run", "/root", "/var/lib", "/nix/var",
+    ];
+    let data_dir = crate::paths::default_data_dir();
+    let is_under = |base: &Path| from == base || from.starts_with(base);
+
+    if is_under(&data_dir) {
+        bail!(
+            "source_path {} is inside the Box's own state directory — that tree is published and would leak its secrets",
+            from.display()
+        );
+    }
+    for f in forbidden {
+        if is_under(Path::new(f)) {
+            bail!(
+                "source_path {} is inside {f}, which holds system or platform state and must not be published",
+                from.display()
+            );
+        }
+    }
+    Ok(())
+}
+
 struct Container;
 
 impl Template for Container {

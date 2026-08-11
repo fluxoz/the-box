@@ -76,7 +76,16 @@ pub fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
         let entry = entry?;
         let from = entry.path();
         let to = dst.join(entry.file_name());
-        if from.is_dir() {
+        // Do NOT follow symlinks. `is_dir()`/`fs::copy` both dereference, so a
+        // link inside an otherwise innocent source tree used to pull arbitrary
+        // files (the Box's own secrets, /etc) into a tree that gets committed,
+        // pushed and served without credentials.
+        let kind = entry.file_type()?;
+        if kind.is_symlink() {
+            tracing::warn!("skipping symlink {} while copying a source tree", from.display());
+            continue;
+        }
+        if kind.is_dir() {
             copy_dir_recursive(&from, &to)?;
         } else {
             fs::copy(&from, &to).with_context(|| format!("copying {}", from.display()))?;

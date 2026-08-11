@@ -242,6 +242,46 @@ pub fn is_proxied(headers: &HeaderMap) -> bool {
         || headers.contains_key("x-forwarded-host")
 }
 
+/// Reject a state-changing request that a browser initiated from another site.
+///
+/// This is the CSRF boundary, and it matters far more here than in a typical
+/// app because [`is_trusted_local`] authorizes a loopback peer with NO
+/// credential at all. Any page in a browser that can reach the console —
+/// one opened on the Box itself, or on a laptop with `ssh -L 2693:...` open,
+/// or via DNS rebinding — could otherwise POST a form cross-origin (a CORS
+/// "simple request", no preflight) and mint a pairing code, repoint the update
+/// channel, or recreate the Box from an attacker's repo. The response is
+/// unreadable to the attacker, but the ACTION still happens.
+///
+/// Browsers always attach `Origin` to a cross-origin POST, so verifying it when
+/// present closes that door while leaving credentialed API/agent clients and
+/// local scripting (which send no `Origin`) working.
+pub fn cross_site_write(method: &str, headers: &HeaderMap) -> bool {
+    let changes_state = matches!(method, "POST" | "PUT" | "PATCH" | "DELETE");
+    if !changes_state {
+        return false;
+    }
+    let host = headers.get("host").and_then(|v| v.to_str().ok());
+    let stated = headers
+        .get("origin")
+        .and_then(|v| v.to_str().ok())
+        .filter(|o| *o != "null")
+        .or_else(|| headers.get("referer").and_then(|v| v.to_str().ok()));
+    let Some(stated) = stated else {
+        return false; // no browser context claimed; a token still gates it
+    };
+    // Compare authorities: scheme://host[:port]/... -> host[:port]
+    let authority = stated
+        .split_once("://")
+        .map(|(_, rest)| rest.split(['/', '?', '#']).next().unwrap_or(""))
+        .unwrap_or("");
+    match host {
+        Some(h) => !authority.eq_ignore_ascii_case(h),
+        // No Host to compare against: treat a stated origin as untrusted.
+        None => true,
+    }
+}
+
 /// Trusted local access = a loopback peer on a direct (non-proxied) connection.
 /// The BYO Cloudflare tunnel also connects from loopback, but cloudflared
 /// forwards proxy headers while direct/SSH-tunnel access does not — so tunnel
