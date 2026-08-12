@@ -127,6 +127,9 @@ impl BoxConfig {
         let body = self.to_toml()?;
         fs::write(&file, format!("{CONFIG_HEADER}{body}"))
             .with_context(|| format!("writing {}", file.display()))?;
+        // An operator running a boxd command as root must not leave a config
+        // the daemon can no longer write.
+        crate::util::chown_like(&paths.data_dir, &file);
         Ok(())
     }
 

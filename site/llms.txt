@@ -132,7 +132,9 @@ Full argument schemas + examples: https://thebox.build/llms-full.txt
   state, not the fact that the call succeeded, and read `url` for where it is
   actually served — it is not `/sites/<name>/` for anything but a static site.
 - To reach a service from the internet, give it a `domain`, set `public`, and
-  point a tunnel at the Box's port 80.
+  point a tunnel at the Box's port 2694 — the public entrance, which serves
+  ONLY published services. Port 80 is the same services for your own network.
+  Without `public` the service is simply not present on that listener.
 - Bare metal with a blank disk has no SSH to hit. See "Bare metal" below.
 
 ## Docs

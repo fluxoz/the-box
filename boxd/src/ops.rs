@@ -677,6 +677,10 @@ pub fn rollback(paths: &Paths, number: u64) -> Result<GenerationInfo> {
             util::copy_dir_recursive(&www, &paths.source_dir(&service.name))?;
         }
     }
+    // A rollback run as root (over SSH, or by the root os-apply unit) would
+    // otherwise leave this tree owned by root, and the next deploy from the
+    // console fails with a bare "Permission denied".
+    util::chown_tree_like(&paths.data_dir, &paths.sources_dir());
     history::commit_soft(
         paths,
         &format!("generation #{}: rollback (restored)", current.number),

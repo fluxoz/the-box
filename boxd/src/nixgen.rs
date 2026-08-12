@@ -57,6 +57,12 @@ pub fn module_params(
         if let Some(port) = service.port {
             obj.insert("port".into(), serde_json::Value::from(port));
         }
+        // Whether the operator published this. It decides which nginx listener
+        // serves it — the one your own network reaches, or the one the tunnel
+        // does — so it has to travel with the service into the OS tier. It used
+        // to stop at the manifest, which is how a service nobody published was
+        // still served to the internet.
+        obj.insert("public".into(), serde_json::Value::Bool(service.public));
     }
 
     let age_src = paths

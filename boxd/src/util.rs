@@ -66,6 +66,28 @@ pub fn chown_like(reference: &Path, target: &Path) {
     }
 }
 
+/// The same, for a whole tree.
+///
+/// An operator running `boxd …` as root over SSH — which the docs tell them to
+/// do — writes files the unprivileged daemon then cannot touch. A rollback run
+/// that way used to leave the config and every service's source tree owned by
+/// root, and the next deploy from the console failed with a bare "Permission
+/// denied" that named nothing.
+pub fn chown_tree_like(reference: &Path, target: &Path) {
+    chown_like(reference, target);
+    let Ok(entries) = fs::read_dir(target) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            chown_tree_like(reference, &path);
+        } else {
+            chown_like(reference, &path);
+        }
+    }
+}
+
 /// Recursively copy a directory tree. Follows symlinks (their targets are
 /// copied as regular files), which is what we want when snapshotting user
 /// sources or materializing content out of the Nix store.

@@ -31,11 +31,19 @@ pkgs.testers.runNixOSTest {
     virtualisation.memorySize = 3072;
     virtualisation.diskSize = 8192;
 
-    # The vhost an OS-tier apply would generate for the site deployed below.
-    # Declared here because building a whole system inside the VM needs the
-    # platform flake from the network; what matters for this test is that the
-    # vhost's root is the live generation, which is the platform's default.
-    services.the-box.sites.blog.domain = "blog.example.com";
+    # The vhosts an OS-tier apply would generate for the services deployed
+    # below. Declared here because building a whole system inside the VM needs
+    # the platform flake from the network; what matters for this test is that
+    # the vhost's root is the live generation (the platform's default) and that
+    # `public` decides which listener serves it.
+    services.the-box.sites.blog = {
+      domain = "blog.example.com";
+      public = true;
+    };
+    services.the-box.sites.diary = {
+      domain = "diary.example.com";
+      public = false; # the default, stated for the reader
+    };
 
     # The platform pins generations to its own nixpkgs, so building one needs no
     # network — that pinning is part of what this test checks. The VM still
@@ -139,7 +147,32 @@ pkgs.testers.runNixOSTest {
         "curl -sf -H 'Host: blog.example.com' http://127.0.0.1/ | grep -w hi", timeout=60
     )
 
+    # --- the public entrance serves only what was published ------------------
+    # This is the whole security boundary for anything reachable from the
+    # internet. It used to be a flag that reached the manifest and stopped
+    # there, so nginx built a vhost for every service that had a domain and a
+    # tunnel pointed at the Box published all of them.
+    api("POST", "/api/v1/services",
+        '{"name":"diary","template":"static-site",'
+        '"params":{"index_html":"<h1>private</h1>"},'
+        '"domain":"diary.example.com","public":false}')
+    box.succeed("systemctl restart nginx")
+    box.wait_for_open_port(2694)
+
+    # Published: answers on the public entrance.
+    box.wait_until_succeeds(
+        "curl -sf -H 'Host: blog.example.com' http://127.0.0.1:2694/ | grep -w hi", timeout=60
+    )
+    # Not published: reachable on your own network, absent from the public one.
+    box.succeed("curl -sf -H 'Host: diary.example.com' http://127.0.0.1:80/ | grep private")
+    box.fail("curl -sf -H 'Host: diary.example.com' http://127.0.0.1:2694/ | grep private")
+
+    # And the public entrance is loopback-only: nothing on the network reaches
+    # it directly, tunnel or not.
+    box.fail("ss -ltn | grep -E '(0\\.0\\.0\\.0|\\*):2694'")
+
     print("deploy through boxd: builds, reports honestly, renders a correct OS module,")
-    print("and nginx serves the live generation (one copy, both planes)")
+    print("nginx serves the live generation (one copy, both planes),")
+    print("and only published services exist on the public entrance")
   '';
 }
