@@ -70,6 +70,13 @@ enum Command {
         #[arg(long)]
         out: Option<PathBuf>,
     },
+    /// OS tier: apply the CURRENT config to the running system, using this
+    /// box's channel binding for its identity and platform pin. This is what a
+    /// structural deploy (a new container or app, a changed domain) needs in
+    /// order to actually run: the fast path builds the generation, this makes
+    /// the system match it. Unlike `channel update` it never bumps the platform
+    /// pin, so it applies your change without also taking a new release.
+    OsApply,
     /// OS tier: build this box's whole NixOS system from the current config and
     /// switch to it, rolling back the system on a failed health check. Runs
     /// only on a Box (a NixOS host with a system profile).
@@ -422,6 +429,25 @@ fn main() -> Result<()> {
                 spec.id,
                 out.display()
             );
+            Ok(())
+        }
+        Command::OsApply => {
+            let config = boxd::config::BoxConfig::load(&paths)?;
+            let channel = boxd::channel::ChannelConfig::load(&paths)?.context(
+                "this Box has no channel binding yet — set one on the System page (or with \
+                 `boxd channel set`) so the platform knows its identity and which release to build",
+            )?;
+            // Same brick guard as a channel update: never switch onto a system
+            // built for the wrong hardware.
+            boxd::board::assert_compatible(channel.board.as_deref())?;
+            let toplevel = boxd::ostier::reconcile(
+                &paths,
+                &config,
+                &channel.spec(),
+                &boxd::ostier::default_system_health,
+            )?;
+            boxd::ostier::clear_pending(&paths);
+            println!("system now matches the config: {}", toplevel.display());
             Ok(())
         }
         Command::OsSwitch {

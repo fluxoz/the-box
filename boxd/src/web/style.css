@@ -227,6 +227,8 @@ td form { margin: 0; }
   padding: 3px 9px; border-radius: 2px; background: var(--panel-2); border: 1px solid var(--line); color: var(--dim);
 }
 .badge.on { background: var(--ok-wash); border-color: color-mix(in srgb, var(--ok) 40%, var(--line)); color: var(--ok); }
+/* Declared, built, but the system has not applied it — so it is not running. */
+.badge.warn { background: var(--critical-wash); border-color: color-mix(in srgb, var(--critical) 40%, var(--line)); color: var(--critical); }
 
 /* ---- buttons ---- */
 .btn {

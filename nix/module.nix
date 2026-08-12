@@ -218,6 +218,12 @@ in
           # The platform service catalog (presets), shipped in the closure. boxd
           # merges it with the box's own user catalog under the data dir.
           BOX_CATALOG_DIR = "${../catalog}";
+          # The nixpkgs this system was built from. Generations pin themselves
+          # to it instead of resolving `flake:nixpkgs` through the mutable
+          # registry, which needs the network (so an offline Box could not
+          # deploy at all) and could otherwise drift to a different nixpkgs than
+          # the one whose closure is already on this disk.
+          BOX_NIXPKGS = "${pkgs.path}";
         };
         serviceConfig = {
           ExecStart = "${lib.getExe cfg.package} --data-dir ${cfg.dataDir} serve --listen ${cfg.listen}";
@@ -289,13 +295,37 @@ in
         };
       };
 
-      # Let the unprivileged boxd user START (only) that one update unit, so the
-      # dashboard's "Update now" can trigger the root reconcile without granting
-      # boxd broad control over the system.
+      # Apply the CURRENT config to the running system, without taking a new
+      # platform release. This is the slow half of the two-speed reconciler: a
+      # structural deploy (a new container or app, a changed domain) builds its
+      # generation on boxd's fast path, and needs this to actually run.
+      #
+      # Before this existed, a container deployed from the console or by an
+      # agent sat in the config until some unrelated platform release happened
+      # to come along.
+      systemd.services.boxd-os-apply = {
+        description = "The Box: make the system match the config";
+        path = [ pkgs.nix pkgs.git pkgs.systemd ];
+        environment.HOME = "/root";
+        # Same reason as the channel update: this unit's own switch must not
+        # restart it out from under the health check and rollback.
+        restartIfChanged = false;
+        stopIfChanged = false;
+        serviceConfig = {
+          Type = "oneshot";
+          User = "root";
+          ExecStart = "${lib.getExe cfg.package} --data-dir ${cfg.dataDir} os-apply";
+        };
+      };
+
+      # Let the unprivileged boxd user START (only) these two units, so a deploy
+      # or the dashboard's "Update now" can trigger the root reconcile without
+      # granting boxd broad control over the system.
       security.polkit.extraConfig = ''
         polkit.addRule(function(action, subject) {
           if (action.id == "org.freedesktop.systemd1.manage-units" &&
-              action.lookup("unit") == "boxd-channel-update.service" &&
+              (action.lookup("unit") == "boxd-channel-update.service" ||
+               action.lookup("unit") == "boxd-os-apply.service") &&
               subject.user == "boxd") {
             return polkit.Result.YES;
           }

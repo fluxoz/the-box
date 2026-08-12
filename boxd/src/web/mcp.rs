@@ -279,11 +279,7 @@ async fn execute(
             );
             Ok(run_locked(&state, move |s| {
                 let info = ops::deploy(&s.paths, s.builder.as_ref(), request)?;
-                Ok(json!({
-                    "service": name,
-                    "generation": info.number,
-                    "url": format!("/sites/{name}/"),
-                }))
+                Ok(deploy_result(s, &name, info.number))
             })
             .await)
         }
@@ -299,7 +295,9 @@ async fn execute(
                 template,
                 params: args.get("params").cloned().unwrap_or_else(|| json!({})),
                 domain: str_arg("domain"),
-                public: args.get("public").and_then(Value::as_bool).unwrap_or(false),
+                // Absent means unchanged, so an agent updating params alone
+                // cannot silently take a service off its domain.
+                public: args.get("public").and_then(Value::as_bool),
                 port: args
                     .get("port")
                     .and_then(Value::as_u64)
@@ -307,11 +305,7 @@ async fn execute(
             };
             Ok(run_locked(&state, move |s| {
                 let info = ops::deploy(&s.paths, s.builder.as_ref(), request)?;
-                Ok(json!({
-                    "service": name,
-                    "generation": info.number,
-                    "url": format!("/sites/{name}/"),
-                }))
+                Ok(deploy_result(s, &name, info.number))
             })
             .await)
         }
@@ -373,17 +367,39 @@ fn services(state: &SharedState) -> anyhow::Result<Value> {
         .services
         .iter()
         .map(|s| {
+            let status = crate::ops::service_status(&state.paths, s, active.contains(&s.name));
             json!({
                 "name": s.name,
                 "template": s.template,
                 "params": s.params,
                 "domain": s.domain,
-                "url": format!("/sites/{}/", s.name),
-                "state": if active.contains(&s.name) { "active" } else { "pending" },
+                "url": status.url,
+                "state": status.state,
+                "note": status.note,
             })
         })
         .collect();
     Ok(json!(list))
+}
+
+/// What an agent is told after a deploy. The URL has to be the one that
+/// actually serves the thing — reporting `/sites/<name>/` for a container sent
+/// agents to a 404 and made a service that wasn't running look deployed.
+fn deploy_result(state: &SharedState, name: &str, generation: u64) -> Value {
+    let status = crate::config::BoxConfig::load(&state.paths)
+        .ok()
+        .and_then(|c| c.find(name).cloned())
+        .map(|s| crate::ops::service_status(&state.paths, &s, true));
+    match status {
+        Some(st) => json!({
+            "service": name,
+            "generation": generation,
+            "url": st.url,
+            "state": st.state,
+            "note": st.note,
+        }),
+        None => json!({ "service": name, "generation": generation }),
+    }
 }
 
 fn config_history(state: &SharedState) -> anyhow::Result<Value> {

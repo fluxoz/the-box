@@ -327,7 +327,7 @@ fn deploy_a_catalog_preset() {
             template: "pg".into(),
             params: serde_json::json!({ "env": { "POSTGRES_DB": "app" } }),
             domain: None,
-            public: false,
+            public: Some(false),
             port: None,
         },
     )

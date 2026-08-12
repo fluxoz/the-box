@@ -52,6 +52,14 @@
   };
 
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
+
+  # Resolve `nixpkgs` to the exact one this system was built from, for anyone
+  # running nix on the box by hand.
+  nix.registry.nixpkgs.to = {
+    type = "path";
+    path = pkgs.path;
+  };
+
   environment.systemPackages = [ pkgs.jq ];
 
   # Box Connect: WireGuard mesh via Tailscale/Headscale. tailscaled runs; boxd
