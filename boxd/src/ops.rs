@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 use anyhow::{bail, Context, Result};
 use chrono::Utc;
+use serde::Serialize;
 use serde_json::{json, Value};
 
 use crate::agecrypt;
@@ -16,6 +17,7 @@ use crate::ports;
 use crate::history;
 use crate::manifest;
 use crate::nixgen;
+use crate::ostier;
 use crate::paths::Paths;
 use crate::store::{self, Builder, GenerationInfo};
 use crate::templates;
@@ -30,8 +32,11 @@ pub struct DeployRequest {
     pub name: String,
     pub template: String,
     pub params: Value,
+    /// `None` means "leave whatever this service already has" — an agent that
+    /// updates only params must not unpublish it. `Some("")` clears it.
     pub domain: Option<String>,
-    pub public: bool,
+    /// `None` means "unchanged" (`false` for a service being created).
+    pub public: Option<bool>,
     /// An explicit port request for a process-backed service. `None` lets the
     /// platform allocate one. Ignored (and rejected if set) for file services.
     pub port: Option<u16>,
@@ -59,7 +64,7 @@ impl DeployRequest {
             template: "static-site".into(),
             params: Value::Object(params),
             domain,
-            public,
+            public: Some(public),
             port: None,
         }
     }
@@ -77,7 +82,7 @@ impl DeployRequest {
             template: "reverse-proxied-app".into(),
             params: json!({ "command": command.into() }),
             domain,
-            public,
+            public: Some(public),
             port,
         }
     }
@@ -94,22 +99,107 @@ pub enum ChangeKind {
     Structural,
 }
 
-/// Classify a deploy against the current config. New services and changes to a
-/// service's template, domain or exposure are structural; re-materializing an
-/// existing service's content is not.
+/// Classify a deploy against the current config. New services, and changes to a
+/// service's template, domain, visibility or exposure, are structural.
+///
+/// So is *any* param change to a process-backed service: a container's image,
+/// env and volumes compile into the OS-tier module that runs it, so changing
+/// them is a change to the system, not to a file tree. Only a file service's
+/// content (a static site's pages) stays on the fast path.
+///
+/// Omitted fields follow the same merge rule as [`deploy`]: absent means
+/// unchanged, and unchanged is never structural.
 pub fn classify_deploy(current: &BoxConfig, req: &DeployRequest) -> ChangeKind {
-    match current.find(&req.name) {
-        None => ChangeKind::Structural,
-        Some(existing) => {
-            if existing.template != req.template
-                || existing.domain.as_deref() != req.domain.as_deref()
-                || existing.public != req.public
-            {
+    let Some(existing) = current.find(&req.name) else {
+        return ChangeKind::Structural;
+    };
+    if existing.template != req.template {
+        return ChangeKind::Structural;
+    }
+
+    let domain_changed = match req.domain.as_deref().map(str::trim) {
+        None => false,
+        Some("") => existing.domain.is_some(),
+        Some(d) => existing.domain.as_deref() != Some(d.to_ascii_lowercase().as_str()),
+    };
+    let public_changed = req.public.is_some_and(|p| p != existing.public);
+    if domain_changed || public_changed {
+        return ChangeKind::Structural;
+    }
+
+    match templates::get(&req.template) {
+        Some(t) => {
+            let exposure_changed = t.exposure(&existing.params) != t.exposure(&req.params);
+            let process_backed = t.exposure(&req.params).needs_port();
+            if exposure_changed || (process_backed && existing.params != req.params) {
                 ChangeKind::Structural
             } else {
                 ChangeKind::Content
             }
         }
+        None => ChangeKind::Structural,
+    }
+}
+
+/// Where a service can actually be reached, and whether it is really running.
+#[derive(Debug, Clone, Serialize)]
+pub struct ServiceStatus {
+    /// The URL that actually serves this service, if there is one. A file
+    /// service is served by the platform proxy at `/sites/<name>/`; a process
+    /// or container is reached by its domain, or on its loopback port. It used
+    /// to report `/sites/<name>/` for everything, which 404s for anything that
+    /// is not a file tree.
+    pub url: Option<String>,
+    /// `active` — in the current generation and, for anything that needs the
+    /// system, actually applied to it. `pending` — declared but not yet built.
+    /// `not-running` — built, but the system has not caught up, so nothing is
+    /// running it yet.
+    pub state: &'static str,
+    /// Why, when the state is not `active`.
+    pub note: Option<String>,
+}
+
+/// Report a service honestly: what URL reaches it and whether it is running.
+pub fn service_status(
+    paths: &Paths,
+    service: &ServiceConfig,
+    in_current_generation: bool,
+) -> ServiceStatus {
+    let exposure = templates::get(&service.template).map(|t| t.exposure(&service.params));
+    let file_served = matches!(exposure, Some(templates::Exposure::Files) | None);
+
+    let url = if file_served {
+        Some(format!("/sites/{}/", service.name))
+    } else {
+        match (&service.domain, service.port) {
+            (Some(d), _) => Some(format!("http://{d}/")),
+            (None, Some(p)) => Some(format!("http://127.0.0.1:{p}/")),
+            (None, None) => None,
+        }
+    };
+
+    if !in_current_generation {
+        return ServiceStatus {
+            url,
+            state: "pending",
+            note: Some("declared, but not in the current generation yet".into()),
+        };
+    }
+    // A file service is served by boxd itself, so being in the generation IS
+    // being live. Anything process-backed needs the OS tier to have applied.
+    if !file_served && ostier::is_pending(paths) {
+        return ServiceStatus {
+            url,
+            state: "not-running",
+            note: Some(ostier::pending_reason(paths).unwrap_or_else(|| {
+                "the system has not applied this change yet".into()
+            })),
+        };
+    }
+    ServiceStatus {
+        url,
+        state: "active",
+        note: None,
     }
 }
 
@@ -150,7 +240,27 @@ pub fn apply_checked(
     health: &HealthCheck,
 ) -> Result<GenerationInfo> {
     let previous = store::current(paths)?;
-    let info = apply(paths, builder)?;
+    let info = match apply(paths, builder) {
+        Ok(info) => info,
+        Err(e) => {
+            // A build failure must not leave the failed service in box.toml.
+            // The caller saved the config BEFORE building (it has to — the
+            // build reads it), so without this the broken service persists and
+            // every later deploy of anything re-renders the same failing
+            // generation: one bad deploy wedges the whole Box until someone
+            // deletes the service by hand.
+            if let Some(prev) = &previous {
+                if let Err(re) = rollback(paths, prev.number) {
+                    bail!("build failed ({e:#}) and restoring generation #{} also failed: {re:#}", prev.number);
+                }
+                bail!(
+                    "build failed — restored generation #{}: {e:#}",
+                    prev.number
+                );
+            }
+            return Err(e);
+        }
+    };
     match health(paths, &info) {
         Ok(()) => Ok(info),
         Err(e) => match previous {
@@ -187,23 +297,6 @@ pub fn deploy(
     let template = templates::get(&req.template)
         .with_context(|| format!("unknown template {:?}", req.template))?;
     template.validate(&req.params)?;
-
-    if let Some(domain) = req.domain.take() {
-        let domain = domain.trim().to_ascii_lowercase();
-        validate_domain(&domain)?;
-        let config = BoxConfig::load(paths)?;
-        if let Some(other) = config
-            .services
-            .iter()
-            .find(|s| s.name != req.name && s.domain.as_deref() == Some(domain.as_str()))
-        {
-            bail!(
-                "domain {domain:?} is already used by service {:?}",
-                other.name
-            );
-        }
-        req.domain = Some(domain);
-    }
 
     template.materialize(&req.params, &paths.source_dir(&req.name))?;
 
@@ -268,15 +361,52 @@ pub fn deploy(
 
     let mut config = BoxConfig::load(paths)?;
 
+    // Classify BEFORE the config is mutated: whether this needs the OS tier is
+    // a question about the change, and after the save there is nothing to
+    // compare against.
+    let kind = classify_deploy(&config, &req);
+
+    // Merge, don't overwrite: an omitted domain or `public` keeps what the
+    // service already has, so `deploy(name, template, params)` — the shape the
+    // MCP tool documents for an update — can't silently take a service off its
+    // domain. An explicitly empty domain clears it.
+    let existing = config.find(&req.name);
+    let existing_domain = existing.and_then(|s| s.domain.clone());
+    let existing_public = existing.map(|s| s.public).unwrap_or(false);
+
+    let domain = match req.domain.take() {
+        None => existing_domain,
+        Some(d) if d.trim().is_empty() => None,
+        Some(d) => {
+            let d = d.trim().to_ascii_lowercase();
+            validate_domain(&d)?;
+            if let Some(other) = config
+                .services
+                .iter()
+                .find(|s| s.name != req.name && s.domain.as_deref() == Some(d.as_str()))
+            {
+                bail!("domain {d:?} is already used by service {:?}", other.name);
+            }
+            Some(d)
+        }
+    };
+    req.domain = domain;
+    let public = req.public.unwrap_or(existing_public);
+
     // Resolve the service's port through the central allocator/validator, so an
     // agent or a person gets the same rules: honor an explicit validated
     // request, keep an existing allocation stable, or assign a free one. File
     // services (static-site) take no port.
     let port = if template.exposure(&req.params).needs_port() {
+        // Include THIS service's current allocation: that is how `resolve`
+        // recognizes a redeploy and keeps the port stable. Filtering it out
+        // made every redeploy re-allocate from scratch, so a service could
+        // silently move to a port freed by a deleted neighbour while whatever
+        // pointed at the old one broke. `validate` already allows a service to
+        // collide with itself.
         let in_use: std::collections::BTreeMap<u16, String> = config
             .services
             .iter()
-            .filter(|s| s.name != req.name)
             .filter_map(|s| s.port.map(|p| (p, s.name.clone())))
             .collect();
         Some(ports::resolve(req.port, &in_use, &req.name)?)
@@ -295,7 +425,7 @@ pub fn deploy(
             existing.template = req.template.clone();
             existing.params = req.params.clone();
             existing.domain = req.domain.clone();
-            existing.public = req.public;
+            existing.public = public;
             existing.port = port;
         }
         None => config.services.push(ServiceConfig {
@@ -303,7 +433,7 @@ pub fn deploy(
             template: req.template.clone(),
             params: req.params.clone(),
             domain: req.domain.clone(),
-            public: req.public,
+            public,
             port,
             created_at: Utc::now(),
         }),
@@ -318,6 +448,24 @@ pub fn deploy(
             info.number, req.name, req.template
         ),
     );
+
+    // The second speed. The fast path above builds the generation (content +
+    // manifest + modules); a structural change also has to be applied to the
+    // running system, or a container is declared and never started. This is
+    // the dispatch `classify_deploy` was written for.
+    if kind == ChangeKind::Structural {
+        match ostier::request_apply(paths) {
+            ostier::ApplyOutcome::Applied | ostier::ApplyOutcome::NotABox => {}
+            ostier::ApplyOutcome::Failed(detail) => {
+                bail!(
+                    "generation #{} was built, but applying it to the system failed, so {} is not running yet \
+                     (the system rolled itself back): {detail}",
+                    info.number,
+                    req.name
+                );
+            }
+        }
+    }
     Ok(info)
 }
 

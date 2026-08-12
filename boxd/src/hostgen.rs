@@ -163,13 +163,11 @@ pub fn write_host_repo(
             );
         };
 
-        // Fold the top-level domain into params so the compiled module carries
-        // it, matching nixgen's fast path exactly.
-        let mut params = service.params.clone();
-        if let (Some(obj), Some(domain)) = (params.as_object_mut(), &service.domain) {
-            obj.entry("domain")
-                .or_insert_with(|| serde_json::Value::String(domain.clone()));
-        }
+        // Fold domain, allocated port and encrypted env file into params, the
+        // same way the fast path does — this tier is the one that actually
+        // runs the service, so a missing port or secret here is fatal in a way
+        // it never was there.
+        let params = crate::nixgen::module_params(paths, service, &services_dir)?;
 
         std::fs::write(
             services_dir.join(format!("{}.nix", service.name)),
@@ -277,6 +275,53 @@ mod tests {
         assert!(flake.contains("the-box.lib.boxSystem"));
         assert!(flake.contains(r#"board = "pi5";"#));
         assert!(flake.contains(r#"system = "aarch64-linux";"#));
+    }
+
+    /// The OS tier is the one that actually runs a container, so its module
+    /// must carry the platform-allocated port and the service's encrypted env
+    /// file. Rendering only the domain here meant every app and container
+    /// compiled with `port = 0` — nginx proxying to `127.0.0.1:0` and a
+    /// database with no password.
+    #[test]
+    fn os_tier_module_carries_port_and_secrets() {
+        let tmp = TempDir::new().unwrap();
+        let paths = Paths::new(tmp.path().join("data"));
+        paths.ensure().unwrap();
+        let secrets = paths.data_dir.join("secrets");
+        std::fs::create_dir_all(&secrets).unwrap();
+        std::fs::write(secrets.join("db-env.age"), b"ciphertext").unwrap();
+
+        let config = BoxConfig {
+            services: vec![ServiceConfig {
+                name: "db".into(),
+                template: "container".into(),
+                params: serde_json::json!({ "image": "postgres:16", "expose": "internal" }),
+                domain: None,
+                public: false,
+                port: Some(8042),
+                created_at: Utc::now(),
+            }],
+            ..Default::default()
+        };
+
+        let out = tmp.path().join("repo");
+        let spec = HostSpec::new("demo-box", "path:/platform", "x86_64-linux");
+        write_host_repo(&paths, &config, &spec, &out).unwrap();
+
+        let module = std::fs::read_to_string(
+            out.join("nodes/hosts/demo-box/services/db.nix"),
+        )
+        .unwrap();
+        assert!(module.contains("port = 8042;"), "port must be real: {module}");
+        assert!(!module.contains("port = 0;"), "port must not be 0: {module}");
+        assert!(
+            module.contains("secretEnvFile = ./db-env.age;"),
+            "module must point at its secrets: {module}"
+        );
+        assert!(
+            out.join("nodes/hosts/demo-box/services/db-env.age").exists(),
+            "the encrypted env file must ship with the module"
+        );
     }
 
     #[test]

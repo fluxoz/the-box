@@ -137,8 +137,12 @@ struct ServiceView {
     domain: Option<String>,
     public: bool,
     created_at: DateTime<Utc>,
-    url: String,
+    /// Absent when nothing reaches this service over HTTP (an internal-only
+    /// database, say).
+    url: Option<String>,
     state: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    note: Option<String>,
 }
 
 async fn list_services(
@@ -152,19 +156,19 @@ async fn list_services(
     let views = config
         .services
         .into_iter()
-        .map(|s| ServiceView {
-            url: format!("/sites/{}/", s.name),
-            state: if active.contains(&s.name) {
-                "active"
-            } else {
-                "pending"
-            },
-            name: s.name,
-            template: s.template,
-            params: s.params,
-            domain: s.domain,
-            public: s.public,
-            created_at: s.created_at,
+        .map(|s| {
+            let status = ops::service_status(&state.paths, &s, active.contains(&s.name));
+            ServiceView {
+                url: status.url,
+                state: status.state,
+                note: status.note,
+                name: s.name,
+                template: s.template,
+                params: s.params,
+                domain: s.domain,
+                public: s.public,
+                created_at: s.created_at,
+            }
         })
         .collect();
     Ok(Json(views))
@@ -185,8 +189,10 @@ struct DeployBody {
     port: Option<u16>,
     #[serde(default)]
     domain: Option<String>,
+    /// Omitted means "leave it as it is" on a redeploy — see
+    /// [`ops::DeployRequest::public`].
     #[serde(default)]
-    public: bool,
+    public: Option<bool>,
     #[serde(default)]
     index_html: Option<String>,
     #[serde(default)]
@@ -197,7 +203,10 @@ struct DeployBody {
 struct DeployResult {
     service: String,
     generation: u64,
-    url: String,
+    url: Option<String>,
+    state: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    note: Option<String>,
 }
 
 async fn create_service(
@@ -220,7 +229,7 @@ async fn create_service(
             body.index_html,
             body.source_path,
             body.domain,
-            body.public,
+            body.public.unwrap_or(false),
         ),
     };
     let name = request.name.clone();
@@ -232,8 +241,16 @@ async fn create_service(
         })
         .await?
     };
+    // Report the URL that actually serves it, and whether it is really
+    // running: `/sites/<name>/` is only true for a file service.
+    let status = BoxConfig::load(&state.paths)
+        .ok()
+        .and_then(|c| c.find(&name).cloned())
+        .map(|s| ops::service_status(&state.paths, &s, true));
     Ok(Json(DeployResult {
-        url: format!("/sites/{name}/"),
+        url: status.as_ref().and_then(|s| s.url.clone()),
+        state: status.as_ref().map(|s| s.state).unwrap_or("active"),
+        note: status.and_then(|s| s.note),
         service: name,
         generation: info.number,
     }))

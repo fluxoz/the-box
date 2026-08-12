@@ -177,6 +177,17 @@ pub async fn index(
             div.section-head {
                 h2 { "Services" }
             }
+            // The system is behind the config: something was deployed that
+            // needs systemd or podman, and the apply hasn't succeeded. Say so
+            // where the services are, rather than showing them as running.
+            @if let Some(reason) = ostier::pending_reason(&state.paths) {
+                div.flash.err {
+                    "Some services are declared but not running: " (reason) " "
+                    form method="post" action="/system/apply" style="display:inline" {
+                        button.btn type="submit" { "Apply now" }
+                    }
+                }
+            }
             @if config.services.is_empty() {
                 div.empty {
                     p { "No services yet." }
@@ -191,12 +202,17 @@ pub async fn index(
                         @for s in &config.services {
                             @let creds = crate::secrets::with_prefix(
                                 &state.paths, &format!("service-{}-", s.name));
+                            @let status = ops::service_status(
+                                &state.paths, s, active.contains(&s.name));
                             tr {
                                 td { strong { (s.name) } }
                                 td { (s.template) }
                                 td {
-                                    @if active.contains(&s.name) { span.badge.on { "active" } }
-                                    @else { span.badge { "pending" } }
+                                    @match status.state {
+                                        "active" => { span.badge.on { "active" } },
+                                        "not-running" => { span.badge.warn { "not running" } },
+                                        _ => { span.badge { "pending" } },
+                                    }
                                 }
                                 td {
                                     @match &s.domain {
@@ -214,7 +230,12 @@ pub async fn index(
                                         None => { span.muted { "private (LAN only)" } },
                                     }
                                 }
-                                td { a href={ "/sites/" (s.name) "/" } target="_blank" { "/sites/" (s.name) "/" } }
+                                td {
+                                    @match &status.url {
+                                        Some(u) => { a href=(u) target="_blank" { (u) } },
+                                        None => { span.muted { "no web address" } },
+                                    }
+                                }
                                 td {
                                     form method="post" action={ "/services/" (s.name) "/delete" } {
                                         button.danger type="submit" { "Delete" }
@@ -709,7 +730,10 @@ fn deploy_request_from_form(form: NewServiceForm) -> Result<ops::DeployRequest, 
         template,
         params: serde_json::Value::Object(params),
         domain: none_if_empty(form.domain),
-        public: form.public.is_some(),
+        // The console form always posts every field, so an unchecked box
+        // genuinely means "not public" here — unlike an API/MCP caller that
+        // simply omitted it.
+        public: Some(form.public.is_some()),
         port,
     })
 }
@@ -1895,6 +1919,38 @@ fn channel_update_available() -> bool {
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
+}
+
+/// Retry making the system match the config, after a structural deploy could
+/// not apply. Runs as a job so the operator sees the build output and the real
+/// outcome rather than a redirect that claims success.
+pub async fn system_apply(State(state): State<SharedState>) -> Redirect {
+    let id = {
+        let state = state.clone();
+        state.jobs.clone().start(
+            "os-apply",
+            "Making the system match the config",
+            "/",
+            move |p| {
+                p.phase("waiting for other changes to finish");
+                let _guard = state.apply_lock.lock().unwrap();
+                p.phase("building and switching the system");
+                match ostier::request_apply(&state.paths) {
+                    ostier::ApplyOutcome::Applied => {
+                        Ok("The system now matches your configuration.".to_string())
+                    }
+                    ostier::ApplyOutcome::NotABox => anyhow::bail!(
+                        "This machine is not a Box: it has no OS tier, so services that need \
+                         systemd or podman cannot run here. This works on a Box."
+                    ),
+                    ostier::ApplyOutcome::Failed(detail) => anyhow::bail!(
+                        "The system apply failed and rolled itself back: {detail}"
+                    ),
+                }
+            },
+        )
+    };
+    Redirect::to(&format!("/jobs/{id}"))
 }
 
 pub async fn system_update(State(_state): State<SharedState>) -> Redirect {

@@ -430,6 +430,12 @@
         inherit self nixpkgs;
         system = "x86_64-linux";
       };
+      # The path a user actually takes: deploy through boxd, not by hand-writing
+      # `services.the-box.containers.*` into a module.
+      checks.x86_64-linux.deploy-through-boxd = import ./nix/tests/deploy-through-boxd.nix {
+        inherit self nixpkgs;
+        system = "x86_64-linux";
+      };
       checks.x86_64-linux.secret-env = import ./nix/tests/secret-env.nix {
         inherit self nixpkgs;
         system = "x86_64-linux";

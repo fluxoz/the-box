@@ -69,6 +69,7 @@ pub fn router(state: SharedState) -> Router {
         .route("/system/cloud/provision", post(pages::cloud_provision))
         .route("/system/check", post(pages::system_check))
         .route("/system/update", post(pages::system_update))
+        .route("/system/apply", post(pages::system_apply))
         .route("/fleet", get(pages::fleet))
         .route("/pair", get(pages::pair))
         .route("/pair/redeem", post(pages::pair_redeem))
