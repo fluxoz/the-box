@@ -26,6 +26,31 @@ pub struct TunnelStatus {
     /// "disabled" | "running" | "failed: ..."
     pub state: String,
     pub pid: Option<u32>,
+    /// The address the connector was handed, for the ways in that assign one at
+    /// runtime rather than using a domain you own. Read back out of the
+    /// connector's own log, so it does not depend on the shape of a banner.
+    pub address: Option<String>,
+}
+
+/// Find the public address a connector announced in its log.
+///
+/// Matched by the host it ends in rather than by the surrounding text: the
+/// wording of these banners is not a stable interface, but the address itself
+/// is recognizable.
+pub fn address_from_log(log: &str, suffixes: &[&str]) -> Option<String> {
+    let mut found = None;
+    for token in log.split_whitespace() {
+        let token = token.trim_matches(|c: char| !c.is_ascii_graphic() || c == '|' || c == '"');
+        let Some(host) = token.strip_prefix("https://") else {
+            continue;
+        };
+        let host = host.trim_end_matches('/');
+        if suffixes.iter().any(|s| host.ends_with(s)) && !host.contains('/') {
+            // Keep scanning: a restart appends a newer address below the old.
+            found = Some(format!("https://{host}"));
+        }
+    }
+    found
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -143,7 +168,15 @@ impl TunnelManager {
             token_saved: secrets::exists(&self.paths, TOKEN_SECRET),
             state,
             pid: runtime.pid,
+            address: self.discovered_address(),
         }
+    }
+
+    /// The address a runtime-assigned way in announced, if any is running.
+    fn discovered_address(&self) -> Option<String> {
+        let log = self.paths.data_dir.join("logs").join("cloudflared.log");
+        let text = read_tail(&log, 64 * 1024)?;
+        address_from_log(&text, &["trycloudflare.com"])
     }
 
     fn start(self: &Arc<Self>) {
@@ -224,5 +257,56 @@ impl TunnelManager {
             .stderr(log)
             .spawn()
             .context("spawning cloudflared (is it installed and on PATH?)")
+    }
+}
+
+/// Read at most `limit` bytes from the end of a file. Connector logs grow
+/// without bound; only the recent part is about the current run.
+fn read_tail(path: &std::path::Path, limit: u64) -> Option<String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = fs::File::open(path).ok()?;
+    let len = file.metadata().ok()?.len();
+    if len > limit {
+        file.seek(SeekFrom::Start(len - limit)).ok()?;
+    }
+    let mut buf = Vec::new();
+    file.read_to_end(&mut buf).ok()?;
+    Some(String::from_utf8_lossy(&buf).into_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The address has to survive whatever the connector decides its banner
+    /// looks like, because that wording is not a promise anyone made us.
+    #[test]
+    fn finds_the_announced_address_whatever_the_banner_says() {
+        let log = "\
+2026-08-12T04:10:01Z INF Requesting new quick Tunnel on trycloudflare.com...
+2026-08-12T04:10:02Z INF +----------------------------------------+
+2026-08-12T04:10:02Z INF |  https://odd-mule-tickle-1234.trycloudflare.com  |
+2026-08-12T04:10:02Z INF +----------------------------------------+
+2026-08-12T04:10:03Z INF Connection registered";
+        assert_eq!(
+            address_from_log(log, &["trycloudflare.com"]).as_deref(),
+            Some("https://odd-mule-tickle-1234.trycloudflare.com")
+        );
+
+        // A restart appends a newer address; the current one wins.
+        let restarted = format!("{log}\nINF |  https://new-name-here-9.trycloudflare.com  |");
+        assert_eq!(
+            address_from_log(&restarted, &["trycloudflare.com"]).as_deref(),
+            Some("https://new-name-here-9.trycloudflare.com")
+        );
+
+        // A named tunnel on someone's own domain announces no such address.
+        assert!(address_from_log("INF Registered tunnel connection", &["trycloudflare.com"]).is_none());
+        // And a URL that merely mentions the host in a path is not an address.
+        assert!(address_from_log(
+            "INF see https://developers.cloudflare.com/docs/trycloudflare.com/guide",
+            &["trycloudflare.com"]
+        )
+        .is_none());
     }
 }

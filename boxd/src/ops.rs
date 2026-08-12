@@ -525,6 +525,84 @@ pub fn deploy(
     Ok(info)
 }
 
+/// Make an existing service reachable from the internet, or stop it being so.
+///
+/// A separate verb from `deploy` because it is a separate decision, and the one
+/// an agent is most likely to get wrong by accident: this is the only thing
+/// that puts something in front of the whole world, so it says what it did and
+/// where the thing now answers.
+pub fn publish(
+    paths: &Paths,
+    builder: &dyn Builder,
+    name: &str,
+    public: bool,
+    domain: Option<String>,
+    runtime_address: Option<&str>,
+) -> Result<PublishOutcome> {
+    let config = BoxConfig::load(paths)?;
+    let service = config
+        .find(name)
+        .with_context(|| format!("no service named {name:?}"))?
+        .clone();
+
+    // Everything else about the service stays exactly as it is.
+    let info = deploy(
+        paths,
+        builder,
+        DeployRequest {
+            name: service.name.clone(),
+            template: service.template.clone(),
+            params: service.params.clone(),
+            domain,
+            public: Some(public),
+            port: service.port,
+        },
+    )?;
+
+    // What to tell them: the address on the internet if there is one, and
+    // otherwise why there isn't — "published" with no way in is the confusing
+    // state, so it is the one that gets an explanation.
+    let config = BoxConfig::load(paths)?;
+    let ingress = config.ingress.as_ref();
+    let (url, note) = match (public, ingress) {
+        (false, _) => (
+            None,
+            Some(format!("{name} is no longer reachable from the internet.")),
+        ),
+        (true, Some(i)) if i.enabled => match crate::ingress::get(&i.provider) {
+            Some(p) => match p.url_for(i, name, runtime_address) {
+                Some(url) => (Some(url), None),
+                None => (
+                    None,
+                    Some("published, but the way in has not been given its address yet — check back in a moment.".into()),
+                ),
+            },
+            None => (None, Some(format!("unknown way in: {:?}", i.provider))),
+        },
+        (true, _) => (
+            None,
+            Some(
+                "published, but this Box has no way in from the internet yet. Ask for ingress_options \
+                 and set one up — until then it is reachable only on your own network."
+                    .into(),
+            ),
+        ),
+    };
+    Ok(PublishOutcome {
+        generation: info,
+        url,
+        note,
+    })
+}
+
+pub struct PublishOutcome {
+    pub generation: GenerationInfo,
+    /// Where it answers on the internet, when there is such a place.
+    pub url: Option<String>,
+    /// Why there isn't, when there isn't.
+    pub note: Option<String>,
+}
+
 /// Remove a service from the config and its sources, then apply.
 pub fn delete_service(paths: &Paths, builder: &dyn Builder, name: &str) -> Result<GenerationInfo> {
     let mut config = BoxConfig::load(paths)?;

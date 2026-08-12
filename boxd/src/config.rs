@@ -20,6 +20,38 @@ pub struct BoxConfig {
     /// Backup destination + policy (bring-your-own backend). Absent = off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backup: Option<BackupConfig>,
+    /// How this Box is reachable from the internet, if at all. Absent = not.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ingress: Option<IngressConfig>,
+}
+
+/// How the Box is reached from the internet.
+///
+/// It lives here, in box.toml, rather than in the old `network.toml`: this is
+/// declarative configuration of the box, so it belongs to the thing that gets
+/// pushed to the operator's config repo and comes back on destroy-and-recreate.
+/// Credentials do not live here — they go to the secret store, encrypted.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct IngressConfig {
+    /// Which way in. See `crate::ingress::providers()`.
+    pub provider: String,
+    #[serde(default)]
+    pub enabled: bool,
+    /// The domain this Box publishes under, for providers that use one
+    /// (`app.example.com` for a service named `app`). Providers that hand out
+    /// their own hostname leave it unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub zone: Option<String>,
+}
+
+impl IngressConfig {
+    pub fn new(provider: impl Into<String>) -> Self {
+        Self {
+            provider: provider.into(),
+            enabled: false,
+            zone: None,
+        }
+    }
 }
 
 /// Client-side-encrypted backups (restic) to a user-provided backend. What to
