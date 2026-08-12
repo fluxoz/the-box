@@ -914,7 +914,7 @@ pub async fn network(State(state): State<SharedState>, Query(flash): Query<Flash
                 // container — where the console only ever served files, so
                 // anything else 404'd through the tunnel. It also means this
                 // console is not on the far end of your public hostname.
-                li { "Point the tunnel's public hostname(s) at " code { "http://localhost:80" } " — the Box's web server, which routes each domain to its service." }
+                li { "Point the tunnel's public hostname(s) at " code { "http://localhost:2694" } " — the Box's public entrance. Only services you have published are reachable there, so a tunnel cannot expose anything by accident." }
                 li { "Paste the token below and enable the tunnel." }
                 li { "Give each service the matching domain, and tick “let people outside your home reach it”." }
             }

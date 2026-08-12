@@ -1,6 +1,49 @@
 { config, lib, pkgs, ... }:
 let
   cfg = config.services.the-box;
+
+  # Only what the operator actually published.
+  published = lib.filterAttrs (_: s: s.public);
+
+  # What a service's virtual host serves, independent of which plane it is on.
+  siteVhost = name: site: {
+    serverName = if site.domain != null then site.domain else name;
+    # The live generation by default: <data>/profiles/box is the symlink boxd
+    # swaps atomically on every deploy and rollback, so nginx and boxd serve
+    # one set of files, at one speed.
+    root =
+      if site.root != null then site.root
+      else "${cfg.dataDir}/profiles/box/services/${name}/www";
+    locations."/".index = "index.html";
+    domain = site.domain;
+  };
+
+  appVhost = app: {
+    serverName = if app.domain != null then app.domain else null;
+    locations."/".proxyPass = "http://127.0.0.1:${toString app.port}";
+    domain = app.domain;
+  };
+
+  proxyVhost = name: c: {
+    serverName = if c.domain != null then c.domain else name;
+    locations."/".proxyPass = "http://127.0.0.1:${toString c.port}";
+    domain = c.domain;
+  };
+
+  # Your own network: everything, on :80, exactly as before.
+  lanVhost = v: (removeAttrs v [ "domain" ]) // {
+    serverName = if v.serverName != null then v.serverName else "_";
+    default = v.domain == null;
+  };
+
+  # The internet, via the tunnel: loopback-only, and a service must have a
+  # domain to be addressable here at all.
+  publicVhost = v: (removeAttrs v [ "domain" ]) // {
+    listen = [{ addr = "127.0.0.1"; port = cfg.publicListenPort; }];
+    # No `default`: an unrecognized Host on the public plane matches nothing and
+    # gets nginx's rejection, rather than falling into whichever service
+    # happened to be first.
+  };
 in
 {
   options.services.the-box = {
@@ -9,6 +52,17 @@ in
     package = lib.mkOption {
       type = lib.types.package;
       description = "The boxd package to run.";
+    };
+
+    publicListenPort = lib.mkOption {
+      type = lib.types.port;
+      default = 2694;
+      description = ''
+        Loopback port serving ONLY the services marked public — what a tunnel
+        connects to. Separate from :80 so that pointing a tunnel at the Box
+        cannot publish something the operator did not publish, and separate
+        from the console's port so a tunnel never fronts the console.
+      '';
     };
 
     listen = lib.mkOption {
@@ -51,6 +105,16 @@ in
             default = null;
             description = "Public hostname; when null the site is the default vhost.";
           };
+          public = lib.mkOption {
+            type = lib.types.bool;
+            default = false;
+            description = ''
+              Whether this may be reached from the internet. Only services with
+              this set are served on the public listener the tunnel connects to
+              (see `publicListenPort`); everything else stays on port 80, which
+              is your own network.
+            '';
+          };
         };
       });
     };
@@ -78,6 +142,11 @@ in
             type = lib.types.nullOr lib.types.str;
             default = null;
             description = "Public hostname; when null the app is the default vhost.";
+          };
+          public = lib.mkOption {
+            type = lib.types.bool;
+            default = false;
+            description = "Whether this may be reached from the internet (see sites.<name>.public).";
           };
         };
       });
@@ -139,6 +208,11 @@ in
             type = lib.types.nullOr lib.types.str;
             default = null;
             description = "Public hostname; when null the container is the default vhost.";
+          };
+          public = lib.mkOption {
+            type = lib.types.bool;
+            default = false;
+            description = "Whether this may be reached from the internet (see sites.<name>.public).";
           };
           environment = lib.mkOption {
             type = lib.types.attrsOf lib.types.str;
@@ -406,25 +480,26 @@ in
     (lib.mkIf (cfg.sites != { } || cfg.apps != { }) {
       services.nginx = {
         enable = true;
-        # File sites serve their directory; apps reverse-proxy to their loopback
-        # port. Both route by domain (or as the default vhost when no domain).
+        # TWO PLANES, and which one a request arrives on is the whole security
+        # boundary:
+        #
+        #   :80                  your own network. Every service, as before.
+        #   127.0.0.1:<public>   the internet, via the tunnel. ONLY services
+        #                        marked public — it is not even possible to
+        #                        reach the others here, so "let people outside
+        #                        your home reach it" is enforced by which
+        #                        listener exists rather than by a check that
+        #                        something has to remember to run.
+        #
+        # The public listener is loopback-only: nothing reaches it except
+        # cloudflared on this machine, and the firewall never opens it.
         virtualHosts =
-          (lib.mapAttrs (name: site: {
-            serverName = if site.domain != null then site.domain else name;
-            default = site.domain == null;
-            # The live generation by default: <data>/profiles/box is the symlink
-            # boxd swaps atomically on every deploy and rollback, so nginx and
-            # boxd serve one set of files, at one speed.
-            root =
-              if site.root != null then site.root
-              else "${cfg.dataDir}/profiles/box/services/${name}/www";
-            locations."/".index = "index.html";
-          }) cfg.sites)
-          // (lib.mapAttrs (name: app: {
-            serverName = if app.domain != null then app.domain else name;
-            default = app.domain == null;
-            locations."/".proxyPass = "http://127.0.0.1:${toString app.port}";
-          }) cfg.apps);
+          (lib.mapAttrs (name: site: lanVhost (siteVhost name site)) cfg.sites)
+          // (lib.mapAttrs (name: app: lanVhost (appVhost app)) cfg.apps)
+          // (lib.mapAttrs' (name: site: lib.nameValuePair "${name}-public"
+            (publicVhost (siteVhost name site))) (published cfg.sites))
+          // (lib.mapAttrs' (name: app: lib.nameValuePair "${name}-public"
+            (publicVhost (appVhost app))) (published cfg.apps));
       };
 
       # Each app runs as its own sandboxed service on loopback. The firewall is
@@ -482,14 +557,16 @@ in
           (name: c: lib.nameValuePair (secretName name) { file = c.secretEnvFile; })
           (lib.filterAttrs (_: c: c.secretEnvFile != null) cfg.containers);
 
-        # Only proxied containers get an nginx vhost.
+        # Only proxied containers get an nginx vhost, and only published ones
+        # appear on the plane the tunnel reaches (see the sites/apps block).
         services.nginx = lib.mkIf anyProxied {
           enable = true;
-          virtualHosts = lib.mapAttrs (name: c: {
-            serverName = if c.domain != null then c.domain else name;
-            default = c.domain == null;
-            locations."/".proxyPass = "http://127.0.0.1:${toString c.port}";
-          }) (lib.filterAttrs (_: c: c.mode == "proxied") cfg.containers);
+          virtualHosts =
+            let proxied = lib.filterAttrs (_: c: c.mode == "proxied") cfg.containers;
+            in
+            (lib.mapAttrs (name: c: lanVhost (proxyVhost name c)) proxied)
+            // (lib.mapAttrs' (name: c: lib.nameValuePair "${name}-public"
+              (publicVhost (proxyVhost name c))) (published proxied));
         };
 
         # nginx (80) when anything is proxied; plus each exposed container's port.
