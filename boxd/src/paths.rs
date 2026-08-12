@@ -39,6 +39,19 @@ impl Paths {
         self.data_dir.join("generation-src")
     }
 
+    /// Where files uploaded over the API/MCP land before they are deployed.
+    ///
+    /// Separate from `sources/`, which a deploy empties and rewrites: an agent
+    /// uploads a built site here, then deploys it, and the deploy copies from
+    /// here into the service's source tree.
+    pub fn uploads_dir(&self) -> PathBuf {
+        self.data_dir.join("uploads")
+    }
+
+    pub fn upload_dir(&self, service: &str) -> PathBuf {
+        self.uploads_dir().join(service)
+    }
+
     pub fn profiles_dir(&self) -> PathBuf {
         self.data_dir.join("profiles")
     }

@@ -17,6 +17,7 @@ pub mod fleet;
 pub mod history;
 pub mod hostgen;
 pub mod jobs;
+pub mod logs;
 pub mod manifest;
 pub mod nixgen;
 pub mod ops;

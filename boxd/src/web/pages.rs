@@ -2170,11 +2170,53 @@ pub async fn devices(
     headers: HeaderMap,
     Query(flash): Query<Flash>,
 ) -> Html<String> {
+    devices_page(&state, &headers, &flash, None)
+}
+
+/// Mint a session for an agent and show it once, with the command to paste.
+///
+/// Minting an agent credential was CLI-only, over SSH — which the person this
+/// product is for does not have and should not need. If an agent is meant to be
+/// the operator, connecting one has to be something you can do from here.
+///
+/// This renders the page rather than redirecting, so the credential never
+/// travels in a URL and never lands in browser history.
+pub async fn create_agent_connection(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+) -> Html<String> {
+    match crate::auth::mint_session(&state.paths, "agent") {
+        Ok(token) => {
+            let flash = Flash {
+                ok: Some("Agent connection created — copy it now, it is shown once.".into()),
+                err: None,
+            };
+            devices_page(&state, &headers, &flash, Some(token))
+        }
+        Err(err) => {
+            let flash = Flash {
+                ok: None,
+                err: Some(format!("{err:#}")),
+            };
+            devices_page(&state, &headers, &flash, None)
+        }
+    }
+}
+
+fn devices_page(
+    state: &SharedState,
+    headers: &HeaderMap,
+    flash: &Flash,
+    agent_token: Option<String>,
+) -> Html<String> {
     let sessions = crate::auth::list(&state.paths);
     // Whether this browser could use a security key at all is a property of the
     // ADDRESS it reached us on, so it is computed per request.
-    let avail = key_availability(&headers);
+    let avail = key_availability(headers);
     let keys = crate::auth::list_keys(&state.paths);
+    // Only the hash of a session is stored, so the one moment this can be
+    // shown is right after minting it.
+    let mcp_url = mcp_url_for(headers);
     let body = html! {
         h2 { "Paired devices" }
         p.muted {
@@ -2212,6 +2254,38 @@ pub async fn devices(
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+
+        section {
+            div.section-head { h2 { "Connect an agent" } }
+            p.muted {
+                "Give a coding agent — Claude Code, or anything else that speaks MCP — its own "
+                "access to this Box, so it can deploy what it builds for you, check whether it "
+                "worked, and read the logs when it didn't. It gets its own credential, listed "
+                "above like any other device, and you can revoke it on its own."
+            }
+            @match &agent_token {
+                Some(token) => {
+                    p { "Paste this into a terminal on the computer where you use the agent:" }
+                    pre.copyable { code {
+                        "claude mcp add --transport http the-box " (mcp_url)
+                        " --header \"Authorization: Bearer " (token) "\""
+                    } }
+                    p.muted { "Or, for anything that reads a .mcp.json file:" }
+                    pre.copyable { code {
+                        (PreEscaped(mcp_json(&mcp_url, token)))
+                    } }
+                    p.field-note {
+                        "This is shown once. If you lose it, make another — they are independent, "
+                        "and revoking one leaves the rest working."
+                    }
+                }
+                None => {
+                    form method="post" action="/devices/agent" {
+                        button.btn type="submit" { "Create an agent connection" }
                     }
                 }
             }
@@ -2278,7 +2352,33 @@ pub async fn devices(
             }
         }
     };
-    layout("Devices", &flash, body)
+    layout("Devices", flash, body)
+}
+
+/// The address an agent on another machine should use to reach this Box. The
+/// browser just reached the console at some address that works from where the
+/// person is sitting, so reuse it rather than guessing a hostname.
+fn mcp_url_for(headers: &HeaderMap) -> String {
+    let host = headers
+        .get(axum::http::header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("box.local:2693");
+    format!("http://{host}/mcp")
+}
+
+/// The `.mcp.json` an agent that reads a config file expects.
+fn mcp_json(url: &str, token: &str) -> String {
+    let value = serde_json::json!({
+        "mcpServers": {
+            "the-box": {
+                "type": "http",
+                "url": url,
+                "headers": { "Authorization": format!("Bearer {token}") },
+            }
+        }
+    });
+    let text = serde_json::to_string_pretty(&value).unwrap_or_default();
+    maud::PreEscaped(text).0
 }
 
 pub async fn add_device(State(state): State<SharedState>) -> Redirect {

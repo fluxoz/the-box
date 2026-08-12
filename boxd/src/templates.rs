@@ -367,6 +367,12 @@ fn reject_sensitive_source(from: &Path) -> Result<()> {
     let data_dir = crate::paths::default_data_dir();
     let is_under = |base: &Path| from == base || from.starts_with(base);
 
+    // The one exception inside the data dir: `uploads/` holds exactly what
+    // someone sent to be published, and nothing else. Publishing it is the
+    // point. Everything else under the data dir stays forbidden below.
+    if is_under(&data_dir.join("uploads")) {
+        return Ok(());
+    }
     if is_under(&data_dir) {
         bail!(
             "source_path {} is inside the Box's own state directory — that tree is published and would leak its secrets",

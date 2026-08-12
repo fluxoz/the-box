@@ -122,6 +122,39 @@ fn tool_definitions() -> Value {
             },
         },
         {
+            "name": "upload_files",
+            "description": "Put files on the Box and (by default) publish them as a static site. This is how you deploy a project you just built — a Next.js/Vite export, a generated site, any folder of files — without needing SSH. Send the built output, not the source tree. Text files can be sent as plain strings; anything binary (images, fonts) as {\"base64\": \"...\"}. Paths are relative to the site root, so 'index.html' and 'assets/app.js'.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "Service name: 1-32 chars of a-z, 0-9 and '-'" },
+                    "files": {
+                        "type": "object",
+                        "description": "Map of relative path to contents. A string is text; {\"base64\": \"...\"} is raw bytes.",
+                    },
+                    "replace": { "type": "boolean", "description": "Replace everything previously uploaded for this service (default true). An upload is a whole site, not a layer on the last one." },
+                    "deploy": { "type": "boolean", "description": "Publish the uploaded files immediately as a static site (default true)." },
+                    "domain": { "type": "string", "description": "Public domain to route to this service, e.g. site.example.com" },
+                    "public": { "type": "boolean", "description": "Let people outside this network reach it through the Box's tunnel." }
+                },
+                "required": ["name", "files"],
+                "additionalProperties": false,
+            },
+        },
+        {
+            "name": "service_logs",
+            "description": "Recent log lines for a deployed service, straight from the system journal — what you read to find out why something is not working. Returns the most recent lines, oldest first.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "Service name as deployed" },
+                    "lines": { "type": "integer", "description": "How many recent lines to return (default 100, max 1000)" }
+                },
+                "required": ["name"],
+                "additionalProperties": false,
+            },
+        },
+        {
             "name": "delete_service",
             "description": "Remove a service and activate a new generation without it. The previous generation remains available for rollback.",
             "inputSchema": {
@@ -318,6 +351,81 @@ async fn execute(
                 Ok(json!({ "deleted": name, "generation": info.number }))
             })
             .await)
+        }
+        "upload_files" => {
+            let Some(name) = str_arg("name") else {
+                return Err((-32602, "missing required argument: name".into()));
+            };
+            let Some(files_obj) = args.get("files").and_then(Value::as_object).cloned() else {
+                return Err((-32602, "missing required argument: files (an object of path → contents)".into()));
+            };
+            let mut files = Vec::with_capacity(files_obj.len());
+            for (path, content) in files_obj {
+                let bytes = match &content {
+                    Value::String(text) => text.clone().into_bytes(),
+                    Value::Object(o) => match o.get("base64").and_then(Value::as_str) {
+                        Some(b) => match crate::provision::base64_decode(b) {
+                            Ok(bytes) => bytes,
+                            Err(e) => return Err((-32602, format!("{path}: invalid base64: {e:#}"))),
+                        },
+                        None => {
+                            return Err((
+                                -32602,
+                                format!("{path}: expected a string, or an object with a \"base64\" key"),
+                            ))
+                        }
+                    },
+                    _ => {
+                        return Err((
+                            -32602,
+                            format!("{path}: expected a string, or an object with a \"base64\" key"),
+                        ))
+                    }
+                };
+                files.push(crate::ops::UploadedFile { path, bytes });
+            }
+            let replace = args.get("replace").and_then(Value::as_bool).unwrap_or(true);
+            let deploy = args.get("deploy").and_then(Value::as_bool).unwrap_or(true);
+            let domain = str_arg("domain");
+            let public = args.get("public").and_then(Value::as_bool);
+            let service = name.clone();
+            Ok(run_locked(&state, move |s| {
+                let (count, bytes) = ops::upload_files(&s.paths, &service, files, replace)?;
+                if !deploy {
+                    return Ok(json!({ "service": service, "files": count, "bytes": bytes }));
+                }
+                let info = ops::deploy(
+                    &s.paths,
+                    s.builder.as_ref(),
+                    ops::DeployRequest {
+                        name: service.clone(),
+                        template: "static-site".into(),
+                        params: json!({
+                            "source_path": s.paths.upload_dir(&service).display().to_string(),
+                        }),
+                        domain,
+                        public,
+                        port: None,
+                    },
+                )?;
+                let mut out = deploy_result(s, &service, info.number);
+                out["files"] = json!(count);
+                out["bytes"] = json!(bytes);
+                Ok(out)
+            })
+            .await)
+        }
+        "service_logs" => {
+            let Some(name) = str_arg("name") else {
+                return Err((-32602, "missing required argument: name".into()));
+            };
+            let lines = args
+                .get("lines")
+                .and_then(Value::as_u64)
+                .unwrap_or(100)
+                .clamp(1, 1000);
+            let state = state.clone();
+            Ok(blocking(move || crate::logs::service_logs(&state.paths, &name, lines as usize)).await)
         }
         "rollback" => {
             let Some(number) = args.get("generation").and_then(Value::as_u64) else {

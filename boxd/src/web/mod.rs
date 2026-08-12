@@ -76,6 +76,7 @@ pub fn router(state: SharedState) -> Router {
         .route("/pair/claim", post(pages::pair_claim))
         .route("/devices", get(pages::devices))
         .route("/devices/add", post(pages::add_device))
+        .route("/devices/agent", post(pages::create_agent_connection))
         .route("/devices/{id}/revoke", post(pages::revoke_device))
         .route("/devices/keys/start", post(pages::key_register_start))
         .route("/devices/keys/finish", post(pages::key_register_finish))
