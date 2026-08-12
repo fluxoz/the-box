@@ -145,11 +145,15 @@ pub fn build_orders(
 /// it with the orders embedded (base64) so nothing secret touches the disk. It
 /// runs as root directly if the SSH user is root, else via `sudo -n` (fail fast
 /// rather than hang on a password prompt).
+/// `BOX_YES=1` carries the consent that a person would otherwise type: this runs
+/// over SSH with no terminal to prompt on, and the operator already consented by
+/// running `boxd provision` against a named machine — the orders themselves say
+/// `erase_disk: true`, which the installer checks independently.
 pub fn remote_install_command(install_url: &str, orders_b64: &str) -> String {
     format!(
         "curl -fsSL {url} | if [ \"$(id -u)\" = 0 ]; then \
-BOX_ORDERS_B64={orders} sh; else \
-sudo -n BOX_ORDERS_B64={orders} sh; fi",
+BOX_YES=1 BOX_ORDERS_B64={orders} sh; else \
+sudo -n BOX_YES=1 BOX_ORDERS_B64={orders} sh; fi",
         url = install_url,
         orders = orders_b64,
     )
@@ -392,6 +396,9 @@ mod tests {
         assert!(cmd.contains("BOX_ORDERS_B64=T3JkZXJz"));
         assert!(cmd.contains("id -u")); // runs as root directly, else sudo -n
         assert!(cmd.contains("sudo -n"));
+        // Non-interactive over SSH: without carried consent the installer has
+        // no terminal to ask on and correctly refuses to wipe anything.
+        assert!(cmd.contains("BOX_YES=1"));
     }
 
     #[test]

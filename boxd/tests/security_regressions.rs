@@ -19,10 +19,12 @@ use tower::ServiceExt;
 /// unit (DynamicUser, host netns, no PrivateNetwork/IPAddressDeny) sees.
 // Regression tests for the security review of 2026-08-11. Each of these
 // reproduced a real, exploited defect; they now assert the defect stays fixed.
-// Loopback still carries full operator authority BY DESIGN (an operator at the
-// Box needs no credential) — what changed is that a cross-site write is
-// refused, a source tree cannot publish the Box's secrets, and a container
-// cannot mount the host.
+// Loopback is NOT authority any more: every service the Box runs can also reach
+// 127.0.0.1:2693, so a deployed app could otherwise mint a pairing code and
+// take the console over. Authority comes from holding a session. Alongside
+// that: a cross-site write is refused, a source tree cannot publish the Box's
+// secrets, a container cannot mount the host, and a service the operator did
+// not publish is not served through the tunnel.
 fn loopback() -> ConnectInfo<SocketAddr> {
     ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 40000)))
 }
@@ -240,4 +242,87 @@ async fn loopback_can_write_a_root_bind_mount_into_the_system_config() {
     assert!(container
         .validate(&serde_json::json!({ "image": "x", "volumes": ["/var/lib/box/pg:/data"] }))
         .is_ok());
+}
+
+/// The console offers, per service, "Let people outside your home reach it".
+/// Nothing consulted that flag when serving: a site left unpublished was served
+/// to anyone who reached the Box through its tunnel, both by its own domain and
+/// at `/sites/<name>/`. On your own network these paths stay credential-free —
+/// that is what the console promises — but tunnel traffic only gets what the
+/// operator actually published.
+#[tokio::test]
+async fn unpublished_sites_are_not_served_through_the_tunnel() {
+    let (_tmp, paths, app) = app();
+    let token = boxd::auth::mint_session(&paths, "test").unwrap();
+
+    for (name, public) in [("secret", false), ("shared", true)] {
+        let (status, body, _) = send(
+            &app,
+            Request::post("/api/v1/services")
+                .header("authorization", format!("Bearer {token}"))
+                .header("content-type", "application/json")
+                .extension(lan())
+                .body(Body::from(
+                    json!({
+                        "name": name,
+                        "template": "static-site",
+                        "params": { "index_html": format!("<h1>{name}</h1>") },
+                        "domain": format!("{name}.example.com"),
+                        "public": public,
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "deploying {name} failed: {body}");
+    }
+
+    // --- through the tunnel (a proxy header is what marks that traffic) ---
+    for (path, host) in [("/sites/secret/", "box.local"), ("/", "secret.example.com")] {
+        let (status, _, _) = send(
+            &app,
+            Request::get(path)
+                .header("host", host)
+                .header("x-forwarded-for", "203.0.113.9")
+                .extension(lan())
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::NOT_FOUND,
+            "REGRESSION: unpublished site served through the tunnel via {path} (host {host})"
+        );
+    }
+
+    // What the operator DID publish still answers.
+    let (status, body, _) = send(
+        &app,
+        Request::get("/")
+            .header("host", "shared.example.com")
+            .header("x-forwarded-for", "203.0.113.9")
+            .extension(lan())
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "published site must still be served");
+    assert!(body.contains("shared"), "{body}");
+
+    // On your own network, both are reachable with no credential — unchanged.
+    for name in ["secret", "shared"] {
+        let (status, body, _) = send(
+            &app,
+            Request::get(&format!("/sites/{name}/"))
+                .header("host", "box.local")
+                .extension(lan())
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "LAN access to {name} must be unchanged");
+        assert!(body.contains(name), "{body}");
+    }
 }

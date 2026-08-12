@@ -92,6 +92,7 @@ impl ChannelConfig {
             self.system.clone(),
         )
         .with_board(self.board.clone())
+        .with_auto_update(self.auto_update)
     }
 }
 
@@ -232,9 +233,23 @@ pub fn update_and_switch(
     let repo = paths.os_config_dir();
     hostgen::write_host_repo(paths, config, &channel.spec(), &repo)?;
 
-    // Snapshot the pin so we can restore it if the new platform is unhealthy.
+    // Snapshot the pin so we can restore it if ANY step after this fails.
+    //
+    // Restoring it only when the health check failed was not enough, and the
+    // gap was self-concealing: a build that died on a transient fetch error
+    // left the bumped pin on disk, `check` compares that pin against upstream,
+    // so the box then reported itself up to date — while still running the old
+    // platform — until some later release moved upstream again.
     let lock_path = repo.join("flake.lock");
     let saved_lock = std::fs::read(&lock_path).ok();
+    let restore_pin = || match &saved_lock {
+        Some(lock) => {
+            let _ = std::fs::write(&lock_path, lock);
+        }
+        None => {
+            let _ = std::fs::remove_file(&lock_path);
+        }
+    };
 
     if bump {
         bump_pin(&repo)?;
@@ -242,18 +257,28 @@ pub fn update_and_switch(
         ensure_locked(&repo)?;
     }
 
-    let toplevel = ostier::build(&repo, &channel.host_id)?;
-    ostier::activate(ostier::SYSTEM_PROFILE, &toplevel, ostier::Action::Switch)?;
+    let toplevel = match ostier::build(&repo, &channel.host_id) {
+        Ok(t) => t,
+        Err(e) => {
+            restore_pin();
+            return Err(e.context("building the new platform (pin restored)"));
+        }
+    };
+
+    if let Err(e) = ostier::activate(ostier::SYSTEM_PROFILE, &toplevel, ostier::Action::Switch) {
+        // `activate` registers the generation before switching, so a failure
+        // part-way leaves the system profile — and the default boot entry —
+        // pointing at a system that was never health-checked. Put both back.
+        let _ = ostier::rollback(ostier::SYSTEM_PROFILE);
+        restore_pin();
+        return Err(e.context("activating the new platform (rolled back, pin restored)"));
+    }
+
     match health() {
         Ok(()) => Ok(toplevel),
         Err(e) => {
             ostier::rollback(ostier::SYSTEM_PROFILE)?;
-            match saved_lock {
-                Some(lock) => std::fs::write(&lock_path, lock)?,
-                None => {
-                    let _ = std::fs::remove_file(&lock_path);
-                }
-            }
+            restore_pin();
             bail!("platform update health check failed — rolled back (pin restored): {e:#}");
         }
     }
