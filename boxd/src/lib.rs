@@ -9,6 +9,7 @@ pub mod auth;
 pub mod backup;
 pub mod board;
 pub mod catalog;
+pub mod cfapi;
 pub mod channel;
 pub mod cloud;
 pub mod config;

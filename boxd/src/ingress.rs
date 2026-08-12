@@ -118,11 +118,15 @@ impl IngressProvider for CloudflareTunnel {
         }
     }
     fn steps(&self) -> Vec<&'static str> {
+        // Everything the Box can do for them has been taken off this list.
+        // What is left is what genuinely cannot be automated by anyone: a
+        // credential has to be created by a human in Cloudflare's UI (there is
+        // no OAuth for API tokens), and nameservers are changed at whatever
+        // registrar sold the domain — a company Cloudflare has no authority
+        // over. Connect the account and the Box does the rest.
         vec![
-            "Add your domain to Cloudflare and change its nameservers at your registrar. (Buying the domain at Cloudflare skips this.)",
-            "In Cloudflare Zero Trust, create a tunnel and copy its token.",
-            "Add one public hostname on that tunnel pointing at http://localhost:2694.",
-            "Paste the token here and turn it on.",
+            "Have a domain on Cloudflare. If it is registered elsewhere, add it there and change its nameservers at your registrar; buying it at Cloudflare skips that entirely.",
+            "Create an API token from the link the Box gives you (the permissions are pre-selected) and connect it.",
         ]
     }
     fn available(&self) -> bool {
@@ -458,6 +462,95 @@ fn binary_available(bin: &str) -> bool {
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
+}
+
+/// What connecting an account bought you.
+#[derive(Debug, Clone, Serialize)]
+pub struct SetupOutcome {
+    pub provider: String,
+    pub zone: Option<String>,
+    /// What the Box did, in order, so a person can see what was changed on
+    /// their account rather than being told "done".
+    pub did: Vec<String>,
+    /// What is still theirs to do, if anything.
+    pub still_needed: Vec<String>,
+}
+
+/// Set a way in up from nothing, using an account the operator connected.
+///
+/// This is the point of connecting an account: the six steps in someone else's
+/// dashboard collapse into one request. The credential never leaves this Box —
+/// an agent asks for the outcome and never sees the token, which matters
+/// because a Cloudflare token can rewrite DNS for every domain on the account.
+pub fn setup_cloudflare(paths: &Paths, zone: &str, hostname_label: Option<&str>) -> Result<SetupOutcome> {
+    use crate::cfapi;
+
+    let token = crate::secrets::get(paths, cfapi::API_TOKEN_SECRET)?.with_context(|| {
+        format!(
+            "no Cloudflare account connected yet. Create a token with the right permissions \
+             already selected here — {} — then connect it.",
+            cfapi::TOKEN_TEMPLATE_URL
+        )
+    })?;
+    crate::config::validate_domain(zone).context("the domain to publish under")?;
+
+    let mut did = Vec::new();
+    let mut still_needed = Vec::new();
+
+    let z = cfapi::lookup_zone(&token, zone)?;
+    if z.status != "active" {
+        still_needed.push(format!(
+            "{zone} is on Cloudflare but its status is {:?} — it starts serving once the \
+             nameservers you set at your registrar have taken effect.",
+            z.status
+        ));
+    }
+    did.push(format!("found {zone} on your Cloudflare account"));
+
+    // A tunnel named after this Box, so several Boxes on one account stay
+    // tellable apart in the dashboard.
+    let name = format!("the-box-{}", crate::fleet::hostname());
+    let created = cfapi::call(&token, &cfapi::create_tunnel(&z.account_id, &name))?;
+    let tunnel_id = created
+        .get("result")
+        .and_then(|r| r.get("id"))
+        .and_then(serde_json::Value::as_str)
+        .context("Cloudflare created a tunnel but did not say its id")?
+        .to_string();
+    did.push(format!("created a tunnel named {name}"));
+
+    let run_token = cfapi::call(&token, &cfapi::tunnel_run_token(&z.account_id, &tunnel_id))?
+        .get("result")
+        .and_then(serde_json::Value::as_str)
+        .context("Cloudflare did not return a token for the tunnel")?
+        .to_string();
+    crate::secrets::set(paths, CF_TOKEN_SECRET, &run_token)?;
+    did.push("stored the tunnel's credential, encrypted".into());
+
+    cfapi::call(
+        &token,
+        &cfapi::put_ingress(&z.account_id, &tunnel_id, zone, PUBLIC_PORT),
+    )?;
+    did.push(format!(
+        "pointed *.{zone} at this Box's public entrance (only services you publish are served there)"
+    ));
+
+    // One wildcard record, so publishing a service later needs nothing here.
+    let label = hostname_label.unwrap_or("*");
+    match cfapi::call(&token, &cfapi::dns_record(&z.id, label, &tunnel_id)) {
+        Ok(_) => did.push(format!("created the DNS record for {label}.{zone}")),
+        Err(e) => still_needed.push(format!(
+            "the DNS record for {label}.{zone} was not created ({e:#}) — if one already \
+             exists pointing elsewhere, remove it and run this again"
+        )),
+    }
+
+    Ok(SetupOutcome {
+        provider: "cloudflare-tunnel".into(),
+        zone: Some(zone.to_string()),
+        did,
+        still_needed,
+    })
 }
 
 /// What a person or an agent is told about how this Box is reachable.
