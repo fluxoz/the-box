@@ -401,14 +401,18 @@ fn tailscale_status() -> Option<serde_json::Value> {
 /// answers a missing grant by printing an approval link and then waiting at a
 /// prompt forever — which on a Box means a request that never returns. Asked of
 /// the capability map instead, which answers immediately.
-const FUNNEL_CAP: &str = "https://tailscale.com/cap/funnel";
+/// Matched as a PREFIX, because the capability a permitted node actually
+/// carries is `…/cap/funnel-ports?ports=443,8443,10000` — the grant and the
+/// allowed ports arrive as one key. Looking for an exact `…/cap/funnel` finds
+/// nothing and refuses a tailnet that has granted Funnel perfectly well.
+const FUNNEL_CAP_PREFIX: &str = "https://tailscale.com/cap/funnel";
 
 fn funnel_permitted(status: &serde_json::Value) -> bool {
     status
         .get("Self")
         .and_then(|s| s.get("CapMap"))
         .and_then(|m| m.as_object())
-        .map(|m| m.contains_key(FUNNEL_CAP))
+        .map(|m| m.keys().any(|k| k.starts_with(FUNNEL_CAP_PREFIX)))
         .unwrap_or(false)
 }
 
@@ -559,6 +563,32 @@ mod tests {
                 .url_for(&cfg, "blog", Some("https://x-y-z.trycloudflare.com"))
                 .as_deref(),
             Some("https://x-y-z.trycloudflare.com/")
+        );
+    }
+
+    /// A permitted node does not carry a bare `…/cap/funnel`; it carries
+    /// `…/cap/funnel-ports?ports=…`. Matching exactly refused tailnets that had
+    /// granted Funnel correctly — found by running it against a real one.
+    #[test]
+    fn funnel_grant_is_recognised_in_the_form_tailscale_actually_sends() {
+        let granted = serde_json::json!({ "Self": { "CapMap": {
+            "https://tailscale.com/cap/funnel-ports?ports=443,8443,10000": [],
+            "https://tailscale.com/cap/ssh": []
+        }}});
+        assert!(funnel_permitted(&granted));
+
+        let not_granted = serde_json::json!({ "Self": { "CapMap": {
+            "https://tailscale.com/cap/ssh": [],
+            "https://tailscale.com/cap/file-sharing": []
+        }}});
+        assert!(!funnel_permitted(&not_granted));
+        assert!(!funnel_permitted(&serde_json::json!({})));
+
+        // The refusal points at the page that fixes it, for this node.
+        let status = serde_json::json!({ "Self": { "ID": "nABC123" } });
+        assert_eq!(
+            funnel_approval_url(&status).as_deref(),
+            Some("https://login.tailscale.com/f/funnel?node=nABC123")
         );
     }
 
