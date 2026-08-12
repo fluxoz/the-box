@@ -125,6 +125,25 @@ async fn require_auth(
 ) -> Response {
     let path = request.uri().path();
     if crate::auth::is_public_path(path) {
+        // `/sites/<name>/` is credential-free on your own network — that is
+        // what the console promises. It is NOT credential-free through the
+        // tunnel unless the operator published that service.
+        if let Some(name) = path.strip_prefix("/sites/").map(|rest| {
+            rest.split('/').next().unwrap_or_default().to_string()
+        }) {
+            if !name.is_empty() && crate::auth::is_proxied(request.headers()) {
+                match sites::site_is_public(&state, &name) {
+                    Some(true) => {}
+                    _ => {
+                        return (
+                            StatusCode::NOT_FOUND,
+                            axum::Json(serde_json::json!({ "error": "service not found" })),
+                        )
+                            .into_response()
+                    }
+                }
+            }
+        }
         return next.run(request).await;
     }
     let headers = request.headers();

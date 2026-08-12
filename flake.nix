@@ -360,10 +360,12 @@
 
                 # Stamp the real artifact hashes into the published installer so
                 # it verifies what it fetches before kexec.
-                bz=$(sha256sum $out/netboot/bzImage | cut -d' ' -f1)
-                ir=$(sha256sum $out/netboot/initrd  | cut -d' ' -f1)
+                bz=$(sha256sum $out/netboot/bzImage      | cut -d' ' -f1)
+                ir=$(sha256sum $out/netboot/initrd       | cut -d' ' -f1)
+                ip=$(sha256sum $out/netboot/netboot.ipxe | cut -d' ' -f1)
                 substitute ${./installers/linux/install.sh} $out/install.sh \
-                  --replace @BZIMAGE_SHA256@ "$bz" --replace @INITRD_SHA256@ "$ir"
+                  --replace @BZIMAGE_SHA256@ "$bz" --replace @INITRD_SHA256@ "$ir" \
+                  --replace @IPXE_SHA256@ "$ip"
                 chmod +x $out/install.sh
 
                 cp ${./installers/windows/install.ps1} $out/install.ps1

@@ -37,7 +37,14 @@ pub async fn host_dispatch(
         .unwrap_or_default();
 
     if host.contains('.') {
-        if let Some(service) = service_for_host(&state, &host) {
+        if let Some((service, public)) = service_for_host(&state, &host) {
+            // The console offers "Let people outside your home reach it" per
+            // service, and that promise has to hold for the traffic it is about.
+            // Nothing consulted the flag when serving, so a service left
+            // unpublished was reachable by anyone who found the tunnel.
+            if !public && crate::auth::is_proxied(request.headers()) {
+                return not_found("service not found");
+            }
             let raw_path = request.uri().path();
             let rel = urlencoding::decode(raw_path)
                 .map(|decoded| decoded.into_owned())
@@ -48,14 +55,28 @@ pub async fn host_dispatch(
     next.run(request).await
 }
 
-fn service_for_host(state: &SharedState, host: &str) -> Option<String> {
+/// The service a Host header names, and whether it may answer traffic from
+/// outside this network without a session.
+fn service_for_host(state: &SharedState, host: &str) -> Option<(String, bool)> {
     let root = store::current_store_path(&state.paths)?;
     let manifest = manifest::read_manifest(&root).ok()?;
     manifest
         .services
         .iter()
         .find(|s| s.domain.as_deref() == Some(host))
-        .map(|s| s.name.clone())
+        .map(|s| (s.name.clone(), s.public))
+}
+
+/// Whether a `/sites/<name>/` request may be answered without a session.
+/// `None` when there is no such service in the current generation.
+pub fn site_is_public(state: &SharedState, name: &str) -> Option<bool> {
+    let root = store::current_store_path(&state.paths)?;
+    let manifest = manifest::read_manifest(&root).ok()?;
+    manifest
+        .services
+        .iter()
+        .find(|s| s.name == name)
+        .map(|s| s.public)
 }
 
 pub async fn redirect_to_slash(Path(name): Path<String>) -> Redirect {

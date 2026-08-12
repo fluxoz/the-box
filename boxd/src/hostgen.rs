@@ -33,6 +33,11 @@ pub struct HostSpec {
     /// firmware and boot method — a Pi rebuilt without its board would not
     /// boot. See [`crate::board`].
     pub board: Option<String>,
+    /// Whether this box picks up new platform releases on a timer. Rendered
+    /// into the host module as `services.the-box.autoUpdate.enable`, which is
+    /// what actually creates the timer — without this the console's
+    /// "automatic updates" checkbox wrote a value nothing ever read.
+    pub auto_update: bool,
 }
 
 impl HostSpec {
@@ -46,11 +51,17 @@ impl HostSpec {
             platform_ref: platform_ref.into(),
             system: system.into(),
             board: None,
+            auto_update: false,
         }
     }
 
     pub fn with_board(mut self, board: Option<String>) -> Self {
         self.board = board;
+        self
+    }
+
+    pub fn with_auto_update(mut self, auto_update: bool) -> Self {
+        self.auto_update = auto_update;
         self
     }
 }
@@ -118,9 +129,11 @@ in
   imports = serviceModules;
 
   networking.hostName = "{id}";
+  services.the-box.autoUpdate.enable = {auto_update};
 }}
 "#,
         id = spec.id,
+        auto_update = if spec.auto_update { "true" } else { "false" },
     )
 }
 

@@ -43,6 +43,18 @@
       fi
       echo "$name" > /proc/sys/kernel/hostname
 
+      # Everything below is the ONE-TIME handoff: it sets the box up, and from
+      # then on the box's own state is the truth. Re-applying it every boot
+      # undid the operator afterwards — it rewrote authorized_keys and
+      # network.toml (silently re-enabling a tunnel they had turned off), and
+      # re-seeded the "single-use" enrollment code, so a code that had been
+      # redeemed or had expired came back at every reboot.
+      #
+      # The hostname above stays outside this guard: it is written to
+      # /proc/sys/kernel/hostname, which does not survive a reboot.
+      stamp=/etc/box/.handoff-applied
+      [ -e "$stamp" ] && exit 0
+
       # Wi-Fi: materialize a NetworkManager connection before NM starts.
       ssid=$(jq -r '.wifi.ssid // empty' "$conf")
       if [ -n "$ssid" ]; then
@@ -81,6 +93,9 @@
         printf 'cloudflare_enabled = true\n' > /var/lib/boxd/network.toml
         chown -R boxd:boxd /var/lib/boxd
       fi
+
+      # Applied. Later boots leave the box's own state alone.
+      touch "$stamp"
     '';
   };
 }

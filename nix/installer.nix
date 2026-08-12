@@ -190,6 +190,17 @@ let
         exit 1
       fi
 
+      # Box OS boots via UEFI (systemd-boot). On a legacy-BIOS machine every
+      # step below would succeed right up to installing the bootloader, which
+      # means the disk is already gone by the time we find out — a machine wiped
+      # and left with nothing to boot. Check first.
+      if [ ! -d /sys/firmware/efi ]; then
+        log "this machine booted in legacy BIOS mode, and Box OS boots via UEFI."
+        log "NOTHING HAS BEEN CHANGED. Enable UEFI in the firmware settings and"
+        log "run this again, or install from the USB image on older hardware."
+        exit 1
+      fi
+
       # Orders present but storage deferred ("decide on the box"): run the
       # wizards with this box's identity preloaded, so the operator picks only
       # the disk layout. The wizard rewrites $handoff with the merged orders.
@@ -214,12 +225,26 @@ let
       fi
 
       # ---- 4. Partition + format via disko --------------------------------
+      # Last check before the disks go. A trimmed installer does not carry the
+      # Box OS closure — it fetches it from the binary cache at install time —
+      # so an unreachable cache used to be discovered AFTER the wipe, leaving a
+      # machine with no OS and no way back.
+      system=$(cat /etc/box/system-store-path)
+      if ! nix path-info "$system" >/dev/null 2>&1; then
+        log "the Box OS closure is not on this installer — checking it can be fetched ..."
+        if ! nix-store --realise --dry-run "$system" >/dev/null 2>&1; then
+          log "cannot reach the Box OS closure ($system)."
+          log "NOTHING HAS BEEN CHANGED. Check this machine's network and DNS, then"
+          log "run this again."
+          exit 1
+        fi
+      fi
+
       log "partitioning with disko (this ERASES the target disk(s))"
       disko --mode destroy,format,mount --yes-wipe-all-disks \
         --root-mountpoint /mnt "$diskocfg" 2>&1 | tee -a "$PROG"
 
-      # ---- 5. Install the embedded Box OS closure (offline) ---------------
-      system=$(cat /etc/box/system-store-path)
+      # ---- 5. Install the Box OS closure ----------------------------------
       log "installing Box OS from $system"
       mkdir -p /mnt/etc/box
       install -m 600 "$handoff" /mnt/etc/box/install-config.json

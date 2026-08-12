@@ -37,6 +37,10 @@ ORDERS_RAM="/dev/shm/box-orders.json"          # tiny, RAM-only
 # different kernel/initrd to kexec into — this script WIPES DISKS.
 BZIMAGE_SHA256="@BZIMAGE_SHA256@"
 INITRD_SHA256="@INITRD_SHA256@"
+# netboot.ipxe is not "just boot params": its kernel line BECOMES this machine's
+# kexec command line, so a mirror that could rewrite it could add kernel
+# arguments to the installer we are about to boot. Pinned like the other two.
+IPXE_SHA256="@IPXE_SHA256@"
 
 say() { printf '\033[1;33m[box]\033[0m %s\n' "$*" >&2; }
 die() { printf '\033[1;31m[box] error:\033[0m %s\n' "$*" >&2; exit 1; }
@@ -93,9 +97,19 @@ cat >&2 <<EOF
   ============================================================
 EOF
 if [ "${BOX_YES:-}" != "1" ]; then
-  printf '  Type ERASE to proceed: ' >&2
-  read -r ans
-  [ "$ans" = "ERASE" ] || die "aborted — nothing was changed."
+  # Read the answer from the TERMINAL, not stdin. In the documented flow —
+  # `curl … | sudo sh` — stdin is the script itself, so a plain `read` consumed
+  # the next line of this file as the answer and every takeover aborted.
+  if [ -r /dev/tty ]; then
+    printf '  Type ERASE to proceed: ' >&2
+    read -r ans < /dev/tty
+    [ "$ans" = "ERASE" ] || die "aborted — nothing was changed."
+  else
+    # No terminal to ask (a provisioning agent, cloud-init, CI). Refuse rather
+    # than assume: this wipes every disk.
+    die "no terminal to confirm on. This ERASES every disk on this machine. \
+If you mean it, re-run with BOX_YES=1 set."
+  fi
 fi
 
 mkdir -p "$WORK"
@@ -104,10 +118,12 @@ curl -fsSL "$NETBOOT_BASE/bzImage"      -o "$WORK/bzImage"      || die "could no
 curl -fsSL "$NETBOOT_BASE/initrd"       -o "$WORK/initrd"       || die "could not fetch the initrd."
 curl -fsSL "$NETBOOT_BASE/netboot.ipxe" -o "$WORK/netboot.ipxe" || die "could not fetch boot parameters."
 
-# Verify the kernel + initrd against the hashes baked into this script before we
-# ever kexec into them. (netboot.ipxe only carries boot params, checked below.)
-verify_sha "$WORK/bzImage" "$BZIMAGE_SHA256"
-verify_sha "$WORK/initrd"  "$INITRD_SHA256"
+# Verify everything we fetched against the hashes baked into this script before
+# we ever kexec into it — including netboot.ipxe, whose contents become the
+# kernel command line.
+verify_sha "$WORK/bzImage"      "$BZIMAGE_SHA256"
+verify_sha "$WORK/initrd"       "$INITRD_SHA256"
+verify_sha "$WORK/netboot.ipxe" "$IPXE_SHA256"
 
 # Inject the orders into the kexec initrd so they ride into the installer in RAM
 # and never touch a disk (nor depend on the disk layout). The kernel unpacks all
