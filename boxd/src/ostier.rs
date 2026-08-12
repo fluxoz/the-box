@@ -108,15 +108,39 @@ pub type SystemHealth = dyn Fn() -> Result<()>;
 
 /// boxd being active is the minimum bar for a healthy switch — if the new
 /// system can't run the daemon, roll back rather than strand the operator.
+///
+/// A `Type=simple` unit counts as "active" the instant systemd forks it, so a
+/// single instantaneous check also passes a daemon that dies a second later and
+/// is restarted forever by `Restart=on-failure`. Require it to be active and to
+/// STAY active for a few consecutive polls before we keep the switch.
 pub fn default_system_health() -> Result<()> {
-    let out = Command::new("systemctl")
-        .args(["is-active", "--quiet", "boxd.service"])
-        .status()
-        .context("running systemctl is-active boxd")?;
-    if !out.success() {
-        bail!("boxd.service is not active after the switch");
+    const POLLS: u32 = 15;
+    const SETTLED: u32 = 3;
+    const INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
+
+    let mut consecutive = 0;
+    for poll in 0..POLLS {
+        if unit_is_active("boxd.service")? {
+            consecutive += 1;
+            if consecutive >= SETTLED {
+                return Ok(());
+            }
+        } else {
+            consecutive = 0;
+        }
+        if poll + 1 < POLLS {
+            std::thread::sleep(INTERVAL);
+        }
     }
-    Ok(())
+    bail!("boxd.service did not stay active after the switch (crash-looping or failed to start)")
+}
+
+fn unit_is_active(unit: &str) -> Result<bool> {
+    Ok(Command::new("systemctl")
+        .args(["is-active", "--quiet", unit])
+        .status()
+        .with_context(|| format!("running systemctl is-active {unit}"))?
+        .success())
 }
 
 /// Build the per-box system's toplevel from a generated repo.

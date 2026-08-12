@@ -1539,26 +1539,40 @@ pub async fn restore_backup(
     State(state): State<SharedState>,
     Form(f): Form<RestoreForm>,
 ) -> Redirect {
-    let paths = state.paths.clone();
-    let snap = f.snapshot.clone();
-    let scope = f.scope.clone();
-    tokio::spawn(async move {
-        let _ = crate::web::blocking(move || {
-            let config = BoxConfig::load(&paths)?;
-            let bc = config
-                .backup
-                .clone()
-                .ok_or_else(|| anyhow::anyhow!("no backup configured"))?;
-            let includes = match scope.as_str() {
-                "all" => Vec::new(),
-                "config" => crate::backup::config_includes(&paths),
-                svc => crate::backup::service_includes(&config, svc),
-            };
-            crate::backup::restore(&paths, &bc, &snap, std::path::Path::new("/"), &includes)
-        })
-        .await;
-    });
-    backup_redirect(Ok(()), &format!("Restore of {} started", f.snapshot))
+    // A restore writes files back over the live filesystem, so it runs as a
+    // tracked job under the apply lock like every other mutating operation:
+    // errors surface on the job page instead of vanishing into a spawned task
+    // that told the operator "started" no matter what happened.
+    let id = {
+        let state = state.clone();
+        let snap = f.snapshot.clone();
+        let scope = f.scope.clone();
+        state.jobs.clone().start(
+            "restore",
+            format!("Restoring {snap}"),
+            "/backup",
+            move |p| {
+                p.phase("waiting for other changes to finish");
+                let _guard = state.apply_lock.lock().unwrap();
+                let config = BoxConfig::load(&state.paths)?;
+                let bc = config
+                    .backup
+                    .clone()
+                    .ok_or_else(|| anyhow::anyhow!("no backup configured"))?;
+                let includes = crate::backup::resolve_scope(&state.paths, &config, &scope)?;
+                p.phase(format!("restoring {scope} from {snap}"));
+                crate::backup::restore(
+                    &state.paths,
+                    &bc,
+                    &snap,
+                    std::path::Path::new("/"),
+                    &includes,
+                )?;
+                Ok(format!("Restored {scope} from {snap}"))
+            },
+        )
+    };
+    Redirect::to(&format!("/jobs/{id}"))
 }
 
 pub async fn system(
@@ -1924,6 +1938,7 @@ pub async fn pair(
     // able to seize an unclaimed Box).
     let claimable =
         crate::auth::is_claimable(&state.paths) && !crate::auth::is_proxied(&headers);
+    let has_keys = crate::auth::has_security_keys(&state.paths);
     let page = html! {
         (DOCTYPE)
         html lang="en" {
@@ -1956,11 +1971,7 @@ pub async fn pair(
                             }
                             details style="margin-top:1.5rem" {
                                 summary.muted { "Have a pairing code instead?" }
-                                div #keysigninbox {
-                button.btn type="button" #keysignin { "Sign in with a security key" }
-                p.hint #keysigninmsg {}
-            }
-            form.stack method="post" action="/pair/redeem" style="margin-top:.8rem" {
+                                form.stack method="post" action="/pair/redeem" style="margin-top:.8rem" {
                                     label {
                                         "Pairing code"
                                         input type="text" name="code" required
@@ -1975,6 +1986,15 @@ pub async fn pair(
                                 "Management on this Box answers to you. Enter your one-time pairing "
                                 "code, from your setup recovery kit, or from “Add device” on a device "
                                 "that is already paired."
+                            }
+                            // Only where a key can actually work: this Box is
+                            // claimed and has one enrolled.
+                            @if has_keys {
+                                div #keysigninbox style="margin-bottom:1.2rem" {
+                                    button.btn type="button" #keysignin { "Sign in with a security key" }
+                                    p.hint #keysigninmsg {}
+                                }
+                                p.muted style="margin-bottom:1.2rem" { "or enter a pairing code" }
                             }
                             form.stack method="post" action="/pair/redeem" {
                                 label {

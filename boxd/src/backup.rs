@@ -89,6 +89,38 @@ pub fn config_includes(paths: &Paths) -> Vec<String> {
     vec![paths.data_dir.display().to_string(), "/etc/box".to_string()]
 }
 
+/// Resolve a restore scope into the `--include` filters restic should apply.
+///
+/// An EMPTY filter list means "restore this entire snapshot", which — written
+/// back over a live `/` — is the most destructive thing this daemon can do. So
+/// it is reachable only through the explicit `all` scope. A misspelled service
+/// name, an empty scope, or a service with no backed-up state is refused, never
+/// silently widened into a full-system restore.
+pub fn resolve_scope(paths: &Paths, config: &BoxConfig, scope: &str) -> Result<Vec<String>> {
+    match scope.trim() {
+        "all" => Ok(Vec::new()),
+        "" => bail!(
+            "a restore scope is required: \"all\", \"config\", or the name of a service"
+        ),
+        "config" => Ok(config_includes(paths)),
+        svc => {
+            if config.find(svc).is_none() {
+                bail!(
+                    "unknown restore scope {svc:?} — expected \"all\", \"config\", or a deployed service name"
+                );
+            }
+            let includes = service_includes(config, svc);
+            if includes.is_empty() {
+                bail!(
+                    "service {svc:?} has no backed-up state to restore (it re-materializes from config) — \
+                     use the \"config\" scope, or \"all\" to restore the whole snapshot"
+                );
+            }
+            Ok(includes)
+        }
+    }
+}
+
 // ---- restic plumbing -----------------------------------------------------
 
 fn repo_url(b: &BackendConfig) -> Result<String> {
@@ -201,8 +233,12 @@ pub fn run(paths: &Paths, config: &BoxConfig, bc: &BackupConfig) -> Result<()> {
         bail!("restic backup failed");
     }
     // Cheap marker so health can report backup freshness without shelling out
-    // to restic on every (public, frequent) /health poll.
-    let _ = std::fs::write(last_backup_marker(paths), chrono::Utc::now().to_rfc3339());
+    // to restic on every (public, frequent) /health poll. The scheduled backup
+    // runs as root (it must read root-owned state), so hand the marker back to
+    // the data dir's owner or the boxd service can't refresh it later.
+    let marker = last_backup_marker(paths);
+    let _ = std::fs::write(&marker, chrono::Utc::now().to_rfc3339());
+    crate::util::chown_like(&paths.data_dir, &marker);
     prune(paths, bc)
 }
 

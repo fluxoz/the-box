@@ -14,6 +14,7 @@ pub mod nix;
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
@@ -58,8 +59,7 @@ pub fn record_and_switch(paths: &Paths, store_path: &Path) -> Result<GenerationI
     fs::create_dir_all(&profiles)?;
     let number = next_number(paths)?;
     let link = profiles.join(link_name(number));
-    std::os::unix::fs::symlink(store_path, &link)
-        .with_context(|| format!("creating {}", link.display()))?;
+    create_generation_link(&link, store_path)?;
     switch(paths, number)?;
     Ok(GenerationInfo {
         number,
@@ -67,6 +67,37 @@ pub fn record_and_switch(paths: &Paths, store_path: &Path) -> Result<GenerationI
         created_at: Some(Utc::now()),
         current: true,
     })
+}
+
+/// Point a generation's profile link at its output tree, registering it as an
+/// indirect GC root when the tree lives in the Nix store.
+///
+/// These profiles live in the boxd data dir, not `/nix/var/nix/profiles`, so
+/// nothing otherwise tells Nix they are in use: a `nix-collect-garbage` (the
+/// obvious thing to run on a box low on disk) would delete the store path the
+/// *running* generation serves from. Registering an indirect root makes the
+/// link itself the thing Nix follows, and it is cleaned up automatically when
+/// the generation is removed.
+///
+/// Falls back to a plain symlink: the local builder's trees are not store
+/// paths, and a box without Nix has nothing to protect.
+fn create_generation_link(link: &Path, store_path: &Path) -> Result<()> {
+    if store_path.starts_with("/nix/store") {
+        let registered = Command::new("nix-store")
+            .arg("--realise")
+            .arg(store_path)
+            .arg("--add-root")
+            .arg(link)
+            .arg("--indirect")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if registered && fs::symlink_metadata(link).is_ok() {
+            return Ok(());
+        }
+    }
+    std::os::unix::fs::symlink(store_path, link)
+        .with_context(|| format!("creating {}", link.display()))
 }
 
 /// Atomically point the profile at an existing generation.

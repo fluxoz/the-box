@@ -85,10 +85,27 @@ fn now() -> i64 {
 }
 
 fn load(paths: &Paths) -> Store {
-    std::fs::read_to_string(paths.auth_file())
-        .ok()
-        .and_then(|t| serde_json::from_str(&t).ok())
-        .unwrap_or_default()
+    load_checked(paths).unwrap_or_default()
+}
+
+/// Load the auth store, distinguishing "no file yet" (a genuinely unclaimed
+/// Box — `Ok(default)`) from "a file exists but cannot be read or parsed"
+/// (`Err`).
+///
+/// That distinction is a security boundary, not tidiness: every caller that
+/// decides whether this Box is still claimable must treat an unreadable store
+/// as claimed. Silently defaulting to an empty store would re-open first-run
+/// claim to anyone on the LAN — and let `claim` overwrite the real operator's
+/// credentials — on the strength of a truncated write.
+fn load_checked(paths: &Paths) -> Result<Store> {
+    let file = paths.auth_file();
+    match std::fs::read_to_string(&file) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Store::default()),
+        Err(e) => Err(anyhow::Error::from(e))
+            .with_context(|| format!("reading {}", file.display())),
+        Ok(text) => serde_json::from_str(&text)
+            .with_context(|| format!("parsing {}", file.display())),
+    }
 }
 
 fn save(paths: &Paths, store: &Store) -> Result<()> {
@@ -207,8 +224,21 @@ pub fn redeem_code(paths: &Paths, code: &str, session_label: &str) -> Result<Str
 /// freshly flashed Box (no Configurator recovery kit) is claimable; a Box set
 /// up with orders (which seed an enrollment code) or already paired is not.
 pub fn is_claimable(paths: &Paths) -> bool {
-    let store = load(paths);
-    store.sessions.is_empty() && store.codes.is_empty()
+    // An enrolled security key is an operator credential just like a session:
+    // if one exists, this Box has been claimed. Ignoring them meant revoking
+    // the last session re-opened first-run claim to anyone on the LAN, even
+    // though the real operator could still sign in with their key.
+    // An unreadable store counts as claimed — see `load_checked`.
+    match load_checked(paths) {
+        Ok(store) => store.sessions.is_empty() && store.codes.is_empty() && store.keys.is_empty(),
+        Err(_) => false,
+    }
+}
+
+/// Whether any security key is enrolled — the sign-in affordance is only
+/// offered where it can actually succeed.
+pub fn has_security_keys(paths: &Paths) -> bool {
+    !load(paths).keys.is_empty()
 }
 
 /// First-run claim: on a still-unclaimed Box, mint the first operator session
@@ -217,8 +247,11 @@ pub fn is_claimable(paths: &Paths) -> bool {
 /// claimed or has a pending code (the caller then falls back to code entry).
 /// The check and the mint share one load/save so the claim window stays small.
 pub fn claim(paths: &Paths, label: &str) -> Result<Option<String>> {
-    let mut store = load(paths);
-    if !store.sessions.is_empty() || !store.codes.is_empty() {
+    // `load_checked`, not `load`: claiming REPLACES the store, so a store that
+    // exists but won't parse must abort the claim rather than overwrite the
+    // real operator's sessions and keys with a fresh one.
+    let mut store = load_checked(paths)?;
+    if !store.sessions.is_empty() || !store.codes.is_empty() || !store.keys.is_empty() {
         return Ok(None);
     }
     let token = random_hex(32)?;
@@ -418,6 +451,36 @@ mod tests {
         let p = Paths::new(tmp.path().to_path_buf());
         p.ensure().unwrap();
         (tmp, p)
+    }
+
+    /// First-run claim is the one door that opens without a credential, so
+    /// everything that means "this Box already has an operator" must close it.
+    #[test]
+    fn claim_closes_for_every_kind_of_credential() {
+        // A fresh Box is claimable exactly once.
+        let (_t, p) = paths();
+        assert!(is_claimable(&p));
+        assert!(claim(&p, "first").unwrap().is_some());
+        assert!(!is_claimable(&p));
+        assert!(claim(&p, "second").unwrap().is_none());
+
+        // A security key alone keeps it claimed: revoking the last session
+        // must not re-open first-run claim to the LAN.
+        let (_t2, p2) = paths();
+        add_key(&p2, "yubikey", "localhost", serde_json::json!({})).unwrap();
+        assert!(
+            !is_claimable(&p2),
+            "an enrolled security key means this Box has an operator"
+        );
+        assert!(claim(&p2, "attacker").unwrap().is_none());
+        assert!(has_security_keys(&p2));
+
+        // A store that exists but cannot be parsed fails CLOSED: a truncated
+        // write must never look like a factory-fresh Box.
+        let (_t3, p3) = paths();
+        std::fs::write(p3.auth_file(), "{ this is not json").unwrap();
+        assert!(!is_claimable(&p3), "an unreadable auth store is not claimable");
+        assert!(claim(&p3, "attacker").is_err(), "claim must refuse to overwrite it");
     }
 
     #[test]

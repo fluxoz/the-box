@@ -194,9 +194,23 @@ in
         description = "The Box daemon";
         wantedBy = [ "multi-user.target" ];
         after = [ "network.target" ];
-        # boxd shells out to nix (generation builds), cloudflared (BYO tunnel),
-        # and avahi-browse + curl (LAN fleet discovery).
-        path = [ pkgs.nix pkgs.cloudflared pkgs.avahi pkgs.curl pkgs.systemd pkgs.age ];
+        # Everything boxd shells out to. Keep this in step with the
+        # `Command::new` calls in boxd/src: nix (generation builds), cloudflared
+        # (BYO tunnel), avahi-browse + curl (LAN fleet discovery), git (config
+        # repo history + push), tailscale (Box Connect mesh), restic + openssh
+        # (backups, including sftp repos), age/age-keygen (secrets).
+        path = [
+          pkgs.nix
+          pkgs.cloudflared
+          pkgs.avahi
+          pkgs.curl
+          pkgs.systemd
+          pkgs.age
+          pkgs.git
+          pkgs.tailscale
+          pkgs.restic
+          pkgs.openssh
+        ];
         environment = {
           # nix (invoked by boxd for generation builds) needs a writable cache
           # under $HOME; the boxd system user's default home is /var/empty.
@@ -230,11 +244,16 @@ in
         # age: boxd decrypts the (encrypted-at-rest) backup password on demand
         # for restic via RESTIC_PASSWORD_COMMAND.
         path = [ pkgs.restic pkgs.openssh pkgs.age ];
-        environment.HOME = cfg.dataDir;
+        environment.HOME = "/root";
         serviceConfig = {
           Type = "oneshot";
-          User = "boxd";
-          Group = "boxd";
+          # Root, because the backup set is manifest-derived and includes state
+          # only root can read (/etc/box/install-config.json is 0600 root, and a
+          # container's volumes are usually root-owned). As boxd this failed on
+          # every due run: restic exited non-zero, so the freshness marker was
+          # never written and retention never ran. boxd only ever sees the
+          # marker, which `backup::run` hands back to the data dir's owner.
+          User = "root";
           ExecStart = "${lib.getExe cfg.package} --data-dir ${cfg.dataDir} backup run --if-due";
         };
       };
@@ -255,8 +274,14 @@ in
       # can trigger it; the autoUpdate timer below is what makes it periodic.
       systemd.services.boxd-channel-update = {
         description = "The Box platform channel update";
-        path = [ pkgs.nix pkgs.git ];
+        path = [ pkgs.nix pkgs.git pkgs.systemd ];
         environment.HOME = "/root";
+        # The update switches the system configuration, and switch-to-configuration
+        # restarts changed units. Without this, systemd restarts THIS unit
+        # mid-update and kills the updater before it can health-check the new
+        # generation and roll back — the failure mode the rollback exists for.
+        restartIfChanged = false;
+        stopIfChanged = false;
         serviceConfig = {
           Type = "oneshot";
           User = "root";
