@@ -97,9 +97,25 @@ Deploy a static site (activates atomically as a new generation; rollback-safe):
            "name":"deploy_static_site",
            "arguments":{"name":"welcome","index_html":"<h1>hi</h1>"}}}'
 
+Publish a project you just built — send the BUILT output, not the source tree.
+Text files are plain strings; binaries are {"base64":"..."}:
+
+    curl -fsS -X POST http://BOX:2693/mcp -H "authorization: Bearer $TOKEN" \
+      -H 'content-type: application/json' \
+      -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{
+           "name":"upload_files",
+           "arguments":{"name":"portfolio","files":{
+             "index.html":"<h1>hi</h1>",
+             "assets/app.js":"console.log(1)"}}}}'
+
+When something is wrong, read the logs rather than guessing:
+
+    …"name":"service_logs","arguments":{"name":"portfolio","lines":50}
+
 Tools: get_status, list_services, list_templates, deploy, deploy_static_site,
-delete_service, list_generations, list_history, channel_status, channel_check,
-rollback, backup_status, backup_snapshots, backup_now, backup_restore.
+upload_files, service_logs, delete_service, list_generations, list_history,
+channel_status, channel_check, rollback, backup_status, backup_snapshots,
+backup_now, backup_restore.
 Full argument schemas + examples: https://thebox.build/llms-full.txt
 
 ## Notes
@@ -111,6 +127,12 @@ Full argument schemas + examples: https://thebox.build/llms-full.txt
   Box or by you and never leave it.
 - Deploys and platform updates are atomic generations; a bad change is one
   `rollback` away, and a failed update rolls itself back.
+- A service that needs the system to run it (a container, an app) reports
+  `state` and a `note` saying so until the Box has applied it. Believe the
+  state, not the fact that the call succeeded, and read `url` for where it is
+  actually served — it is not `/sites/<name>/` for anything but a static site.
+- To reach a service from the internet, give it a `domain`, set `public`, and
+  point a tunnel at the Box's port 80.
 - Bare metal with a blank disk has no SSH to hit. See "Bare metal" below.
 
 ## Docs

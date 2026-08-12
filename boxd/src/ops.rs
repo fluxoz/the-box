@@ -141,6 +141,62 @@ pub fn classify_deploy(current: &BoxConfig, req: &DeployRequest) -> ChangeKind {
     }
 }
 
+/// One uploaded file: a path relative to the site root, and its bytes.
+pub struct UploadedFile {
+    pub path: String,
+    pub bytes: Vec<u8>,
+}
+
+/// Stage files for a service, to be deployed as its content.
+///
+/// This is how someone's own project gets onto the Box. Without it a multi-file
+/// site could only arrive by `scp`, which needs an SSH key on the Box — so the
+/// person whose agent just built them a site had no way to publish it, and
+/// nothing in the docs said so.
+///
+/// `replace` empties the staging area first, so an upload is the whole site
+/// rather than an accumulation of every version of it.
+pub fn upload_files(
+    paths: &Paths,
+    service: &str,
+    files: Vec<UploadedFile>,
+    replace: bool,
+) -> Result<(usize, u64)> {
+    validate_service_name(service)?;
+    let dir = paths.upload_dir(service);
+    if replace {
+        util::remove_dir_all_forced(&dir)?;
+    }
+    fs::create_dir_all(&dir)?;
+
+    let mut count = 0usize;
+    let mut bytes = 0u64;
+    for file in files {
+        // The client picks these paths. An absolute one is refused rather than
+        // quietly reinterpreted as relative — "/etc/passwd" landing at
+        // "<uploads>/etc/passwd" is safe but not what anyone meant, and a
+        // surprise like that is worth an error.
+        if file.path.starts_with('/') {
+            bail!(
+                "upload path {:?} must be relative to the site root (write \"index.html\", not \"/index.html\")",
+                file.path
+            );
+        }
+        // Otherwise checked the same way a request path for a served file is:
+        // nothing may escape the tree.
+        let target = crate::web::sites::resolve_safe(&dir, &file.path)
+            .with_context(|| format!("refusing unsafe upload path {:?}", file.path))?;
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        bytes += file.bytes.len() as u64;
+        count += 1;
+        fs::write(&target, &file.bytes)
+            .with_context(|| format!("writing {}", target.display()))?;
+    }
+    Ok((count, bytes))
+}
+
 /// Where a service can actually be reached, and whether it is really running.
 #[derive(Debug, Clone, Serialize)]
 pub struct ServiceStatus {

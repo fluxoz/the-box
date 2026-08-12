@@ -254,6 +254,41 @@ fn base64_encode(data: &[u8]) -> String {
     out
 }
 
+/// The other direction, for content that arrives base64-encoded (a binary file
+/// uploaded through the JSON API). Accepts standard base64 with or without
+/// padding, and ignores whitespace, which is what a client that wrapped long
+/// lines will send.
+pub fn base64_decode(s: &str) -> Result<Vec<u8>> {
+    fn value(c: u8) -> Option<u32> {
+        match c {
+            b'A'..=b'Z' => Some((c - b'A') as u32),
+            b'a'..=b'z' => Some((c - b'a') as u32 + 26),
+            b'0'..=b'9' => Some((c - b'0') as u32 + 52),
+            b'+' => Some(62),
+            b'/' => Some(63),
+            _ => None,
+        }
+    }
+
+    let mut out = Vec::with_capacity(s.len() / 4 * 3);
+    let mut acc: u32 = 0;
+    let mut bits = 0u32;
+    for c in s.bytes() {
+        if c.is_ascii_whitespace() || c == b'=' {
+            continue;
+        }
+        let v = value(c).ok_or_else(|| anyhow::anyhow!("not valid base64"))?;
+        acc = (acc << 6) | v;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((acc >> bits) as u8);
+            acc &= (1 << bits) - 1;
+        }
+    }
+    Ok(out)
+}
+
 fn sha256_hex(s: &str) -> String {
     use sha2::{Digest, Sha256};
     Sha256::digest(s.as_bytes())
