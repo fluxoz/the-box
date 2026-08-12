@@ -152,6 +152,20 @@ fn tool_definitions() -> Value {
             "inputSchema": no_args,
         },
         {
+            "name": "ingress_configure",
+            "description": "Choose how this Box is reachable from the internet, and turn it on or off. Call ingress_options first and help the person pick: it depends on whether they own a domain and whether the link is for showing someone once or for telling people where to find them. Refuses with a reason when the chosen way in cannot work yet.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "provider": { "type": "string", "description": "An id from ingress_options, e.g. quick-share" },
+                    "enable": { "type": "boolean", "description": "Turn it on (default true) or off" },
+                    "zone": { "type": "string", "description": "For ways in that use your own domain: the domain itself, e.g. example.com. Services are then published at <service>.example.com." }
+                },
+                "required": ["provider"],
+                "additionalProperties": false,
+            },
+        },
+        {
             "name": "publish_service",
             "description": "Put a deployed service on the internet, or take it off. This is the only thing that makes something reachable by anyone, so do it deliberately and tell the person what the address is. A service that is not published is served only on their own network.",
             "inputSchema": {
@@ -469,6 +483,19 @@ async fn execute(
                     .map(|(service, url)| json!({ "service": service, "url": url }))
                     .collect();
                 Ok(json!({ "ingress": status, "published": urls }))
+            })
+            .await)
+        }
+        "ingress_configure" => {
+            let Some(provider) = str_arg("provider") else {
+                return Err((-32602, "missing required argument: provider".into()));
+            };
+            let enable = args.get("enable").and_then(Value::as_bool).unwrap_or(true);
+            let zone = str_arg("zone");
+            let state = state.clone();
+            Ok(blocking(move || {
+                let status = state.tunnel.set_ingress(&provider, zone, enable)?;
+                Ok(serde_json::to_value(status)?)
             })
             .await)
         }

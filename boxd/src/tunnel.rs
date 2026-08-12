@@ -110,13 +110,58 @@ impl TunnelManager {
             .unwrap_or(false)
     }
 
-    /// Resume the tunnel on daemon start if it was previously enabled.
+    /// Which way in this Box is configured to use, if any.
+    fn ingress(&self) -> Option<crate::config::IngressConfig> {
+        crate::config::BoxConfig::load(&self.paths)
+            .ok()
+            .and_then(|c| c.ingress)
+    }
+
+    /// Resume on daemon start if a way in was left enabled.
     pub fn startup(self: &Arc<Self>) {
+        if let Some(ingress) = self.ingress().filter(|i| i.enabled) {
+            tracing::info!(provider = %ingress.provider, "ingress enabled; starting");
+            self.start();
+            return;
+        }
+        // Boxes configured before ingress moved into box.toml.
         if load_config(&self.paths).cloudflare_enabled && secrets::exists(&self.paths, TOKEN_SECRET)
         {
-            tracing::info!("cloudflare tunnel enabled in config; starting");
+            tracing::info!("cloudflare tunnel enabled in network.toml; starting");
             self.start();
         }
+    }
+
+    /// Choose a way in and turn it on or off.
+    pub fn set_ingress(
+        self: &Arc<Self>,
+        provider: &str,
+        zone: Option<String>,
+        enable: bool,
+    ) -> Result<TunnelStatus> {
+        let p = crate::ingress::get(provider)
+            .with_context(|| format!("no such way in: {provider:?}"))?;
+        let mut config = crate::config::BoxConfig::load(&self.paths)?;
+        let mut ingress = crate::config::IngressConfig::new(provider);
+        ingress.zone = zone.or_else(|| config.ingress.as_ref().and_then(|i| i.zone.clone()));
+        ingress.enabled = enable;
+
+        if enable {
+            // Refuse now, with a reason, rather than starting something that
+            // cannot work and reporting a restart loop.
+            p.preflight(&self.paths, &ingress)?;
+        }
+        config.ingress = Some(ingress.clone());
+        config.save(&self.paths)?;
+
+        if enable {
+            p.activate(&self.paths, &ingress, crate::ingress::PUBLIC_PORT)?;
+            self.start();
+        } else {
+            self.stop();
+            let _ = p.deactivate(&self.paths);
+        }
+        Ok(self.status())
     }
 
     /// Save a token (if given) and enable or disable the tunnel.
@@ -173,10 +218,18 @@ impl TunnelManager {
     }
 
     /// The address a runtime-assigned way in announced, if any is running.
+    ///
+    /// Asked of the provider, which knows where to look; the connector's log is
+    /// only a fallback for when its structured answer is not up yet.
     fn discovered_address(&self) -> Option<String> {
-        let log = self.paths.data_dir.join("logs").join("cloudflared.log");
-        let text = read_tail(&log, 64 * 1024)?;
-        address_from_log(&text, &["trycloudflare.com"])
+        match self.ingress().filter(|i| i.enabled)?.provider.as_str() {
+            "quick-share" => crate::ingress::quick_tunnel_address().or_else(|| {
+                let log = self.paths.data_dir.join("logs").join("cloudflared.log");
+                address_from_log(&read_tail(&log, 64 * 1024)?, &["trycloudflare.com"])
+            }),
+            "tailscale-funnel" => crate::ingress::tailnet_address(),
+            _ => None,
+        }
     }
 
     fn start(self: &Arc<Self>) {
@@ -239,24 +292,43 @@ impl TunnelManager {
         self.supervising.store(false, Ordering::SeqCst);
     }
 
+    /// Start whichever connector the configured way in asks for.
     fn spawn_cloudflared(&self) -> Result<Child> {
-        let token =
-            secrets::get(&self.paths, TOKEN_SECRET)?.context("cloudflare tunnel token missing")?;
         let logs_dir = self.paths.data_dir.join("logs");
         fs::create_dir_all(&logs_dir)?;
         let log = fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(logs_dir.join("cloudflared.log"))?;
-        // Token via environment, not argv: argv is world-readable in /proc.
-        Command::new("cloudflared")
-            .args(["tunnel", "run"])
-            .env("TUNNEL_TOKEN", token)
+
+        let mut command = match self.ingress().filter(|i| i.enabled) {
+            Some(ingress) => {
+                let provider = crate::ingress::get(&ingress.provider)
+                    .with_context(|| format!("no such way in: {:?}", ingress.provider))?;
+                provider.preflight(&self.paths, &ingress)?;
+                match provider.command(&self.paths, &ingress, crate::ingress::PUBLIC_PORT)? {
+                    Some(cmd) => cmd,
+                    // Nothing of ours to supervise (Funnel is kept by
+                    // tailscaled). Stop rather than spin.
+                    None => bail!("this way in needs no connector process"),
+                }
+            }
+            // A Box configured before ingress moved into box.toml.
+            None => {
+                let token = secrets::get(&self.paths, TOKEN_SECRET)?
+                    .context("cloudflare tunnel token missing")?;
+                let mut cmd = Command::new("cloudflared");
+                cmd.args(["tunnel", "run"]).env("TUNNEL_TOKEN", token);
+                cmd
+            }
+        };
+
+        command
             .stdin(Stdio::null())
             .stdout(log.try_clone()?)
             .stderr(log)
             .spawn()
-            .context("spawning cloudflared (is it installed and on PATH?)")
+            .context("spawning the tunnel connector (is it installed and on PATH?)")
     }
 }
 
