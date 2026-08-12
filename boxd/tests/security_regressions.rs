@@ -315,7 +315,7 @@ async fn unpublished_sites_are_not_served_through_the_tunnel() {
     for name in ["secret", "shared"] {
         let (status, body, _) = send(
             &app,
-            Request::get(&format!("/sites/{name}/"))
+            Request::get(format!("/sites/{name}/"))
                 .header("host", "box.local")
                 .extension(lan())
                 .body(Body::empty())
