@@ -45,8 +45,11 @@
   <p>Didn't use the Configurator? SSH in with your key and mint a code:</p>
   <pre><code>ssh &lt;you&gt;@&lt;box&gt;.local
 boxd auth enroll            # prints a code, valid 15 min, single use</code></pre>
-  <div class="tip">Access over an SSH tunnel (<code>ssh -L 2693:localhost:2693 &lt;box&gt;</code>) is trusted
-  as local, so you can manage the Box without pairing a browser at all.</div>
+  <div class="tip">You can reach the console over an SSH forward
+  (<code>ssh -L 2693:localhost:2693 &lt;box&gt;</code>) from anywhere, but it still asks you to pair:
+  reaching the port is not proof of ownership. Every service the Box runs can also reach
+  <code>127.0.0.1:2693</code>, so if that were authority, anything you deployed could take the console
+  over. Pair once with a code and the browser keeps its session.</div>
 
   <h2 id="dashboard">The dashboard</h2>
   <p>Everything is here, and every change is an atomic generation you can roll back:</p>
