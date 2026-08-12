@@ -36,7 +36,7 @@ It is designed for two audiences simultaneously:
 
 ### Local Components (always present)
 - `boxd` — the core agent/daemon (reliable, long-running).
-- Local reverse proxy (Caddy or Traefik) for routing and TLS where applicable.
+- Local reverse proxy (**nginx**, generated from the declarative service config) for routing.
 - Nix-based service management (modules, systemd services, optional microVMs via microvm.nix for stronger isolation).
 - **Local web dashboard** — the primary management UI (a real web application running on the Box).
 - Local MCP server + OpenAPI surface for AI agents.
@@ -64,10 +64,7 @@ Everything runs on the user’s machine. Our infrastructure is never in the data
 1. User installs The Box → local dashboard becomes available at `https://box.local`, the machine’s LAN IP, or over Tailscale/WireGuard.
 2. User deploys services via the local web app (templates or natural language). Services run locally.
 3. To make a service public, the user selects a BYO method inside the dashboard:
-   - **Cloudflare Tunnel** (recommended free path): User pastes a Cloudflare Tunnel token (or API token). The Box declaratively configures and runs `cloudflared`, maps deployed services to the user’s chosen hostnames, and keeps the config in sync. Traffic flow: Internet → Cloudflare → Tunnel → local Box.
-   - **Tailscale Funnel**: Box helps enable Funnel for selected services.
-   - **Public IP + reverse proxy**: Box configures Caddy/Traefik on ports 80/443 with automatic Let’s Encrypt; user points domain A record (or DDNS) at their IP.
-   - Custom: User points any tunnel or reverse proxy at the ports The Box publishes.
+   This is a **ladder**, not one method — see "Public ingress" under Current State. Each rung states what it costs the person (a domain? an account? does the address survive a restart? who terminates the TLS?), because the right answer differs for "show a friend tonight" and "this is where my business lives".
 
 4. The local dashboard itself stays private by default (localhost / LAN / Tailscale). Exposing it publicly is optional.
 
@@ -75,7 +72,7 @@ Everything runs on the user’s machine. Our infrastructure is never in the data
 
 **Result**: Fully self-hosted, zero ongoing cost or liability for us, maximum user control.
 
-### Managed Networking (“Box Network”) — Paid
+### Managed Networking (“Box Network”) — Paid *(superseded — see Business Model under Current State)*
 
 - Box initiates an **outbound-only** connection to our edge infrastructure.
 - Strong mutual authentication via **mTLS** (preferred): each Box receives a short-lived client certificate bound to its identity after enrollment. Certificates are rotated and can be revoked instantly.
@@ -127,7 +124,7 @@ In pure BYO the MCP server is fully local. In managed mode agents can also inter
 
 ---
 
-## Monetization & Free/Paid Boundary
+## Monetization & Free/Paid Boundary *(superseded — see “Business Model — settled”)*
 
 | Feature                        | Free (BYO)          | Paid (Managed)                  |
 |--------------------------------|---------------------|---------------------------------|
@@ -163,17 +160,153 @@ In pure BYO the MCP server is fully local. In managed mode agents can also inter
 
 ---
 
-## MVP Scope (Software-First)
+## Current State — 2026-08-12
 
-1. Reliable installer that turns a Linux machine into a Box.
-2. Local web dashboard + 6–10 high-quality templates.
-3. Excellent pure BYO support (especially Cloudflare Tunnel one-token flow).
-4. Local MCP + basic high-level agent tools.
-5. Atomic Nix apply + one-click rollback.
-6. Secrets handling and basic monitoring/logs.
-7. Optional very limited free trial of managed networking (or none at launch).
+The original MVP scope is **done**. What follows is what actually exists, what is
+verified, and what is not — kept honest, because the gap between "built" and
+"works for a stranger" is where every real problem has been found.
 
-Later: richer app store, multi-box orchestration, physical appliances, stronger microVM isolation for untrusted agent code, mobile app.
+### Built and working
+
+- **Installer.** `curl … | sudo sh` converts a running Linux machine (kexec →
+  disko wipe → Box OS). Verified on a 4 GB VPS from the live `thebox.build`.
+  USB/ISO and Raspberry Pi 3/4/5 images. Storage layouts: single, mirror, pool,
+  decided on-box or in the order.
+- **The reconciler.** Every change is a generation. Two speeds: content edits
+  take a fast path; structural changes rebuild the NixOS system through a root
+  oneshot and roll themselves back if the box does not come up healthy. This is
+  the differentiator — you cannot brick it.
+- **Services.** Static sites, reverse-proxied apps, and OCI containers via
+  podman, with central port allocation, an nginx reverse proxy, a closed
+  firewall, and encrypted per-service secrets (agenix). Catalog presets
+  (Postgres, Redis, MinIO).
+- **Public ingress — a ladder**, behind one provider seam (`boxd/src/ingress.rs`):
+  a share-right-now link needing no account or domain; a Tailscale address
+  (stable, no domain, and the only rung where no third party sees plaintext);
+  your own domain through your own Cloudflare tunnel. **Two doors:** port 80 is
+  your own network, a loopback-only listener is the internet, and a service is
+  *absent* from the second unless published — not filtered, absent.
+- **Agent-first.** Everything is drivable over MCP: deploy, upload a built
+  project, publish it, read logs, roll back, choose and configure a way in. The
+  Console hands a non-technical person a paste-ready agent connection.
+- **Auth.** Operator pairing, session tokens, security keys (WebAuthn).
+  Reaching the console is not authority — every service on the box can reach
+  loopback too.
+- **Backups.** restic, client-side encrypted, manifest-derived. Destroy-and-
+  recreate from a config repo with re-keying.
+- **Fleet.** mDNS discovery, coarse public health, tailnet discovery.
+- **Release + CI.** One version literal; boxes track a `release` branch that
+  only advances when caches are warm; tests and NixOS VM checks run on every
+  push.
+
+### Verified against real infrastructure (not mocks)
+
+- A site deployed through the API, served over a **Cloudflare quick tunnel**,
+  fetched from the public internet.
+- The same over **Tailscale Funnel**, on a real tailnet — and an unpublished
+  service confirmed unreachable at the same address.
+- Container deploy through boxd, offline, in a VM check.
+- OS-tier switch and rollback on a live system.
+
+### Known gaps
+
+- **Your own domain is untested end to end** — blocked on attaching a domain to
+  a Cloudflare account. The tunnel connects; nothing has routed to it yet.
+- **No git push-to-deploy, no build step, no previews.** The closest thing is
+  uploading already-built files. This is the biggest product gap (see Roadmap).
+- **No TLS of our own.** Fine while a tunnel terminates it; needed for the
+  direct/port-forward path we have not built.
+- **No Console page for the ingress ladder** — agents can drive it, people
+  cannot.
+- **Paid tier is scaffolding.** Box Connect and Box Backup exist end to end in
+  code, but against `Mock` providers; real B2, Stripe and a live coordinator are
+  not wired.
+- The console still lacks: backup integrity check, an add-a-box affordance,
+  cache headers on static vhosts.
+
+---
+
+## Business Model — settled
+
+**Everything that makes a Box work is free and self-hosted.** Money comes from
+two operated services, both of which put us between the owner and *their own
+box* — never between the public and the owner's content:
+
+1. **Box Connect** — private remote access to your own Box, for management and
+   development.
+2. **Box Backup** — offsite encrypted backups, reselling cheap object storage.
+
+**Public serving of user content stays the user's own** (their domain, their
+Cloudflare account). This is deliberate: hosting other people's public content
+makes us an intermediary with an abuse, takedown and KYC burden, and the
+ingress code is built behind a seam so a managed option *could* be switched on
+later without redesign — into the user's own account, never ours.
+
+---
+
+## Roadmap — in priority order
+
+### 1. The deploy loop (Vercel parity where it matters)
+
+Nobody chooses a host for edge middleware or ISR. What people experience as
+"Vercel" is a loop: **push to git → it builds → it is live → every branch gets a
+preview → roll back instantly.** Match the loop; skip the features.
+
+Designed and adversarially verified; six concrete showstoppers documented before
+a line is written. Shape: **the Box hosts the git remote** (works behind a home
+router with ingress off, and sidesteps the fact that we have no outbound git
+credentials at all), a build runs in a container started by a root oneshot
+mirroring the existing os-apply bridge, and a preview is a service that emits no
+OS module so it stays on the fast path instead of rebuilding the system on every
+push.
+
+Explicitly not building: functions, ISR, image optimization, edge middleware.
+
+### 2. Finish the ingress ladder
+
+Console page for the ladder; the wildcard-hostname flow (one Cloudflare route,
+then every later service costs zero steps); surfacing "tunnel connected but
+nothing routes to it", which we can already detect and currently show as
+healthy.
+
+### 3. Make the paid tier real
+
+Real B2 behind `StorageProvider`, Stripe behind `Billing`, a live coordinator
+behind `ConnectProvider`.
+
+### 4. Cheap wins, any time
+
+`Cache-Control` headers on static vhosts — which turns the tunnel we already run
+into a free global CDN; headers/redirects/rewrites as declarative nginx.
+
+### 5. Parked deliberately
+
+Storage (add-a-disk, GPU) and the Jetson board. Both planned in detail, both
+shelved to fix the core product first.
+
+---
+
+## Exact next steps
+
+1. **Attach a domain to Cloudflare**, then run `~/cf-test.sh <domain>`. The one
+   thing to learn: **does a wildcard hostname work on a dashboard-managed
+   tunnel?** If yes, adding your second service costs zero Cloudflare steps and
+   the domain flow is done. If no, the scoped-API-token path stops being
+   optional. Everything else about that rung is already built.
+2. **Re-run the two research agents that died** (competitor push-to-deploy
+   practice; sandboxing an untrusted build) before building the build step.
+   Running someone else's build script is the one part of the loop with no
+   external verification behind it.
+3. **Build deploy-loop increment 1**: the Box as a git remote — smart HTTP
+   behind existing auth, a scoped token so the credential in `.git/config`
+   cannot delete every service, and build workspaces added to the config repo's
+   gitignore (the data dir *is* a git repo).
+4. **Add `Cache-Control` headers.** Small, independent, and it answers the
+   latency objection without operating any infrastructure.
+5. **Then stop building and go find ten users.** The engineering is not the
+   risk; the market is. Expect them to stall at "own a machine" and at "delegate
+   your nameservers" — we hit the second one ourselves today, before ever
+   seeing a site work.
 
 ---
 
@@ -203,15 +336,29 @@ Closest pure-Nix inspiration: Self Host Blocks. The Box focuses far more on GUI,
 
 ---
 
-## Open Questions / Next Steps
+## Questions that are now answered
 
-- Exact free managed trial policy (none vs very limited).
-- Preferred data-plane technology for managed tunnels (mTLS + HTTP/2, WireGuard, QUIC).
-- Initial set of templates to ship.
-- Branding / domain strategy for the managed subdomain space.
-- Legal review of ToS and intermediary liability posture.
-- Binary cache strategy and pre-building of common templates.
+- **Monetization**: Box Connect + Box Backup. Public hosting of user content is
+  deliberately not ours.
+- **Managed tunnel data plane**: not needed — the free path is BYO, and Connect
+  rides WireGuard/Tailscale.
+- **Templates to ship**: static-site, reverse-proxied-app, container, plus a
+  data-driven catalog anyone can extend.
+- **Domain**: `thebox.build`, live, serving the installer and landing page.
+- **Binary cache**: `fluxoz.cachix.org`, with the release pipeline pushing
+  closures so a Box never compiles a kernel.
+
+## Still open
+
+- Whether a wildcard hostname works on a dashboard-managed Cloudflare tunnel
+  (decides the domain onboarding flow — see Exact next steps).
+- Legal/ToS review, if a managed ingress option is ever switched on.
+- Whether the target user is really the non-technical vibe coder, or the
+  homelabber who already owns hardware. Unresolved by argument; resolvable only
+  by talking to people.
 
 ---
 
-*This plan reflects the consensus developed across product, architecture, networking, AI, monetization, and risk discussions. It prioritizes a pure, free, local-first core while creating a clear, high-value paid product around managed public networking.*
+*Originally a consensus vision doc; now maintained as the live picture of what
+exists, what is verified, and what is next. Detail lives in the commit history
+and in `docs/`.*
