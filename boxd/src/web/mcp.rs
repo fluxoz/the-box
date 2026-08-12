@@ -152,6 +152,31 @@ fn tool_definitions() -> Value {
             "inputSchema": no_args,
         },
         {
+            "name": "ingress_connect_account",
+            "description": "Connect the person's Cloudflare account to this Box, so the Box can set publishing up for them instead of them doing it in Cloudflare's dashboard. Call with no arguments FIRST to get a link that pre-selects the exact permissions needed — send them that link, have them create the token and give it to you, then call again with it. The token is stored encrypted on the Box; you will not be able to read it back, which is deliberate: it can rewrite DNS for every domain on their account.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "api_token": { "type": "string", "description": "The Cloudflare API token they created. Omit to just get the link and instructions." }
+                },
+                "additionalProperties": false,
+            },
+        },
+        {
+            "name": "ingress_setup",
+            "description": "Set publishing up from nothing on a connected account: creates the tunnel, points the whole domain at this Box, stores the tunnel's credential, and creates the DNS record. One call replaces six steps in Cloudflare's dashboard. Requires ingress_connect_account first. Reports exactly what it changed on their account, and what (if anything) is still theirs to do.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "zone": { "type": "string", "description": "The domain they own, e.g. example.com. It must already be on their Cloudflare account." },
+                    "hostname": { "type": "string", "description": "DNS label to create; defaults to '*' so every service gets <service>.<domain> with no further setup." },
+                    "enable": { "type": "boolean", "description": "Start the tunnel when setup succeeds (default true)." }
+                },
+                "required": ["zone"],
+                "additionalProperties": false,
+            },
+        },
+        {
             "name": "ingress_configure",
             "description": "Choose how this Box is reachable from the internet, and turn it on or off. Call ingress_options first and help the person pick: it depends on whether they own a domain and whether the link is for showing someone once or for telling people where to find them. Refuses with a reason when the chosen way in cannot work yet.",
             "inputSchema": {
@@ -483,6 +508,60 @@ async fn execute(
                     .map(|(service, url)| json!({ "service": service, "url": url }))
                     .collect();
                 Ok(json!({ "ingress": status, "published": urls }))
+            })
+            .await)
+        }
+        "ingress_connect_account" => {
+            let state = state.clone();
+            let token = str_arg("api_token");
+            Ok(blocking(move || {
+                let Some(token) = token else {
+                    return Ok(json!({
+                        "connected": crate::secrets::exists(&state.paths, crate::cfapi::API_TOKEN_SECRET),
+                        "create_token_url": crate::cfapi::TOKEN_TEMPLATE_URL,
+                        "instructions": "Send them that link — it pre-selects the permissions needed \
+                                         (Cloudflare Tunnel: Edit, DNS: Edit, Zone: Read). They click \
+                                         Create, copy the token, and give it to you. Then call this \
+                                         again with api_token set.",
+                    }));
+                };
+                // Prove it works before storing it, so a typo fails here rather
+                // than halfway through changing their account.
+                use anyhow::Context as _;
+                crate::cfapi::call(&token, &crate::cfapi::verify_token())
+                    .context("that token was refused by Cloudflare")?;
+                crate::secrets::set(&state.paths, crate::cfapi::API_TOKEN_SECRET, &token)?;
+                Ok(json!({
+                    "connected": true,
+                    "message": "Cloudflare account connected. Call ingress_setup with their domain \
+                                and the Box will do the rest.",
+                }))
+            })
+            .await)
+        }
+        "ingress_setup" => {
+            let Some(zone) = str_arg("zone") else {
+                return Err((-32602, "missing required argument: zone".into()));
+            };
+            let hostname = str_arg("hostname");
+            let enable = args.get("enable").and_then(Value::as_bool).unwrap_or(true);
+            let state = state.clone();
+            Ok(blocking(move || {
+                let outcome =
+                    crate::ingress::setup_cloudflare(&state.paths, &zone, hostname.as_deref())?;
+                let mut value = serde_json::to_value(&outcome)?;
+                if enable {
+                    let status = state
+                        .tunnel
+                        .set_ingress("cloudflare-tunnel", Some(zone.clone()), true)?;
+                    value["ingress"] = serde_json::to_value(status)?;
+                    value["note"] = json!(format!(
+                        "Publishing is on. A service published now answers at \
+                         https://<service>.{zone}/ — DNS and the certificate take a few minutes \
+                         to settle the first time."
+                    ));
+                }
+                Ok(value)
             })
             .await)
         }
