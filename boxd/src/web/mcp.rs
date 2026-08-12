@@ -142,6 +142,30 @@ fn tool_definitions() -> Value {
             },
         },
         {
+            "name": "ingress_options",
+            "description": "The ways this Box can be put on the internet, and what each one costs the person: whether they need a domain, whether they need an account, whether the address survives a restart. Read this before offering someone a choice — the right answer depends on whether they own a domain and whether the link is for showing a friend or for telling people where to find them.",
+            "inputSchema": no_args,
+        },
+        {
+            "name": "ingress_status",
+            "description": "How this Box is currently reachable from the internet: which way in is configured, whether it is working, and the public address of every service that has been published.",
+            "inputSchema": no_args,
+        },
+        {
+            "name": "publish_service",
+            "description": "Put a deployed service on the internet, or take it off. This is the only thing that makes something reachable by anyone, so do it deliberately and tell the person what the address is. A service that is not published is served only on their own network.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "Name of a deployed service" },
+                    "public": { "type": "boolean", "description": "true to publish, false to take it off the internet (default true)" },
+                    "domain": { "type": "string", "description": "The hostname it should answer on, when the configured way in uses your own domain, e.g. app.example.com" }
+                },
+                "required": ["name"],
+                "additionalProperties": false,
+            },
+        },
+        {
             "name": "service_logs",
             "description": "Recent log lines for a deployed service, straight from the system journal — what you read to find out why something is not working. Returns the most recent lines, oldest first.",
             "inputSchema": {
@@ -412,6 +436,65 @@ async fn execute(
                 out["files"] = json!(count);
                 out["bytes"] = json!(bytes);
                 Ok(out)
+            })
+            .await)
+        }
+        "ingress_options" => {
+            let list: Vec<Value> = crate::ingress::providers()
+                .iter()
+                .map(|p| {
+                    let c = p.capabilities();
+                    json!({
+                        "id": p.id(),
+                        "title": p.title(),
+                        "description": p.description(),
+                        "available_on_this_box": p.available(),
+                        "needs_domain": c.needs_domain,
+                        "needs_account": c.needs_account,
+                        "address_survives_restart": c.stable_url,
+                        "https": c.terminates_tls,
+                        "third_party_sees_traffic": c.third_party_sees_traffic,
+                        "steps_the_person_must_do": p.steps(),
+                    })
+                })
+                .collect();
+            Ok(Ok(json!(list)))
+        }
+        "ingress_status" => {
+            let state = state.clone();
+            Ok(blocking(move || {
+                let status = state.tunnel.status();
+                let urls: Vec<Value> = crate::ingress::published_urls(&state.paths, status.address.as_deref())
+                    .into_iter()
+                    .map(|(service, url)| json!({ "service": service, "url": url }))
+                    .collect();
+                Ok(json!({ "ingress": status, "published": urls }))
+            })
+            .await)
+        }
+        "publish_service" => {
+            let Some(name) = str_arg("name") else {
+                return Err((-32602, "missing required argument: name".into()));
+            };
+            let public = args.get("public").and_then(Value::as_bool).unwrap_or(true);
+            let domain = str_arg("domain");
+            Ok(run_locked(&state, move |s| {
+                let address = s.tunnel.status().address;
+                let out = ops::publish(
+                    &s.paths,
+                    s.builder.as_ref(),
+                    &name,
+                    public,
+                    domain,
+                    address.as_deref(),
+                )?;
+                Ok(json!({
+                    "service": name,
+                    "public": public,
+                    "url": out.url,
+                    "note": out.note,
+                    "generation": out.generation.number,
+                }))
             })
             .await)
         }

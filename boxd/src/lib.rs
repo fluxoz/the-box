@@ -16,6 +16,7 @@ pub mod connect;
 pub mod fleet;
 pub mod history;
 pub mod hostgen;
+pub mod ingress;
 pub mod jobs;
 pub mod logs;
 pub mod manifest;
