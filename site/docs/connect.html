@@ -50,8 +50,10 @@ boxd connect down          # leave</code></pre>
   <h2 id="cloudflare">Public access: Cloudflare tunnel</h2>
   <p>To make a service reachable to <em>anyone</em> (a public site), bring your own Cloudflare tunnel: paste
   a tunnel token on the dashboard's <strong>Network</strong> page (or in the Configurator at install), and
-  point the tunnel's hostname at <code>localhost:2693</code>. The Box comes online reachable from the
-  internet with no open inbound ports, and no traffic through us.</p>
+  point the tunnel's hostname at <code>localhost:80</code> — the Box's web server, which routes each
+  domain to the service that owns it, whether that is a static site, an app or a container. The Box comes
+  online reachable from the internet with no open inbound ports, and no traffic through us. Only services
+  you have marked as reachable from outside answer; the console is not on that port at all.</p>
   <div class="note"><b>Private vs public.</b> Box Connect is <em>you</em> reaching your Box privately. A
   Cloudflare tunnel is the <em>world</em> reaching a service you choose to publish. Use whichever fits.</div>
 

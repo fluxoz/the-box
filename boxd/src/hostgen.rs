@@ -256,8 +256,13 @@ mod tests {
         let module =
             std::fs::read_to_string(out.join("nodes/hosts/demo-box/services/blog.nix")).unwrap();
         assert!(module.contains(r#"services.the-box.sites."blog""#));
-        assert!(module.contains("root = ./blog/www;"));
         assert!(module.contains(r#"domain = "blog.example.com";"#));
+        // No `root`: the platform serves the live generation, so nginx and boxd
+        // cannot end up serving two different copies of the same site.
+        assert!(
+            !module.contains("root ="),
+            "the generated module should not pin a root: {module}"
+        );
         assert_eq!(
             std::fs::read_to_string(out.join("nodes/hosts/demo-box/services/blog/www/index.html"))
                 .unwrap(),

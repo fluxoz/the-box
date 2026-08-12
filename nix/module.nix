@@ -35,8 +35,16 @@ in
       type = lib.types.attrsOf (lib.types.submodule {
         options = {
           root = lib.mkOption {
-            type = lib.types.path;
-            description = "Directory of files to serve for this site.";
+            type = lib.types.nullOr lib.types.path;
+            default = null;
+            description = ''
+              Directory of files to serve. Leave null (what boxd's generated
+              modules do) to serve the CURRENT generation's copy directly,
+              through the profile symlink — so an edit that only changes content
+              is live the moment boxd swaps the generation, with no system
+              rebuild, and nginx and boxd serve the same bytes rather than two
+              copies that drift apart. Set it to serve a fixed path instead.
+            '';
           };
           domain = lib.mkOption {
             type = lib.types.nullOr lib.types.str;
@@ -335,7 +343,12 @@ in
       # A machine-readable record of what the OS tier declares, for boxd/GUI
       # introspection of the composed layer stack.
       environment.etc."box/sites.json".text = builtins.toJSON (
-        lib.mapAttrs (_: site: { inherit (site) domain; root = "${site.root}"; }) cfg.sites
+        lib.mapAttrs (name: site: {
+          inherit (site) domain;
+          root =
+            if site.root != null then "${site.root}"
+            else "${cfg.dataDir}/profiles/box/services/${name}/www";
+        }) cfg.sites
       );
 
       # Which platform release this closure is: an observable marker so a
@@ -399,7 +412,12 @@ in
           (lib.mapAttrs (name: site: {
             serverName = if site.domain != null then site.domain else name;
             default = site.domain == null;
-            root = site.root;
+            # The live generation by default: <data>/profiles/box is the symlink
+            # boxd swaps atomically on every deploy and rollback, so nginx and
+            # boxd serve one set of files, at one speed.
+            root =
+              if site.root != null then site.root
+              else "${cfg.dataDir}/profiles/box/services/${name}/www";
             locations."/".index = "index.html";
           }) cfg.sites)
           // (lib.mapAttrs (name: app: {

@@ -909,9 +909,14 @@ pub async fn network(State(state): State<SharedState>, Query(flash): Query<Flash
             h2 { "Set up" }
             ol {
                 li { "In the Cloudflare Zero Trust dashboard, create a tunnel and copy its token." }
-                li { "Point the tunnel's public hostname(s) at " code { "http://localhost:2693" } " (this daemon)." }
+                // Port 80, not the console's 2693. The web server routes every
+                // kind of service by domain — a static site, an app, a
+                // container — where the console only ever served files, so
+                // anything else 404'd through the tunnel. It also means this
+                // console is not on the far end of your public hostname.
+                li { "Point the tunnel's public hostname(s) at " code { "http://localhost:80" } " — the Box's web server, which routes each domain to its service." }
                 li { "Paste the token below and enable the tunnel." }
-                li { "Give each service the matching domain — requests arriving for that Host are routed to it." }
+                li { "Give each service the matching domain, and tick “let people outside your home reach it”." }
             }
             form.stack method="post" action="/network/cloudflare" {
                 label {
@@ -2173,9 +2178,10 @@ pub async fn devices(
     let body = html! {
         h2 { "Paired devices" }
         p.muted {
-            "Every browser or agent with management access holds a session here. Add a device "
-            "by handing it a one-time code; revoke any device without affecting the others. "
-            "Trusted local access (loopback / SSH) always works and isn't listed."
+            "Every browser or agent with management access holds a session here — including one "
+            "opened on the Box itself. Add a device by handing it a one-time code; revoke any "
+            "device without affecting the others. Being able to reach this console is not "
+            "authority on its own: every service the Box runs can reach it too."
         }
         div.section-head {
             h2 { "Devices" }

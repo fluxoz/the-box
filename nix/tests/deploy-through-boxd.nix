@@ -31,6 +31,12 @@ pkgs.testers.runNixOSTest {
     virtualisation.memorySize = 3072;
     virtualisation.diskSize = 8192;
 
+    # The vhost an OS-tier apply would generate for the site deployed below.
+    # Declared here because building a whole system inside the VM needs the
+    # platform flake from the network; what matters for this test is that the
+    # vhost's root is the live generation, which is the platform's default.
+    services.the-box.sites.blog.domain = "blog.example.com";
+
     # The platform pins generations to its own nixpkgs, so building one needs no
     # network — that pinning is part of what this test checks. The VM still
     # needs the build inputs of a `runCommand` in its store, or it would try to
@@ -109,6 +115,31 @@ pkgs.testers.runNixOSTest {
         text = box.succeed(f"systemctl cat {u}")
         assert "X-RestartIfChanged=false" in text, f"{u} must not restart on switch:\n{text}"
 
-    print("deploy through boxd: builds, reports honestly, renders a correct OS module")
+    # --- one copy of the content, served by the real web server -------------
+    # nginx serves a static site out of the CURRENT generation, through boxd's
+    # profile symlink, so the two planes cannot serve different bytes and a
+    # content-only change does not need a system rebuild to appear. (nginx is
+    # configured here by hand, exactly as the OS tier would after an apply.)
+    box.succeed("systemctl restart nginx")
+    box.wait_for_open_port(80)
+    box.wait_until_succeeds("curl -sf -H 'Host: blog.example.com' http://127.0.0.1/ | grep hi", timeout=60)
+
+    # Change only the content. This stays on boxd's fast path — no system
+    # rebuild, no nginx reload — and the public plane must still be current.
+    api("POST", "/api/v1/services",
+        '{"name":"blog","template":"static-site","params":{"index_html":"<h1>edited</h1>"}}')
+    box.wait_until_succeeds(
+        "curl -sf -H 'Host: blog.example.com' http://127.0.0.1/ | grep edited", timeout=60
+    )
+    box.fail("curl -sf -H 'Host: blog.example.com' http://127.0.0.1/ | grep -w hi")
+
+    # And a rollback is just as immediate on the public plane.
+    box.succeed("boxd rollback 2 >&2")
+    box.wait_until_succeeds(
+        "curl -sf -H 'Host: blog.example.com' http://127.0.0.1/ | grep -w hi", timeout=60
+    )
+
+    print("deploy through boxd: builds, reports honestly, renders a correct OS module,")
+    print("and nginx serves the live generation (one copy, both planes)")
   '';
 }
