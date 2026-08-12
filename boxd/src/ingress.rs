@@ -61,6 +61,14 @@ pub trait IngressProvider: Send + Sync {
     /// The connector to supervise. `Ok(None)` means this provider needs no
     /// long-lived process.
     fn command(&self, paths: &Paths, cfg: &IngressConfig, port: u16) -> Result<Option<Command>>;
+    /// Configure something that outlives us, for providers whose state is kept
+    /// by another daemon rather than by a process we hold open.
+    fn activate(&self, _paths: &Paths, _cfg: &IngressConfig, _port: u16) -> Result<()> {
+        Ok(())
+    }
+    fn deactivate(&self, _paths: &Paths) -> Result<()> {
+        Ok(())
+    }
     /// The public address of a service, once this is running. `None` when the
     /// provider hands out an address we can only learn at runtime and have not
     /// learned yet.
@@ -188,11 +196,28 @@ impl IngressProvider for CloudflareQuick {
         }
         Ok(())
     }
-    fn command(&self, _paths: &Paths, _cfg: &IngressConfig, port: u16) -> Result<Option<Command>> {
+    fn command(&self, paths: &Paths, _cfg: &IngressConfig, port: u16) -> Result<Option<Command>> {
+        // Two flags that are not optional, both learned the hard way.
+        //
+        // `--config`: with none given, cloudflared searches /etc/cloudflared
+        // and friends, and if it finds a config with `ingress:` rules those
+        // SILENTLY WIN over `--url`. On a Box that also runs a named tunnel,
+        // "share this right now" would quietly publish a public address
+        // pointing at the other tunnel's rules — no warning, no error. Point it
+        // at a file of our own.
+        //
+        // `--metrics`: the default walks a range, so with two connectors
+        // running you cannot tell which port belongs to which. We ask this one
+        // for its address by port, so the port has to be ours.
+        let config = quick_config_file(paths)?;
         let mut cmd = Command::new("cloudflared");
         cmd.args([
             "tunnel",
             "--no-autoupdate",
+            "--config",
+            &config.display().to_string(),
+            "--metrics",
+            &format!("127.0.0.1:{QUICK_METRICS_PORT}"),
             "--url",
             &format!("http://127.0.0.1:{port}"),
         ]);
@@ -229,12 +254,20 @@ impl IngressProvider for TailscaleFunnel {
             needs_account: true,
             terminates_tls: true,
             stable_url: true,
-            third_party_sees_traffic: true,
+            // The one rung where nobody else can read the traffic: Tailscale's
+            // ingress proxies the encrypted stream and tailscaled terminates
+            // TLS here, on the Box, with its own certificate. The tunnels
+            // terminate at someone else's edge and see plaintext.
+            third_party_sees_traffic: false,
         }
     }
     fn steps(&self) -> Vec<&'static str> {
         vec![
-            "Sign in to a Tailscale account on this Box (Network → Box Connect).",
+            // Funnel is a tailscale.com feature and does not exist on Headscale
+            // — by design, on both sides. So this rung needs a Tailscale
+            // account even for someone whose private access is self-hosted.
+            "Sign this Box in to a Tailscale account (not a self-hosted coordinator — Funnel only works on tailscale.com).",
+            "In the Tailscale admin console, turn on MagicDNS and HTTPS certificates.",
             "Allow Funnel for this machine in your tailnet's access policy.",
         ]
     }
@@ -245,16 +278,121 @@ impl IngressProvider for TailscaleFunnel {
         if !self.available() {
             bail!("tailscale is not installed on this Box");
         }
+        if tailnet_address().is_none() {
+            bail!(
+                "this Box is not signed in to a tailnet yet — sign in first, and note that Funnel \
+                 needs a tailscale.com account rather than a self-hosted coordinator"
+            );
+        }
         Ok(())
     }
     fn command(&self, _paths: &Paths, _cfg: &IngressConfig, _port: u16) -> Result<Option<Command>> {
-        // Funnel is configured once and kept by tailscaled, so there is no
-        // process of ours to supervise. `enable` below does the configuring.
+        // Nothing of ours to supervise: tailscaled keeps the configuration, so
+        // this is set once (see `activate`) rather than by a process we hold
+        // open. That is also why `--bg` is not optional there.
         Ok(None)
     }
-    fn url_for(&self, _cfg: &IngressConfig, _service: &str, runtime: Option<&str>) -> Option<String> {
-        runtime.map(|base| format!("{base}/"))
+    fn activate(&self, _paths: &Paths, _cfg: &IngressConfig, port: u16) -> Result<()> {
+        run_ok(&[
+            "tailscale",
+            "funnel",
+            "--bg",
+            "--https=443",
+            &format!("http://127.0.0.1:{port}"),
+        ])
     }
+    fn deactivate(&self, _paths: &Paths) -> Result<()> {
+        run_ok(&["tailscale", "funnel", "--https=443", "off"])
+    }
+    fn url_for(&self, _cfg: &IngressConfig, _service: &str, runtime: Option<&str>) -> Option<String> {
+        runtime
+            .map(|base| format!("{base}/"))
+            .or_else(|| tailnet_address().map(|base| format!("{base}/")))
+    }
+}
+
+/// Ours, so that a config someone else's tunnel dropped on the box cannot
+/// redirect a share link. `no-autoupdate` rather than a comment: an
+/// effectively-empty YAML makes cloudflared log a spurious error every start.
+pub const QUICK_METRICS_PORT: u16 = 20996;
+
+fn quick_config_file(paths: &Paths) -> Result<std::path::PathBuf> {
+    let path = paths.data_dir.join("cloudflared-quick.yml");
+    std::fs::write(&path, "no-autoupdate: true\n")
+        .with_context(|| format!("writing {}", path.display()))?;
+    Ok(path)
+}
+
+/// Ask a running quick tunnel what address it was given.
+///
+/// cloudflared serves this as structured data on its metrics port, and has
+/// since 2021 — which is a far better contract than the ASCII box it draws on
+/// stderr, where the address arrives padded inside box art. A named tunnel
+/// answers with an empty hostname, so a non-empty one also tells us this really
+/// is a quick tunnel.
+pub fn quick_tunnel_address() -> Option<String> {
+    let host = curl_json(&format!(
+        "http://127.0.0.1:{QUICK_METRICS_PORT}/quicktunnel"
+    ))?
+    .get("hostname")?
+    .as_str()?
+    .trim()
+    .to_string();
+    if host.is_empty() {
+        return None;
+    }
+    // Having an address is not the same as answering on it: the edge connection
+    // comes up a beat later, and handing someone a link that 404s for ten
+    // seconds is worse than making them wait for it.
+    let ready = curl_json(&format!("http://127.0.0.1:{QUICK_METRICS_PORT}/ready"))
+        .and_then(|v| v.get("readyConnections")?.as_u64())
+        .unwrap_or(0);
+    if ready == 0 {
+        return None;
+    }
+    Some(format!("https://{host}"))
+}
+
+/// The address this machine has on its tailnet, which is where Funnel
+/// publishes it. Derived the same way Tailscale's own CLI derives it.
+pub fn tailnet_address() -> Option<String> {
+    let status = curl_free_json(&["tailscale", "status", "--json"])?;
+    let name = status
+        .get("Self")?
+        .get("DNSName")?
+        .as_str()?
+        .trim_end_matches('.');
+    if name.is_empty() {
+        return None;
+    }
+    Some(format!("https://{name}"))
+}
+
+fn curl_json(url: &str) -> Option<serde_json::Value> {
+    curl_free_json(&["curl", "-fsS", "-m", "3", url])
+}
+
+fn curl_free_json(argv: &[&str]) -> Option<serde_json::Value> {
+    let out = Command::new(argv[0]).args(&argv[1..]).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    serde_json::from_slice(&out.stdout).ok()
+}
+
+fn run_ok(argv: &[&str]) -> Result<()> {
+    let out = Command::new(argv[0])
+        .args(&argv[1..])
+        .output()
+        .with_context(|| format!("running {}", argv.join(" ")))?;
+    if !out.status.success() {
+        bail!(
+            "{} failed: {}",
+            argv.join(" "),
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(())
 }
 
 fn binary_available(bin: &str) -> bool {
@@ -335,6 +473,32 @@ mod tests {
     }
 
     /// A provider that is handed its address cannot know it before it runs.
+    /// The rungs differ in ways that decide which one is right for a person,
+    /// so the differences have to be stated rather than implied.
+    #[test]
+    fn the_rungs_are_honestly_distinguished() {
+        let quick = CloudflareQuick.capabilities();
+        let funnel = TailscaleFunnel.capabilities();
+        let domain = CloudflareTunnel.capabilities();
+
+        // Only one rung asks for nothing at all.
+        assert!(!quick.needs_domain && !quick.needs_account);
+        // Only one rung gives an address that does not survive a restart.
+        assert!(!quick.stable_url);
+        assert!(funnel.stable_url && domain.stable_url);
+        // Only one rung keeps the traffic away from a third party: Tailscale
+        // proxies an encrypted stream and the Box terminates TLS itself, where
+        // the tunnels terminate it at someone else's edge.
+        assert!(!funnel.third_party_sees_traffic);
+        assert!(quick.third_party_sees_traffic && domain.third_party_sees_traffic);
+        // Every rung that needs the person to do something says what.
+        for p in providers() {
+            if p.capabilities().needs_account {
+                assert!(!p.steps().is_empty(), "{} asks for an account silently", p.id());
+            }
+        }
+    }
+
     #[test]
     fn runtime_addressed_providers_wait_for_their_address() {
         let cfg = IngressConfig::new("quick-share");
