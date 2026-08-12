@@ -246,21 +246,112 @@ later without redesign — into the user's own account, never ours.
 
 ## Roadmap — in priority order
 
-### 1. The deploy loop (Vercel parity where it matters)
+### 1. The deploy loop (parity where it matters)
 
 Nobody chooses a host for edge middleware or ISR. What people experience as
 "Vercel" is a loop: **push to git → it builds → it is live → every branch gets a
 preview → roll back instantly.** Match the loop; skip the features.
 
-Designed and adversarially verified; six concrete showstoppers documented before
-a line is written. Shape: **the Box hosts the git remote** (works behind a home
-router with ingress off, and sidesteps the fact that we have no outbound git
-credentials at all), a build runs in a container started by a root oneshot
-mirroring the existing os-apply bridge, and a preview is a service that emits no
-OS module so it stays on the fast path instead of rebuilding the system on every
-push.
+Designed, adversarially verified against the code, and the two open research
+questions have now been answered — one of them by building and running a real
+smart-HTTP git receiver rather than reading documentation.
+
+**How a push arrives: the Box hosts the git remote.** It works behind a home
+router with ingress off, which is the state a Box starts in, and it sidesteps
+the fact that this codebase has no outbound git credentials at all. Verified:
+`git-http-backend`'s entire push gate is a non-empty `REMOTE_USER` environment
+variable — no root, no sshd, no `authorized_keys`, no privileged helper. boxd
+terminates HTTP, authenticates with the token model it already has, and spawns
+the backend as an unprivileged child. Packs over 1 MiB arrive chunked with no
+Content-Length, so the handler streams. Pre-receive output streams back to the
+pushing client, which gives build progress in the user's own terminal for free.
+
+Worth knowing: of the comparable self-hosted systems, only Dokku has a genuine
+server-side git remote, and only over SSH — HTTP push is a paid feature there.
+Coolify, Dokploy and CapRover are webhook-driven and need to be reachable from
+the internet, which behind NAT means standing up a tunnel before you can deploy
+at all.
+
+**How a build runs: a trusted image, never a user Containerfile.** Both current
+classes of container escape are triggered by attacker-controlled build contexts,
+so the user's repo is *data on a bind mount* handed to a builder image we
+publish — never `podman build` on something they wrote. Network cannot be
+dropped part-way through a run, so it is two phases sharing a cache volume:
+install with the network, build with `--network=none`. Rootless, capabilities
+dropped, user namespaces, no-new-privileges, and hard limits on memory, PIDs and
+wall clock.
+
+Three things that must be got right or the limits are decorative: rootless
+resource limits silently do nothing without cgroup delegation, and boxd is a
+system unit; `--memory` without a matching `NODE_OPTIONS` kills builds that
+would otherwise pass, because Node sizes its heap at half the container limit;
+and NixOS has no SELinux with AppArmor off, so user namespaces and seccomp are
+the whole defence rather than a backstop.
+
+This is a real differentiator and the bar is low: the comparable products build
+on the host Docker daemon with the socket mounted read-write, and one of them
+shipped a host-level remote code execution through an application settings field
+this year. They sandbox the runtime and call it done.
+
+**A preview is a service that emits no OS module**, so it stays on the fast path
+instead of rebuilding the whole system on every push — which matters on a Pi.
 
 Explicitly not building: functions, ISR, image optimization, edge middleware.
+
+### 1b. Read the config people already have
+
+A project configured for another host should not need rewriting. The honest
+scope, after reading the specs rather than assuming:
+
+- **`vercel.json` routing** — redirects, rewrites, headers, `cleanUrls`,
+  `trailingSlash` — translates into the nginx we already generate. The rule
+  ordering *is* the specification, and the reference implementation is Apache
+  licensed and portable with attribution.
+- **`crons`** maps onto systemd timers, which this platform already uses.
+- **Build settings** (`buildCommand`, `installCommand`, `outputDirectory`) feed
+  the build step directly.
+- **The thing worth building most** is not compatibility but the honest error: a
+  report at deploy time saying, for every key, whether it was *translated*,
+  *approximated*, *ignored*, or *cannot work here*. No hosted platform gives
+  anyone that, and it is a fraction of the work of real compatibility.
+
+What the research changed: `vercel.json` is the wrong file for Next.js — their
+own documentation sends Next users to `next.config.js`, so the routing keys
+mostly matter for static sites and SPAs. And their build-output format is a dead
+end for us, because producing it requires logging in to their CLI. For Next
+specifically the right target is the framework's own adapter interface, which is
+versioned, account-free and has a public conformance suite.
+
+**Say "reads the routing rules in your `vercel.json`". Do not say
+"Vercel-compatible"** — it is a trademark risk and a promise that breaks on the
+first ordinary app with a login form.
+
+### 1c. Run the app, do not emulate the platform
+
+Most of what looks like a missing feature is an artifact of someone else's
+constraints. Serverless functions exist because their platform needs stateless
+pieces that scale to zero; distributed cache invalidation exists because they
+run many nodes; edge middleware exists because they run hundreds of locations;
+execution time limits exist because they bill per invocation. A Box has none of
+those constraints, so it needs none of those answers — the process is simply
+always running.
+
+For a server-rendered app the answer is therefore the framework's own production
+server in a container behind the reverse proxy, which is machinery this platform
+already has. Next.js's own documentation is explicit that a single `next start`
+process handles every feature correctly, including the ones usually assumed to
+require their platform.
+
+What falls out in our favour: no cold starts, no execution time limit, a
+filesystem that persists, background work that is allowed to run, and a full
+runtime rather than a constrained one. The one genuine loss is global
+distribution — one machine is in one place — and static assets get most of that
+back through caching at the tunnel edge.
+
+The real boundary of "works unchanged" is not architecture; it is
+vendor-specific SDKs. An app calling a proprietary key-value or edge API is not
+blocked by our design, it is held by lock-in, and moving means removing those
+calls. Say so plainly rather than letting someone find out at deploy time.
 
 ### 2. Finish the ingress ladder
 
@@ -288,22 +379,24 @@ shelved to fix the core product first.
 
 ## Exact next steps
 
-1. **Attach a domain to Cloudflare**, then run `~/cf-test.sh <domain>`. The one
-   thing to learn: **does a wildcard hostname work on a dashboard-managed
-   tunnel?** If yes, adding your second service costs zero Cloudflare steps and
-   the domain flow is done. If no, the scoped-API-token path stops being
-   optional. Everything else about that rung is already built.
-2. **Re-run the two research agents that died** (competitor push-to-deploy
-   practice; sandboxing an untrusted build) before building the build step.
-   Running someone else's build script is the one part of the loop with no
-   external verification behind it.
-3. **Build deploy-loop increment 1**: the Box as a git remote — smart HTTP
-   behind existing auth, a scoped token so the credential in `.git/config`
-   cannot delete every service, and build workspaces added to the config repo's
-   gitignore (the data dir *is* a git repo).
-4. **Add `Cache-Control` headers.** Small, independent, and it answers the
+1. **Attach a domain to a Cloudflare account, then connect that account to a Box
+   and call `ingress_setup`.** The Box creates the tunnel, points the whole
+   domain at its public entrance, stores the tunnel credential and makes the DNS
+   record — the six dashboard steps collapse into one call, and it writes a
+   wildcard route through the API, so the question of whether the dashboard form
+   accepts one stops mattering. Untested against a live zone: nobody has
+   attached a domain yet, and given how often a guessed API shape has been wrong
+   this week, treat it as unverified until it runs.
+2. **Build deploy-loop increment 1**: the Box as a git remote. Smart HTTP behind
+   the existing auth — the push gate is one environment variable, verified by
+   running it, so no privileged helper is involved. A *scoped* token, because
+   the credential that ends up in `.git/config` on someone's laptop must not be
+   able to delete every service on the Box. And build workspaces added to the
+   config repo's gitignore, because the data directory *is* a git repository and
+   would otherwise commit someone's source into their own config history.
+3. **Add `Cache-Control` headers.** Small, independent, and it answers the
    latency objection without operating any infrastructure.
-5. **Then stop building and go find ten users.** The engineering is not the
+4. **Then stop building and go find ten users.** The engineering is not the
    risk; the market is. Expect them to stall at "own a machine" and at "delegate
    your nameservers" — we hit the second one ourselves today, before ever
    seeing a site work.
