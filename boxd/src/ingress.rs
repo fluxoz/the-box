@@ -278,11 +278,23 @@ impl IngressProvider for TailscaleFunnel {
         if !self.available() {
             bail!("tailscale is not installed on this Box");
         }
-        if tailnet_address().is_none() {
+        let Some(status) = tailscale_status() else {
             bail!(
                 "this Box is not signed in to a tailnet yet — sign in first, and note that Funnel \
                  needs a tailscale.com account rather than a self-hosted coordinator"
             );
+        };
+        if tailnet_address().is_none() {
+            bail!("this Box has no tailnet address yet — sign it in to a tailnet first");
+        }
+        if !funnel_permitted(&status) {
+            match funnel_approval_url(&status) {
+                Some(url) => bail!(
+                    "your tailnet has not allowed Funnel for this Box yet. Turn it on here, then \
+                     try again: {url}"
+                ),
+                None => bail!("your tailnet has not allowed Funnel for this Box yet"),
+            }
         }
         Ok(())
     }
@@ -293,13 +305,24 @@ impl IngressProvider for TailscaleFunnel {
         Ok(None)
     }
     fn activate(&self, _paths: &Paths, _cfg: &IngressConfig, port: u16) -> Result<()> {
+        // `timeout`, because this command waits at a prompt forever when the
+        // tailnet has not granted Funnel — it prints an approval link and then
+        // blocks. The preflight above catches that case, but a request that
+        // never returns is a bad enough failure to guard twice.
         run_ok(&[
+            "timeout",
+            "30",
             "tailscale",
             "funnel",
             "--bg",
             "--https=443",
             &format!("http://127.0.0.1:{port}"),
         ])
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "{e:#}\n\nIf this timed out, your tailnet has not allowed Funnel for this Box yet."
+            )
+        })
     }
     fn deactivate(&self, _paths: &Paths) -> Result<()> {
         run_ok(&["tailscale", "funnel", "--https=443", "off"])
@@ -356,7 +379,7 @@ pub fn quick_tunnel_address() -> Option<String> {
 /// The address this machine has on its tailnet, which is where Funnel
 /// publishes it. Derived the same way Tailscale's own CLI derives it.
 pub fn tailnet_address() -> Option<String> {
-    let status = curl_free_json(&["tailscale", "status", "--json"])?;
+    let status = tailscale_status()?;
     let name = status
         .get("Self")?
         .get("DNSName")?
@@ -366,6 +389,34 @@ pub fn tailnet_address() -> Option<String> {
         return None;
     }
     Some(format!("https://{name}"))
+}
+
+fn tailscale_status() -> Option<serde_json::Value> {
+    curl_free_json(&["tailscale", "status", "--json"])
+}
+
+/// Whether this tailnet has actually granted this machine Funnel.
+///
+/// Worth checking BEFORE running the command, because `tailscale funnel`
+/// answers a missing grant by printing an approval link and then waiting at a
+/// prompt forever — which on a Box means a request that never returns. Asked of
+/// the capability map instead, which answers immediately.
+const FUNNEL_CAP: &str = "https://tailscale.com/cap/funnel";
+
+fn funnel_permitted(status: &serde_json::Value) -> bool {
+    status
+        .get("Self")
+        .and_then(|s| s.get("CapMap"))
+        .and_then(|m| m.as_object())
+        .map(|m| m.contains_key(FUNNEL_CAP))
+        .unwrap_or(false)
+}
+
+/// The page that turns Funnel on for this machine, so the refusal can say
+/// exactly where to go rather than "ask your administrator".
+fn funnel_approval_url(status: &serde_json::Value) -> Option<String> {
+    let id = status.get("Self")?.get("ID")?.as_str()?;
+    Some(format!("https://login.tailscale.com/f/funnel?node={id}"))
 }
 
 fn curl_json(url: &str) -> Option<serde_json::Value> {
