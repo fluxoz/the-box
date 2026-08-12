@@ -69,7 +69,7 @@ pub fn is_pending(paths: &Paths) -> bool {
 
 pub fn mark_pending(paths: &Paths, reason: &str) {
     let _ = std::fs::write(pending_marker(paths), reason);
-    let _ = crate::util::chown_like(&paths.data_dir, &pending_marker(paths));
+    crate::util::chown_like(&paths.data_dir, &pending_marker(paths));
 }
 
 pub fn clear_pending(paths: &Paths) {

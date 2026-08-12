@@ -209,17 +209,22 @@ mod tests {
         assert!(recipients_from(&tmp.path().join("x"), &tmp.path().join("y")).is_err());
     }
 
+    /// A missing `age` is a broken environment, not a reason to pass quietly —
+    /// see the note in `secrets.rs`.
     fn age_available() -> bool {
-        Command::new("age")
-            .arg("--version")
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
-            && Command::new("age-keygen")
+        for bin in ["age", "age-keygen"] {
+            let ok = Command::new(bin)
                 .arg("--version")
                 .output()
                 .map(|o| o.status.success())
-                .unwrap_or(false)
+                .unwrap_or(false);
+            assert!(
+                ok,
+                "{bin} must be on PATH: these tests verify the re-keying that \
+                 destroy-and-recreate depends on. Run with `nix develop -c cargo test`."
+            );
+        }
+        true
     }
 
     // Generate an age identity; return (identity_path, recipient_string).

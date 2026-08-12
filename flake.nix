@@ -230,6 +230,11 @@
         cargoLock.lockFile = ./Cargo.lock;
         cargoBuildFlags = [ "-p" crate ];
         cargoTestFlags = [ "-p" crate ];
+        # The secrets tests shell out to age/age-keygen, and they are the proof
+        # that a secret is never written in plaintext. Without these here they
+        # used to skip themselves in the one place tests ran automatically — the
+        # Nix build — and report success having checked nothing.
+        nativeCheckInputs = [ pkgs.age pkgs.git ];
       } // extra);
     in
     {
@@ -242,6 +247,11 @@
             };
           };
           box-installer = mkCrate pkgs "box-installer" {
+            # box-core is where the disk layouts and the refuse-on-ambiguity
+            # rule live — the code that decides which disks get wiped. It ships
+            # only inside this binary and has no package of its own, so its
+            # tests ran in no automated build at all until they were named here.
+            cargoTestFlags = [ "-p" "box-installer" "-p" "box-core" ];
             meta = {
               description = "The Box installer: disk probe, storage-layout wizard (TUI) and plan";
               mainProgram = "box-installer";
