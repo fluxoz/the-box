@@ -25,9 +25,9 @@ impl Builder for NixBuilder {
     }
 
     fn build(&self, gensrc: &Path) -> Result<PathBuf> {
-        // TODO: register the profile as a GC root so `nix-collect-garbage`
-        // on the host cannot reap live generations (profiles live in the
-        // boxd data dir, outside /nix/var/nix/profiles).
+        // `--no-link` is safe here: the generation's profile link is what keeps
+        // the output alive, and `store::create_generation_link` registers that
+        // as an indirect GC root.
         // `path:` forces the plain path fetcher: without it, a data dir that
         // happens to live inside a git repository is treated as a git flake
         // and untracked generation files become invisible to the build.

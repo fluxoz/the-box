@@ -485,11 +485,7 @@ fn backup_now(state: &SharedState) -> anyhow::Result<Value> {
 
 fn backup_restore(state: &SharedState, snapshot: &str, scope: &str) -> anyhow::Result<Value> {
     let (config, bc) = backup_bc(state)?;
-    let includes = match scope {
-        "all" => Vec::new(),
-        "config" => crate::backup::config_includes(&state.paths),
-        svc => crate::backup::service_includes(&config, svc),
-    };
+    let includes = crate::backup::resolve_scope(&state.paths, &config, scope)?;
     crate::backup::restore(
         &state.paths,
         &bc,
