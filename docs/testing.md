@@ -1,7 +1,18 @@
 # Testing the backup + cloud stack
 
-Three layers, cheapest first. The first two run in CI with no network or
-external binaries; the third is a real integration run you invoke by hand.
+Three layers, cheapest first.
+
+`.github/workflows/test.yml` runs layer 1 (the whole workspace, plus clippy) and
+the NixOS VM checks on every push and pull request. Layer 2 needs real network
+endpoints, so you invoke it by hand.
+
+Two things worth knowing about how these can lie to you, both since fixed:
+a test that shells out to a missing binary and returns early reports success
+having checked nothing (the secrets tests did this in the Nix build, where
+`age` was absent), and a test that constructs the system by hand does not
+exercise the path a user takes (every container test wired the NixOS module
+directly, so deploying a container through boxd was broken for a long time
+without a single failing test).
 
 ## 1. Pure-logic unit tests — `cargo test`
 
@@ -36,7 +47,15 @@ The load-bearing assertion in every backup case is the same: a known plaintext
 sentinel written before the backup must **not** appear anywhere in the repo on
 disk — proof the encryption is actually happening, not just claimed.
 
-## 3. Full-tunnel / on-Box — VM
+## 3. NixOS VM checks — `nix build .#checks.x86_64-linux.<name>`
+
+Real Boxes booted in QEMU. `nix flake show` lists them; the one that matters
+most for services is **`deploy-through-boxd`**, which deploys a container the
+way a user does (through the API) and asserts that what boxd reports back is
+true. It runs with no network on purpose: a Box has to be able to build a
+generation without reaching out to anything.
+
+## 4. Full-tunnel / on-Box — a real machine
 
 Two things need a real machine and can't run in the sandbox, same tier as the
 install tests:

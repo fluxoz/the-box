@@ -165,17 +165,25 @@ pub fn migrate_plaintext(paths: &Paths) {
 mod tests {
     use super::*;
 
+    /// These tests are the proof that a secret is never written in plaintext,
+    /// so a missing `age` is a broken environment, not a reason to pass quietly.
+    /// They used to `return` early, which meant the one place they ran
+    /// automatically (the Nix build, where age wasn't present) reported success
+    /// having checked nothing at all.
     fn age_available() -> bool {
-        std::process::Command::new("age")
-            .arg("--version")
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
-            && std::process::Command::new("age-keygen")
+        for bin in ["age", "age-keygen"] {
+            let ok = std::process::Command::new(bin)
                 .arg("--version")
                 .output()
                 .map(|o| o.status.success())
-                .unwrap_or(false)
+                .unwrap_or(false);
+            assert!(
+                ok,
+                "{bin} must be on PATH: these tests verify secrets are encrypted at rest. \
+                 Run them with `nix develop -c cargo test`."
+            );
+        }
+        true
     }
 
     #[test]

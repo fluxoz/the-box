@@ -1,0 +1,94 @@
+# Run the tests on every push and pull request.
+#
+# Until this existed, nothing ran any test suite — the only workflow published a
+# release — while the docs said the first two layers "run in CI". A whole class
+# of breakage lived in the gap: deploying a container through boxd failed at
+# eval on any real Box, and no test noticed, because the container tests wired
+# the NixOS module by hand instead of going through the daemon.
+#
+# Two jobs. `unit` is the fast gate (a couple of minutes). `vm` boots real Boxes
+# in QEMU and is slower, so it runs alongside rather than blocking it.
+name: Tests
+
+on:
+  push:
+    branches: ["main", "release"]
+  pull_request:
+  workflow_dispatch: {}
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: cargo test + fmt + clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: DeterminateSystems/nix-installer-action@v22
+        with:
+          determinate: false
+          # Same reasoning as publish.yml: Nix ignores flake-declared
+          # substituters in non-interactive CI, so put them in nix.conf.
+          extra-conf: |
+            extra-substituters = https://nixos-raspberrypi.cachix.org https://fluxoz.cachix.org
+            extra-trusted-public-keys = nixos-raspberrypi.cachix.org-1:4iMO9LXa8BqhU+Rpg6LQKiGa2lsNh/j2oiYLNOQ5sPI= fluxoz.cachix.org-1:yzuO7pZpCoHEIT6PQiYJ1eupby/rH3Ls3Q18+VA0Krc=
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      # The whole workspace: boxd, box-core (the storage-layout brain the
+      # installer depends on) and box-installer.
+      - name: cargo test
+        run: nix develop -c cargo test --workspace
+
+      # Advisory for now: the tree predates any formatting gate, and a mass
+      # reformat would bury real changes. Turn this into a hard check after a
+      # deliberate `cargo fmt --all` commit.
+      - name: cargo fmt (advisory)
+        continue-on-error: true
+        run: nix develop -c cargo fmt --all -- --check
+
+      - name: cargo clippy
+        run: nix develop -c cargo clippy --workspace --all-targets -- -D warnings
+
+  vm:
+    name: NixOS VM checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: DeterminateSystems/nix-installer-action@v22
+        with:
+          determinate: false
+          extra-conf: |
+            extra-substituters = https://nixos-raspberrypi.cachix.org https://fluxoz.cachix.org
+            extra-trusted-public-keys = nixos-raspberrypi.cachix.org-1:4iMO9LXa8BqhU+Rpg6LQKiGa2lsNh/j2oiYLNOQ5sPI= fluxoz.cachix.org-1:yzuO7pZpCoHEIT6PQiYJ1eupby/rH3Ls3Q18+VA0Krc=
+
+      # KVM is not available on GitHub's runners; the tests fall back to
+      # software emulation, which is why this job is the slow one.
+      - name: Boot the checks
+        run: |
+          set -euo pipefail
+          # The named ones a regression would hurt most. Not the Pi image
+          # checks — those compile a vendor kernel and belong to the release.
+          for check in \
+            deploy-through-boxd \
+            container \
+            service-proxy \
+            secret-env \
+            os-switch \
+            restore \
+            fleet-discovery \
+            installer-beacon \
+            pi-update-parity
+          do
+            echo "::group::$check"
+            nix build ".#checks.x86_64-linux.$check" --no-link --print-build-logs
+            echo "::endgroup::"
+          done
