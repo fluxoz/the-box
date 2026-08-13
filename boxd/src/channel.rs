@@ -251,10 +251,20 @@ pub fn update_and_switch(
         }
     };
 
+    // The bump itself is a step that can fail — and it failed in the wild in
+    // precisely the self-concealing way described above: `nix flake update`
+    // rewrote the platform input, then died on a LATER input, and the `?`
+    // here walked out without restoring. The box then answered "up to date"
+    // to every check while running the old platform. No step between the
+    // snapshot and the health check gets to skip the restore.
     if bump {
-        bump_pin(&repo)?;
-    } else {
-        ensure_locked(&repo)?;
+        if let Err(e) = bump_pin(&repo) {
+            restore_pin();
+            return Err(e.context("advancing the platform pin (pin restored)"));
+        }
+    } else if let Err(e) = ensure_locked(&repo) {
+        restore_pin();
+        return Err(e.context("locking the platform pin (pin restored)"));
     }
 
     let toplevel = match ostier::build(&repo, &channel.host_id) {

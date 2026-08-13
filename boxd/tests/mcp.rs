@@ -148,6 +148,7 @@ async fn mcp_handshake_and_tools() {
         "verify_service",
         "channel_update",
         "job_status",
+        "provision_machine",
     ] {
         assert!(names.contains(&expected), "missing tool {expected}");
     }
@@ -380,8 +381,12 @@ async fn mcp_deploy_host_routing_and_rollback() {
 
     // ...and now needs a session even from this machine: reaching loopback is
     // not authority, because every service the Box runs can reach it too.
-    let (status, _) = get(&app, "/", "localhost:2693", None).await;
+    // The refusal is also a signpost — an agent's first contact lands exactly
+    // here, and "pairing required" with no next step once sent one to SSH.
+    let (status, body) = get(&app, "/", "localhost:2693", None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert!(body.contains("/pair/redeem"), "the 401 must say how to pair: {body}");
+    assert!(body.contains("Bearer"), "the 401 must say how to authenticate: {body}");
 
     // With an operator session it is reachable as before.
     let (status, body) = get(&app, "/", "localhost:2693", Some(&token)).await;

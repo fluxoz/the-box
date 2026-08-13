@@ -20,7 +20,7 @@ use serde::Serialize;
 /// chatty build cannot grow the daemon's memory.
 const LOG_LIMIT: usize = 300;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum State {
     Running,
@@ -28,7 +28,7 @@ pub enum State {
     Failed,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct Job {
     pub id: String,
     /// Machine-readable kind: deploy, delete, rollback, recreate, backup, update.
@@ -89,11 +89,67 @@ pub struct Registry {
     jobs: Mutex<HashMap<String, Job>>,
     /// Newest-first ids, so the console can show what is currently happening.
     recent: Mutex<Vec<String>>,
+    /// Where finished/started jobs are written, so they survive a restart.
+    /// `None` = memory only (tests).
+    dir: Option<std::path::PathBuf>,
 }
 
 impl Registry {
     pub fn new() -> Arc<Self> {
         Arc::new(Self::default())
+    }
+
+    /// A registry whose jobs survive the daemon restarting — which matters
+    /// most for the one job that CAUSES a restart: a platform update switches
+    /// the system, boxd comes back with empty memory, and the agent polling
+    /// job_status was told "no such job" at the exact moment it needed the
+    /// answer. Anything found still "running" on disk at startup is re-marked
+    /// as interrupted-by-restart, with a message saying where to look —
+    /// because for an update, the restart is usually the SUCCESS path.
+    pub fn persistent(dir: std::path::PathBuf) -> Arc<Self> {
+        let _ = std::fs::create_dir_all(&dir);
+        let reg = Self {
+            dir: Some(dir.clone()),
+            ..Self::default()
+        };
+        let mut loaded: Vec<Job> = std::fs::read_dir(&dir)
+            .map(|entries| {
+                entries
+                    .filter_map(|e| e.ok())
+                    .filter_map(|e| std::fs::read_to_string(e.path()).ok())
+                    .filter_map(|s| serde_json::from_str::<Job>(&s).ok())
+                    .collect()
+            })
+            .unwrap_or_default();
+        loaded.sort_by_key(|j| j.started_unix);
+        {
+            let mut map = reg.jobs.lock().unwrap();
+            let mut recent = reg.recent.lock().unwrap();
+            for mut job in loaded {
+                if job.state == State::Running {
+                    job.state = State::Failed;
+                    job.phase = "interrupted".into();
+                    job.message = "boxd restarted while this ran. For a platform update that \
+                                   is the expected path — check get_status / channel_status \
+                                   to see whether the new version is running."
+                        .into();
+                    job.finished_unix = Some(now_unix());
+                    persist(&dir, &job);
+                }
+                recent.push(job.id.clone());
+                map.insert(job.id.clone(), job);
+            }
+        }
+        Arc::new(reg)
+    }
+
+    fn persist_by_id(&self, id: &str) {
+        let Some(dir) = &self.dir else { return };
+        if let Ok(map) = self.jobs.lock() {
+            if let Some(job) = map.get(id) {
+                persist(dir, job);
+            }
+        }
     }
 
     fn with<F: FnOnce(&mut Job)>(&self, id: &str, f: F) {
@@ -162,6 +218,7 @@ impl Registry {
         if let Ok(mut map) = self.jobs.lock() {
             map.insert(id.clone(), job);
         }
+        self.persist_by_id(&id);
         if let Ok(mut r) = self.recent.lock() {
             r.push(id.clone());
             // Keep the list bounded; the generation list is the real history.
@@ -171,6 +228,9 @@ impl Registry {
                 if let Ok(mut map) = self.jobs.lock() {
                     for old in drop_ids {
                         map.remove(&old);
+                        if let Some(dir) = &self.dir {
+                            let _ = std::fs::remove_file(dir.join(format!("{old}.json")));
+                        }
                     }
                 }
             }
@@ -199,8 +259,18 @@ impl Registry {
                 push_log(j, &message);
                 j.finished_unix = Some(now_unix());
             });
+            registry.persist_by_id(&job_id);
         });
         id
+    }
+}
+
+/// One file per job. Written at start (so an interrupted job is findable) and
+/// at the end (so the outcome is). Log lines in between stay in memory only —
+/// the disk record is for "what happened", not a live tail.
+fn persist(dir: &std::path::Path, job: &Job) {
+    if let Ok(json) = serde_json::to_string(job) {
+        let _ = std::fs::write(dir.join(format!("{}.json", job.id)), json);
     }
 }
 
@@ -265,6 +335,45 @@ mod tests {
         let boom = reg.start("deploy", "x", "/", |_| panic!("bug"));
         let j = wait_for(&reg, &boom, State::Failed);
         assert!(j.message.contains("panicked"), "got {}", j.message);
+    }
+
+    #[test]
+    fn jobs_survive_the_restart_they_cause() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let dir = tmp.path().join("jobs");
+
+        // A finished job outlives its registry — the daemon restarting must
+        // not turn "it worked" into "no such job".
+        let reg = Registry::persistent(dir.clone());
+        let id = reg.start("test", "t", "t", |_| Ok("did it".into()));
+        wait_for(&reg, &id, State::Done);
+        drop(reg);
+        let reg2 = Registry::persistent(dir.clone());
+        let job = reg2.get(&id).expect("finished job survived the restart");
+        assert_eq!(job.state, State::Done);
+        assert_eq!(job.message, "did it");
+
+        // A job RUNNING at the moment of restart — the platform-update case,
+        // where the job itself causes the restart — is re-marked interrupted
+        // and says where to look for the outcome.
+        let stuck = Job {
+            id: "deadbeef00000000".into(),
+            kind: "platform-update".into(),
+            label: "platform update".into(),
+            state: State::Running,
+            phase: "switching".into(),
+            log: Vec::new(),
+            message: String::new(),
+            target: "system".into(),
+            started_unix: 1,
+            finished_unix: None,
+        };
+        persist(&dir, &stuck);
+        let reg3 = Registry::persistent(dir);
+        let j = reg3.get("deadbeef00000000").unwrap();
+        assert_eq!(j.state, State::Failed);
+        assert!(j.message.contains("restarted"), "{}", j.message);
+        assert!(j.message.contains("channel_status"), "{}", j.message);
     }
 
     #[test]

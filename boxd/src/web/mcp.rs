@@ -316,8 +316,29 @@ fn tool_definitions() -> Value {
         },
         {
             "name": "channel_update",
-            "description": "Apply a platform update: rebuild this Box's system from its update channel and switch to it, rolling back automatically if the new system fails its health check. Call channel_check first to see whether there is anything to update to. This takes minutes, so it runs as a background job — you get a job id back immediately; poll job_status to follow it. Safe by construction (every generation remains bootable and a failed switch rolls itself back), but tell the person before you run it: services blip during the switch, and a demo link from the quick-share rung gets a NEW address afterward.",
-            "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false },
+            "description": "Apply a platform update: rebuild this Box's system from its update channel and switch to it, rolling back automatically if the new system fails its health check. Call channel_check first to see whether there is anything to update to. This takes minutes, so it runs as a background job — you get a job id back immediately; poll job_status to follow it. The switch restarts boxd, so expect one blip mid-job: if job_status briefly errors and then reports the job as interrupted, check get_status — a new version there means the update SUCCEEDED. Safe by construction (every generation remains bootable and a failed switch rolls itself back), but tell the person before you run it: services blip during the switch, and a demo link from the quick-share rung gets a NEW address afterward.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "force": { "type": "boolean", "description": "Rebuild and switch even when the pin says current — the fix when running_release lags the pin (default false)." }
+                },
+                "additionalProperties": false,
+            },
+        },
+        {
+            "name": "provision_machine",
+            "description": "Turn a spare machine on the network into ANOTHER Box, hands-off: ship it an identity over SSH, run the takeover installer, wait for it to boot as a Box, and pair with it. THIS ERASES THE TARGET'S DISK — name the machine to the person and get their explicit yes before calling (a wrong address here wipes the wrong computer; this Box's network may contain machines that matter). Requirements: the target must be a Linux machine this Box can reach as root over SSH, and at least one SSH public key to authorize on the new Box. Runs as a background job (up to ~15 minutes): poll job_status; the finished job's message carries the new Box's address and a session token — manage it by connecting a NEW MCP endpoint at http://<address>/mcp with that token, exactly like this one.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "target": { "type": "string", "description": "SSH target, e.g. root@192.168.1.42" },
+                    "ssh_public_keys": { "type": "array", "items": { "type": "string" }, "description": "Public keys to authorize on the new Box (the operator's, so a human can always get in)" },
+                    "hostname": { "type": "string", "description": "Hostname for the new Box; 'auto' (default) derives a stable per-machine name" },
+                    "layout": { "type": "string", "description": "Storage layout: single | mirror | pool (default: decided on-box)" }
+                },
+                "required": ["target", "ssh_public_keys"],
+                "additionalProperties": false,
+            },
         },
         {
             "name": "job_status",
@@ -934,15 +955,20 @@ async fn execute(
             Ok(blocking(move || verify_service(&state, &name)).await)
         }
         "channel_update" => {
+            let force = args.get("force").and_then(Value::as_bool).unwrap_or(false);
             let state = state.clone();
             Ok(blocking(move || {
                 let cfg = crate::channel::ChannelConfig::load(&state.paths)?
                     .ok_or_else(|| anyhow::anyhow!("no update channel configured on this Box"))?;
                 let status = crate::channel::check(&state.paths, &cfg)?;
-                if !status.update_available {
+                if !status.update_available && !force {
                     return Ok(json!({
                         "started": false,
-                        "message": format!("Already current ({}).", status.latest),
+                        "message": format!(
+                            "Already current ({}). If the running release looks older than \
+                             that, pass force: true to rebuild and switch anyway.",
+                            status.latest
+                        ),
                     }));
                 }
                 let paths = state.paths.clone();
@@ -971,6 +997,56 @@ async fn execute(
                     "note": "Poll job_status with this id. Services blip during the switch; a \
                              quick-share demo address will be NEW afterward (check \
                              ingress_status when the job finishes).",
+                }))
+            })
+            .await)
+        }
+        "provision_machine" => {
+            let Some(target) = str_arg("target") else {
+                return Err((-32602, "missing required argument: target".into()));
+            };
+            let keys: Vec<String> = args
+                .get("ssh_public_keys")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                .unwrap_or_default();
+            if keys.is_empty() {
+                return Err((-32602, "ssh_public_keys must carry at least one public key — \
+                                     without one, no human can ever SSH into the new Box".into()));
+            }
+            let hostname = str_arg("hostname").unwrap_or_else(|| "auto".into());
+            let layout = str_arg("layout");
+            let state = state.clone();
+            Ok(blocking(move || {
+                let opts = crate::provision::ProvisionOpts {
+                    target: target.clone(),
+                    hostname,
+                    ssh_keys: crate::provision::resolve_ssh_keys(keys)?,
+                    layout,
+                    install_url: crate::provision::DEFAULT_INSTALL_URL.into(),
+                    reach_host: None,
+                    boot_timeout_secs: 900,
+                    ssh_opts: Vec::new(),
+                };
+                let id = state.jobs.start(
+                    "provision",
+                    format!("provisioning {target} as a new Box"),
+                    "fleet",
+                    move |progress| {
+                        progress.phase("taking the machine over (its disk is being erased)");
+                        let out = crate::provision::run(&opts)?;
+                        Ok(format!(
+                            "New Box at {} — connect MCP at {} with session token {} \
+                             (shown once; store it now)",
+                            out.address, out.mcp_url, out.token
+                        ))
+                    },
+                );
+                Ok(json!({
+                    "started": true,
+                    "job": id,
+                    "note": "Poll job_status. The takeover wipes, installs and reboots the \
+                             machine, so expect several minutes of silence before it comes up.",
                 }))
             })
             .await)
@@ -1348,7 +1424,21 @@ fn channel_status(state: &SharedState) -> anyhow::Result<Value> {
 fn channel_check(state: &SharedState) -> anyhow::Result<Value> {
     let cfg = channel::ChannelConfig::load(&state.paths)?
         .ok_or_else(|| anyhow::anyhow!("no update channel configured"))?;
-    Ok(serde_json::to_value(channel::check(&state.paths, &cfg)?)?)
+    let status = channel::check(&state.paths, &cfg)?;
+    let mut value = serde_json::to_value(&status)?;
+    // The check compares the PIN against upstream; the pin and the running
+    // system can disagree (a failed update once left them that way, and the
+    // box answered "up to date" while running old code). Surfacing what is
+    // actually running lets an agent notice the gap — and force close it.
+    value["running_release"] = json!(platform_release());
+    if !status.update_available {
+        value["note"] = json!(
+            "\"Up to date\" means the pin matches upstream. If running_release looks older \
+             than the latest release, the pin advanced without the system switching — call \
+             channel_update with force: true."
+        );
+    }
+    Ok(value)
 }
 
 fn generations(state: &SharedState) -> anyhow::Result<Value> {

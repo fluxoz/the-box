@@ -41,10 +41,10 @@ impl AppState {
     pub fn new(paths: Paths, builder: Box<dyn Builder>) -> SharedState {
         let tunnel = TunnelManager::new(paths.clone());
         Arc::new(Self {
+            jobs: crate::jobs::Registry::persistent(paths.data_dir.join("jobs")),
             paths,
             builder,
             tunnel,
-            jobs: crate::jobs::Registry::new(),
             ceremonies: Arc::new(crate::webauthn::Ceremonies::new()),
             apply_lock: Mutex::new(()),
         })
@@ -178,9 +178,21 @@ async fn require_auth(
     if wants_html {
         Redirect::to("/pair").into_response()
     } else {
+        // An agent's first contact with a Box lands exactly here, so this is
+        // where the door has to explain its own handle. "pairing required"
+        // alone sent a real agent off to SSH; the two fields below are the
+        // difference between a dead end and a bootstrap.
         (
             StatusCode::UNAUTHORIZED,
-            axum::Json(serde_json::json!({ "error": "pairing required" })),
+            axum::Json(serde_json::json!({
+                "error": "pairing required",
+                "how": "Ask the person for this Box's pairing code (the installer and the \
+                        Console both show it). Then POST /pair/redeem with JSON \
+                        {\"code\": \"<the code>\", \"label\": \"<who you are>\"} — the \
+                        response carries a session token. Send it on every request as \
+                        'Authorization: Bearer <token>'.",
+                "mcp": "/mcp",
+            })),
         )
             .into_response()
     }

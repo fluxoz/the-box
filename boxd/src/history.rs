@@ -33,6 +33,8 @@ const GITIGNORE: &str = "\
 # source tree into their own config history on every deploy.
 /repos/
 /repo-trees/
+# Job records: operational state, not configuration.
+/jobs/
 /network.toml
 /auth.json
 /config-remote
