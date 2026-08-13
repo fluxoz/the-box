@@ -142,6 +142,12 @@ async fn mcp_handshake_and_tools() {
         "forge_connect_status",
         "forge_repos",
         "forge_disconnect",
+        "link_repo",
+        "sync_repo",
+        "unlink_repo",
+        "verify_service",
+        "channel_update",
+        "job_status",
     ] {
         assert!(names.contains(&expected), "missing tool {expected}");
     }
@@ -321,10 +327,18 @@ async fn mcp_repo_linked_service_follows_the_repository() {
     assert!(paths.repo_tree_dir("blog").join("index.html").exists());
     assert!(!paths.repo_tree_dir("blog").join(".git").exists());
 
-    // The link is visible to agents, and unlinking stops the loop without
-    // touching the deployed site.
+    // The link is visible to agents — including whether the last pull worked,
+    // because a quietly-failing poller must not look like a healthy one.
     let services = call_tool(&app, &token, "list_services", json!({})).await;
     assert!(text(&services).contains("local/blog"), "{}", text(&services));
+    let parsed: Value = serde_json::from_str(&text(&services)).unwrap();
+    let blog = parsed.as_array().unwrap().iter().find(|s| s["name"] == "blog").unwrap();
+    assert_eq!(blog["last_sync"]["ok"], true, "{blog}");
+
+    // And the end-to-end checker tells the truth about an unpublished service.
+    let verify = call_tool(&app, &token, "verify_service", json!({ "name": "blog" })).await;
+    assert_eq!(verify["result"]["isError"], false, "{verify}");
+    assert!(text(&verify).contains("not published"), "{}", text(&verify));
     let off = call_tool(&app, &token, "unlink_repo", json!({ "name": "blog" })).await;
     assert_eq!(off["result"]["isError"], false, "{off}");
     let (_, body) = get(&app, "/sites/blog/", "127.0.0.1", Some(&token)).await;

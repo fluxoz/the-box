@@ -83,6 +83,16 @@ pub fn pending_reason(paths: &Paths) -> Option<String> {
 
 /// Is the root apply unit installed? A machine can be NixOS without being a
 /// Box, and the unit ships with the Box's platform module.
+/// Whether this machine is a managed Box, as opposed to merely NixOS.
+///
+/// `available()` alone is the wrong question for diagnostics: a developer's
+/// NixOS desktop has a system profile too, and judging it by Box rules reports
+/// a perfectly healthy dev server as a broken system. The apply unit exists
+/// only where the platform module installed it.
+pub fn managed_system() -> bool {
+    available() && apply_unit_available()
+}
+
 pub fn apply_unit_available() -> bool {
     Command::new("systemctl")
         .args(["cat", APPLY_UNIT])

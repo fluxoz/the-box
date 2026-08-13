@@ -124,6 +124,48 @@ impl Forge for GitHub {
         let slug = cfg.app_slug.as_deref().or(APP_SLUG)?;
         Some(format!("https://github.com/apps/{slug}/installations/new"))
     }
+
+    fn empty_hint(&self, token: &str, cfg: &ForgeConfig) -> Option<String> {
+        let (value, _) =
+            crate::forge::get_json(&format!("{API}/user/installations?per_page=100"), token).ok()?;
+        let installs = value.get("installations").and_then(Value::as_array)?;
+        Some(diagnose_empty(installs, self.grant_more_url(cfg).as_deref()))
+    }
+}
+
+/// The three ways an installation list adds up to zero repositories, told
+/// apart. Pure, so the shapes seen on a real account stay pinned in tests.
+pub fn diagnose_empty(installs: &[Value], grant_url: Option<&str>) -> String {
+    let where_to = grant_url.unwrap_or("the app's installation page on GitHub");
+    if installs.is_empty() {
+        return format!(
+            "They authorized the app but it is not installed on any account yet. \
+             Send them {where_to} — they pick an account and tick repositories there."
+        );
+    }
+    // An installation whose permissions carry no repository access at all
+    // means the APP REGISTRATION requests none — nothing the person ticks can
+    // help, and only the app's owner can fix it. This happened live: the
+    // registration was saved without Contents access, the install screen had
+    // nothing meaningful to offer, and every list came back empty.
+    let no_permissions = installs.iter().all(|i| {
+        i.get("permissions")
+            .and_then(Value::as_object)
+            .map(|p| !p.contains_key("contents"))
+            .unwrap_or(true)
+    });
+    if no_permissions {
+        return "The app is installed, but its registration requests no repository \
+                permissions — sharing repositories grants nothing until that changes. \
+                This is fixed by the APP'S OWNER (not the person): app settings → \
+                Permissions & events → Repository permissions → Contents: Read-only, \
+                then each installation approves the change."
+            .to_string();
+    }
+    format!(
+        "The app is installed and has permissions, but no repositories are ticked. \
+         Send them {where_to} — under Repository access they choose what to share."
+    )
 }
 
 fn installation_ids(token: &str) -> Result<Vec<u64>> {
@@ -235,6 +277,28 @@ mod tests {
 
         // Anything we could not clone is not offered as deployable.
         assert!(parse_repo(&json!({ "full_name": "octo/hello" })).is_none());
+    }
+
+    #[test]
+    fn the_three_kinds_of_zero_repositories_get_three_different_answers() {
+        // Not installed anywhere: the person can fix it, send the link.
+        let nowhere = diagnose_empty(&[], Some("https://github.com/apps/x/installations/new"));
+        assert!(nowhere.contains("not installed"), "{nowhere}");
+        assert!(nowhere.contains("installations/new"), "{nowhere}");
+
+        // Installed with empty permissions — the shape observed live on a real
+        // account (installation 153337497, "permissions": {}): only the app's
+        // owner can fix this, and saying "tick repositories" would be wrong.
+        let unpermissioned = diagnose_empty(&[json!({"id": 1, "permissions": {}})], None);
+        assert!(unpermissioned.contains("OWNER"), "{unpermissioned}");
+        assert!(unpermissioned.contains("Contents"), "{unpermissioned}");
+
+        // Installed, permissions fine, nothing ticked: back to the person.
+        let unticked = diagnose_empty(
+            &[json!({"id": 1, "permissions": {"contents": "read", "metadata": "read"}})],
+            Some("https://github.com/apps/x/installations/new"),
+        );
+        assert!(unticked.contains("no repositories are ticked"), "{unticked}");
     }
 
     #[test]
