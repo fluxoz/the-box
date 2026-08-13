@@ -191,6 +191,62 @@ fn tool_definitions() -> Value {
             },
         },
         {
+            "name": "forge_options",
+            "description": "List the places this Box can deploy code from (GitHub, GitLab), what each one needs before it will work, and whether an account is already connected. Call this first when the person wants to deploy from their existing repository. Read 'shares_only_chosen_repos' out loud when it is false — on that forge the Box will be able to read every project they can see, which is the forge's model and not something the Box chooses.",
+            "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false },
+        },
+        {
+            "name": "forge_connect",
+            "description": "Start connecting the person's GitHub or GitLab account. Returns a short code and a link IMMEDIATELY — it does not wait for them. Give them both, tell them to open the link and type the code, then call forge_connect_status to see whether they have finished. The code expires in about fifteen minutes. If the Box has no application configured for that forge this call says exactly what is missing; for a self-hosted GitLab you must pass client_id (and base_url) once, which the person gets by adding an application in their GitLab settings.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "provider": { "type": "string", "description": "An id from forge_options: 'github' or 'gitlab'" },
+                    "base_url": { "type": "string", "description": "For a self-hosted forge, where it lives, e.g. https://git.example.com. Stored for next time." },
+                    "client_id": { "type": "string", "description": "OAuth application/client id, if this Box needs its own. Stored for next time. Not a secret." },
+                    "app_slug": { "type": "string", "description": "GitHub App slug, used to build the link for sharing more repositories." }
+                },
+                "required": ["provider"],
+                "additionalProperties": false,
+            },
+        },
+        {
+            "name": "forge_connect_status",
+            "description": "Check whether the person has finished authorizing, and store the token if they have. Poll this rather than waiting; leave a few seconds between calls, because the forge will refuse polls that come too fast. Reports 'waiting' with the code repeated back so you can re-show it, 'connected' when done, or 'failed' with a reason that is worth reading — 'device flow not enabled' means a checkbox is missing on the application and retrying will never help.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "provider": { "type": "string", "description": "'github' or 'gitlab'" }
+                },
+                "required": ["provider"],
+                "additionalProperties": false,
+            },
+        },
+        {
+            "name": "forge_repos",
+            "description": "List the repositories a connected account has shared with this Box, ready to deploy from. An empty list on GitHub is the normal first-connect case rather than an error: it means they authorized the app but picked no repositories, and the returned 'share_more_url' is the one-click fix — send it to them.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "provider": { "type": "string", "description": "'github' or 'gitlab'" }
+                },
+                "required": ["provider"],
+                "additionalProperties": false,
+            },
+        },
+        {
+            "name": "forge_disconnect",
+            "description": "Forget a connected account, deleting the stored token from this Box. Tell the person plainly that this does NOT revoke anything at the forge — only they can do that, from their own account settings — so if the worry is a leaked token, deleting it here is not sufficient.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "provider": { "type": "string", "description": "'github' or 'gitlab'" }
+                },
+                "required": ["provider"],
+                "additionalProperties": false,
+            },
+        },
+        {
             "name": "publish_service",
             "description": "Put a deployed service on the internet, or take it off. This is the only thing that makes something reachable by anyone, so do it deliberately and tell the person what the address is. A service that is not published is served only on their own network.",
             "inputSchema": {
@@ -562,6 +618,141 @@ async fn execute(
                     ));
                 }
                 Ok(value)
+            })
+            .await)
+        }
+        "forge_options" => {
+            let state = state.clone();
+            Ok(blocking(move || {
+                let list: Vec<Value> = crate::forge::forges()
+                    .iter()
+                    .map(|f| {
+                        let r = f.requirements();
+                        let cfg = crate::forge::config_for(&state.paths, f.id()).ok();
+                        json!({
+                            "id": f.id(),
+                            "title": f.title(),
+                            "description": f.description(),
+                            // Whether this Box could start a device flow right
+                            // now, or still needs an application id from them.
+                            "ready_to_connect": cfg
+                                .as_ref()
+                                .map(|c| f.endpoints(c).is_ok())
+                                .unwrap_or(false),
+                            "connected": crate::secrets::exists(
+                                &state.paths,
+                                &crate::forge::token_secret(f.id()),
+                            ),
+                            "needs_its_own_application": r.needs_own_app,
+                            "can_be_self_hosted": r.needs_base_url,
+                            "shares_only_chosen_repos": r.per_repo_consent,
+                            "steps_the_person_must_do": f.steps(),
+                        })
+                    })
+                    .collect();
+                Ok(json!(list))
+            })
+            .await)
+        }
+        "forge_connect" => {
+            let Some(provider) = str_arg("provider") else {
+                return Err((-32602, "missing required argument: provider".into()));
+            };
+            let (base_url, client_id, app_slug) =
+                (str_arg("base_url"), str_arg("client_id"), str_arg("app_slug"));
+            let state = state.clone();
+            Ok(blocking(move || {
+                if crate::secrets::exists(&state.paths, &crate::forge::token_secret(&provider)) {
+                    return Ok(json!({
+                        "state": "connected",
+                        "message": format!(
+                            "A {provider} account is already connected. Call forge_repos to see \
+                             what it can reach, or forge_disconnect to forget it first."
+                        ),
+                    }));
+                }
+                let cfg = if base_url.is_some() || client_id.is_some() || app_slug.is_some() {
+                    crate::forge::configure(&state.paths, &provider, base_url, client_id, app_slug)?
+                } else {
+                    crate::forge::config_for(&state.paths, &provider)?
+                };
+                let p = crate::forge::start(&state.paths, &cfg)?;
+                Ok(json!({
+                    "state": "waiting",
+                    "user_code": p.user_code,
+                    "verification_uri": p.verification_uri,
+                    "expires_in_seconds": p.expires_at.saturating_sub(
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs())
+                            .unwrap_or_default(),
+                    ),
+                    "poll_every_seconds": p.interval,
+                    "instructions": "Give them the link and the code, in that order, and let them \
+                                     go and do it. Then call forge_connect_status — do not call \
+                                     this tool again, which would start over with a new code.",
+                }))
+            })
+            .await)
+        }
+        "forge_connect_status" => {
+            let Some(provider) = str_arg("provider") else {
+                return Err((-32602, "missing required argument: provider".into()));
+            };
+            let state = state.clone();
+            Ok(blocking(move || {
+                let cfg = crate::forge::config_for(&state.paths, &provider)?;
+                let status = crate::forge::poll(&state.paths, &cfg)?;
+                let mut value = serde_json::to_value(&status)?;
+                if matches!(status, crate::forge::Status::Connected) {
+                    value["next"] = json!("Call forge_repos to show them what this Box can now see.");
+                }
+                Ok(value)
+            })
+            .await)
+        }
+        "forge_repos" => {
+            let Some(provider) = str_arg("provider") else {
+                return Err((-32602, "missing required argument: provider".into()));
+            };
+            let state = state.clone();
+            Ok(blocking(move || {
+                let forge = crate::forge::get(&provider)
+                    .ok_or_else(|| anyhow::anyhow!("unknown forge {provider:?}"))?;
+                let cfg = crate::forge::config_for(&state.paths, &provider)?;
+                let token = crate::forge::token(&state.paths, &provider)?;
+                let repos = forge.list_repos(&token, &cfg)?;
+                let mut value = json!({ "repositories": repos, "count": repos.len() });
+                if repos.is_empty() {
+                    // Not an error on an app-based forge: they consented, then
+                    // shared nothing. Saying "no repositories" without the fix
+                    // reads as a bug in the Box.
+                    value["share_more_url"] = json!(forge.grant_more_url(&cfg));
+                    value["message"] = json!(
+                        "The account is connected but no repositories are shared with this Box \
+                         yet. If there is a share_more_url, send it to them — they tick the \
+                         repositories they want and this call then returns them."
+                    );
+                }
+                Ok(value)
+            })
+            .await)
+        }
+        "forge_disconnect" => {
+            let Some(provider) = str_arg("provider") else {
+                return Err((-32602, "missing required argument: provider".into()));
+            };
+            let state = state.clone();
+            Ok(blocking(move || {
+                crate::forge::disconnect(&state.paths, &provider)?;
+                Ok(json!({
+                    "state": "disconnected",
+                    "message": format!(
+                        "The stored {provider} token has been deleted from this Box. It is NOT \
+                         revoked — to do that they must remove the authorization in their own \
+                         {provider} account settings."
+                    ),
+                }))
             })
             .await)
         }

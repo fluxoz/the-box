@@ -1,0 +1,244 @@
+//! GitHub, reached as a GitHub App through the device flow.
+//!
+//! An App rather than an OAuth app, and an App rather than a personal access
+//! token, for one reason: consent is per repository. The person ticks the repos
+//! they want on GitHub's own installation screen, and the token this Box ends
+//! up holding reaches those and nothing else. A classic PAT's `repo` scope, by
+//! contrast, is every repository they own — the same over-broad credential
+//! problem as a Cloudflare API token, handed to the part of the system that
+//! also builds code it did not write.
+//!
+//! Only a client id ships in the OS image. The device flow has no client
+//! secret, so there is nothing confidential to leak out of a machine we do not
+//! control — which is what makes this grant the right one for an appliance.
+
+use anyhow::{bail, Context, Result};
+use serde_json::Value;
+
+use crate::config::ForgeConfig;
+use crate::forge::{Endpoints, Forge, Repo, Requirements};
+
+const API: &str = "https://api.github.com";
+
+/// The Box's own GitHub App.
+///
+/// A client id is public by design — it ships in every copy of this OS and is
+/// visible to anyone who looks. That is safe here precisely because the device
+/// flow has no client secret: there is no companion credential that would turn
+/// knowing this string into being able to act as the app. The App also holds no
+/// client secret at all, deliberately, so there is none to leak later.
+///
+/// Overridable per Box: anyone who would rather not depend on a registration
+/// administered by someone else can point their Box at their own App. That is
+/// the whole mitigation for the one piece of this design that is centralised.
+pub const CLIENT_ID: Option<&str> = Some("Iv23liudDywv4yTPeFxz");
+
+/// The App's public slug, used to build the "share more repositories" link.
+pub const APP_SLUG: Option<&str> = Some("the-box-integration");
+
+pub struct GitHub;
+
+impl Forge for GitHub {
+    fn id(&self) -> &'static str {
+        "github"
+    }
+    fn title(&self) -> &'static str {
+        "GitHub"
+    }
+    fn description(&self) -> &'static str {
+        "Deploy from a repository on GitHub. You choose which repositories this Box can see."
+    }
+    fn requirements(&self) -> Requirements {
+        Requirements {
+            needs_own_app: false,
+            needs_base_url: false,
+            per_repo_consent: true,
+        }
+    }
+    fn steps(&self) -> Vec<&'static str> {
+        vec![
+            "Open the link the Box gives you and type in the code it shows.",
+            "Choose the repositories this Box may read. You can change that later on GitHub, and nothing else on your account is shared.",
+        ]
+    }
+
+    fn endpoints(&self, cfg: &ForgeConfig) -> Result<Endpoints> {
+        let client_id = cfg
+            .client_id
+            .as_deref()
+            .or(CLIENT_ID)
+            .context(
+                "this Box has no GitHub App to authenticate with. Register one \
+                 (Settings → Developer settings → GitHub Apps), tick \"Enable \
+                 Device Flow\", and set its Client ID as client_id on the github \
+                 forge in box.toml.",
+            )?
+            .to_string();
+        Ok(Endpoints {
+            device_code_url: "https://github.com/login/device/code".into(),
+            token_url: "https://github.com/login/oauth/access_token".into(),
+            client_id,
+            // A GitHub App's permissions come from its registration and from
+            // what the person ticked when installing it. Asking for a scope
+            // here would be claiming to decide something we do not decide.
+            scope: None,
+        })
+    }
+
+    /// Every repository shared with this Box, across every account and org the
+    /// App was installed on.
+    ///
+    /// Two levels, because that is how App consent works: the person installs
+    /// the App somewhere (their user, an org), and within each installation
+    /// picks repositories. A user token can enumerate both.
+    fn list_repos(&self, token: &str, _cfg: &ForgeConfig) -> Result<Vec<Repo>> {
+        let mut repos = Vec::new();
+        for id in installation_ids(token)? {
+            let mut url = format!("{API}/user/installations/{id}/repositories?per_page=100");
+            loop {
+                let (value, next) = crate::forge::get_json(&url, token)?;
+                let page = value
+                    .get("repositories")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default();
+                repos.extend(page.iter().filter_map(parse_repo));
+                match next {
+                    Some(n) => url = n,
+                    None => break,
+                }
+            }
+        }
+        repos.sort_by(|a, b| a.full_name.cmp(&b.full_name));
+        repos.dedup_by(|a, b| a.full_name == b.full_name);
+        Ok(repos)
+    }
+
+    fn grant_more_url(&self, cfg: &ForgeConfig) -> Option<String> {
+        let slug = cfg.app_slug.as_deref().or(APP_SLUG)?;
+        Some(format!("https://github.com/apps/{slug}/installations/new"))
+    }
+}
+
+fn installation_ids(token: &str) -> Result<Vec<u64>> {
+    let mut ids = Vec::new();
+    let mut url = format!("{API}/user/installations?per_page=100");
+    loop {
+        let (value, next) = crate::forge::get_json(&url, token)?;
+        let Some(list) = value.get("installations").and_then(Value::as_array) else {
+            bail!("GitHub did not list any installations for this account");
+        };
+        ids.extend(list.iter().filter_map(|i| i.get("id").and_then(Value::as_u64)));
+        match next {
+            Some(n) => url = n,
+            None => break,
+        }
+    }
+    Ok(ids)
+}
+
+/// One repository out of GitHub's JSON. Anything missing the fields we need to
+/// clone it is skipped rather than guessed at.
+pub fn parse_repo(v: &Value) -> Option<Repo> {
+    Some(Repo {
+        full_name: v.get("full_name").and_then(Value::as_str)?.to_string(),
+        // A repository with no commits has no default branch. It is listable
+        // and not deployable, so name the branch GitHub would create.
+        default_branch: v
+            .get("default_branch")
+            .and_then(Value::as_str)
+            .unwrap_or("main")
+            .to_string(),
+        private: v.get("private").and_then(Value::as_bool).unwrap_or(true),
+        clone_url: v.get("clone_url").and_then(Value::as_str)?.to_string(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn cfg() -> ForgeConfig {
+        ForgeConfig::new("github")
+    }
+
+    #[test]
+    fn a_stock_box_can_connect_with_no_configuration_at_all() {
+        // The point of shipping a registration: a person who just installed
+        // this OS can connect their GitHub account without first learning what
+        // an OAuth application is.
+        let ep = GitHub.endpoints(&cfg()).unwrap();
+        assert_eq!(ep.client_id, CLIENT_ID.unwrap());
+        assert_eq!(ep.token_url, "https://github.com/login/oauth/access_token");
+    }
+
+    #[test]
+    fn the_shipped_app_has_no_secret_to_leak() {
+        // A device-flow client id is public by design. This test exists to stop
+        // anyone "fixing" that by adding a client secret next to it — a secret
+        // shipped in an OS image is a secret published, and the whole reason
+        // this grant was chosen is that it needs none.
+        // Only the half that ships. The test module below necessarily names the
+        // thing it is forbidding, and would otherwise trip over itself.
+        let src = include_str!("ghapi.rs");
+        let ships = src.split("#[cfg(test)]").next().unwrap();
+        assert!(
+            !ships.to_ascii_lowercase().contains(concat!("client", "_secret")),
+            "no client secret belongs in an image that ships to other people"
+        );
+    }
+
+    #[test]
+    fn a_box_can_use_its_own_app_registration() {
+        // The mitigation for the one centralised piece of this design.
+        let mut c = cfg();
+        c.client_id = Some("Iv23liOWN".into());
+        let ep = GitHub.endpoints(&c).unwrap();
+        assert_eq!(ep.client_id, "Iv23liOWN");
+        assert_eq!(ep.device_code_url, "https://github.com/login/device/code");
+        assert!(ep.scope.is_none());
+    }
+
+    #[test]
+    fn the_share_more_link_points_at_the_installation_screen() {
+        // A stock Box links to the shipped App's installation screen...
+        assert_eq!(
+            GitHub.grant_more_url(&cfg()).as_deref(),
+            Some("https://github.com/apps/the-box-integration/installations/new")
+        );
+        // ...and a Box using its own App registration links to its own.
+        let mut c = cfg();
+        c.app_slug = Some("my-own-app".into());
+        assert_eq!(
+            GitHub.grant_more_url(&c).as_deref(),
+            Some("https://github.com/apps/my-own-app/installations/new")
+        );
+    }
+
+    #[test]
+    fn a_repository_with_no_commits_still_names_a_branch() {
+        let r = parse_repo(&json!({
+            "full_name": "octo/hello",
+            "private": false,
+            "clone_url": "https://github.com/octo/hello.git"
+        }))
+        .unwrap();
+        assert_eq!(r.default_branch, "main");
+        assert!(!r.private);
+
+        // Anything we could not clone is not offered as deployable.
+        assert!(parse_repo(&json!({ "full_name": "octo/hello" })).is_none());
+    }
+
+    #[test]
+    fn a_repository_of_unknown_visibility_is_treated_as_private() {
+        // Erring the other way would print someone's private repo name as
+        // public in the console.
+        let r = parse_repo(&json!({
+            "full_name": "a/b", "clone_url": "https://github.com/a/b.git"
+        }))
+        .unwrap();
+        assert!(r.private);
+    }
+}
