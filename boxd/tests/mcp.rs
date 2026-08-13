@@ -137,12 +137,107 @@ async fn mcp_handshake_and_tools() {
         "delete_service",
         "list_generations",
         "rollback",
+        "forge_options",
+        "forge_connect",
+        "forge_connect_status",
+        "forge_repos",
+        "forge_disconnect",
     ] {
         assert!(names.contains(&expected), "missing tool {expected}");
     }
 
     let unknown = rpc(&app, &token, json!({"jsonrpc": "2.0", "id": 2, "method": "nope"})).await;
     assert_eq!(unknown["error"]["code"], -32601);
+}
+
+/// The forge tools an agent touches before any network call is possible.
+///
+/// A Box that ships no application registration is the normal state of this
+/// code until one exists, so what matters most here is that every refusal names
+/// the missing thing. An agent that reads "unauthorized" will retry forever; an
+/// agent that reads "tick Enable Device Flow" can tell the person what to do.
+#[tokio::test]
+async fn mcp_forge_tools_refuse_with_the_missing_piece_named() {
+    let (_tmp, app, token) = app();
+
+    let text = |v: &Value| v["result"]["content"][0]["text"].as_str().unwrap().to_string();
+
+    // The catalogue is honest about the difference between the two forges.
+    let options = call_tool(&app, &token, "forge_options", json!({})).await;
+    assert_eq!(options["result"]["isError"], false, "{options}");
+    let listed: Value = serde_json::from_str(&text(&options)).unwrap();
+    let by_id = |id: &str| {
+        listed
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["id"] == id)
+            .cloned()
+            .unwrap_or_else(|| panic!("no {id} in forge_options"))
+    };
+    let github = by_id("github");
+    assert_eq!(github["connected"], false);
+    assert_eq!(github["shares_only_chosen_repos"], true);
+    // GitLab grants by scope, so promising per-repo consent there would be a lie.
+    assert_eq!(by_id("gitlab")["shares_only_chosen_repos"], false);
+    // A stock Box ships a GitHub App registration, so this needs no setup...
+    assert_eq!(github["ready_to_connect"], true);
+    // ...and GitLab cannot ship one, because applications are per instance.
+    assert_eq!(by_id("gitlab")["ready_to_connect"], false);
+
+    // A self-hosted GitLab can never borrow a gitlab.com registration, and the
+    // refusal says which instance it is talking about.
+    let gl = call_tool(
+        &app,
+        &token,
+        "forge_connect",
+        json!({ "provider": "gitlab", "base_url": "https://git.example.com" }),
+    )
+    .await;
+    assert_eq!(gl["result"]["isError"], true, "{gl}");
+    assert!(text(&gl).contains("git.example.com"), "{}", text(&gl));
+    assert!(text(&gl).contains("Confidential"), "{}", text(&gl));
+
+    // Even though starting failed, the base_url they supplied was kept — losing
+    // it would make them type it again on every retry.
+    let options = call_tool(&app, &token, "forge_options", json!({})).await;
+    let listed: Value = serde_json::from_str(&text(&options)).unwrap();
+    let stored = listed
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["id"] == "gitlab")
+        .unwrap()
+        .clone();
+    assert_eq!(stored["connected"], false);
+
+    // Nothing started, nothing held.
+    let status = call_tool(
+        &app,
+        &token,
+        "forge_connect_status",
+        json!({ "provider": "github" }),
+    )
+    .await;
+    assert_eq!(status["result"]["isError"], false, "{status}");
+    assert!(text(&status).contains("disconnected"), "{}", text(&status));
+
+    // Listing repositories without an account says so, rather than returning
+    // an empty list that reads as "you have no repositories".
+    let repos = call_tool(&app, &token, "forge_repos", json!({ "provider": "github" })).await;
+    assert_eq!(repos["result"]["isError"], true, "{repos}");
+    assert!(text(&repos).contains("connected"), "{}", text(&repos));
+
+    // Disconnecting must not imply the grant is gone from the forge.
+    let off = call_tool(
+        &app,
+        &token,
+        "forge_disconnect",
+        json!({ "provider": "github" }),
+    )
+    .await;
+    assert_eq!(off["result"]["isError"], false, "{off}");
+    assert!(text(&off).contains("NOT"), "{}", text(&off));
 }
 
 #[tokio::test]

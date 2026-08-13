@@ -23,6 +23,9 @@ pub struct BoxConfig {
     /// How this Box is reachable from the internet, if at all. Absent = not.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ingress: Option<IngressConfig>,
+    /// Where this Box pulls code from. Empty = nowhere yet.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub forges: Vec<ForgeConfig>,
 }
 
 /// How the Box is reached from the internet.
@@ -50,6 +53,46 @@ impl IngressConfig {
             provider: provider.into(),
             enabled: false,
             zone: None,
+        }
+    }
+}
+
+/// A source of code this Box can deploy from.
+///
+/// Like [`IngressConfig`], this is declarative state and belongs in box.toml so
+/// it survives destroy-and-recreate. The access token does not live here — it
+/// goes to the encrypted secret store, keyed by provider (see
+/// [`crate::forge::token_secret`]).
+///
+/// The identifiers below are public by design. A device-flow client has no
+/// secret, which is exactly why it is the right grant for a machine whose
+/// configuration is pushed to a git repository.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ForgeConfig {
+    /// Which forge. See `crate::forge::forges()`.
+    pub provider: String,
+    /// For a self-hosted forge, where it is. Absent = the public instance.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
+    /// The OAuth client id to authenticate with. Required where the product
+    /// ships no registration that could work (any self-hosted instance), and
+    /// otherwise an override for operators who would rather not depend on one
+    /// administered by someone else.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<String>,
+    /// A GitHub App's public slug, used to build the link that shares more
+    /// repositories with this Box.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_slug: Option<String>,
+}
+
+impl ForgeConfig {
+    pub fn new(provider: impl Into<String>) -> Self {
+        Self {
+            provider: provider.into(),
+            base_url: None,
+            client_id: None,
+            app_slug: None,
         }
     }
 }
