@@ -184,6 +184,74 @@ fn deployed_commit(paths: &Paths, service: &str) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+/// What the last sync attempt did, kept so an agent can see it later. The
+/// poller runs with nobody watching; without this, a link that has been
+/// failing for a week looks identical to one that deployed an hour ago.
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+pub struct SyncState {
+    /// Unix seconds of the attempt.
+    pub at: u64,
+    pub ok: bool,
+    /// Deployed commit on success (whether or not it was new).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+fn sync_state_file(paths: &Paths, service: &str) -> std::path::PathBuf {
+    paths.repos_dir().join(format!("{service}.sync-state"))
+}
+
+pub fn read_sync_state(paths: &Paths, service: &str) -> Option<SyncState> {
+    serde_json::from_str(&fs::read_to_string(sync_state_file(paths, service)).ok()?).ok()
+}
+
+fn record_sync(paths: &Paths, service: &str, state: &SyncState) {
+    let _ = fs::create_dir_all(paths.repos_dir());
+    if let Ok(json) = serde_json::to_string(state) {
+        let _ = fs::write(sync_state_file(paths, service), json);
+    }
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or_default()
+}
+
+/// [`sync`], with the outcome recorded either way. Every caller that is not a
+/// test goes through this, so the recorded state is never stale by design.
+pub fn sync_recorded(
+    paths: &Paths,
+    builder: &dyn Builder,
+    name: &str,
+    force: bool,
+) -> Result<SyncOutcome> {
+    let result = sync(paths, builder, name, force);
+    let state = match &result {
+        Ok(SyncOutcome::UpToDate { commit }) | Ok(SyncOutcome::Deployed { commit, .. }) => {
+            SyncState { at: unix_now(), ok: true, commit: Some(commit.clone()), error: None }
+        }
+        Err(e) => SyncState { at: unix_now(), ok: false, commit: None, error: Some(format!("{e:#}")) },
+    };
+    record_sync(paths, name, &state);
+    result
+}
+
+/// Where an index.html actually lives, when the repo root has none. People
+/// commit built sites into `public/` or `dist/` and link the repo root; the
+/// deploy then "works" and serves a 404, which reads as our bug, not theirs.
+/// Saying "your site is in dist/, pass subdir" at link time is the difference.
+pub fn suggest_subdir(tree: &std::path::Path) -> Option<String> {
+    const COMMON: [&str; 8] = ["public", "dist", "build", "site", "docs", "out", "_site", "www"];
+    COMMON
+        .iter()
+        .find(|d| tree.join(d).join("index.html").is_file())
+        .map(|d| d.to_string())
+}
+
 /// Where the deployable content is, once a commit is checked out.
 fn source_for(link: &RepoLink, tree: &std::path::Path) -> Result<PathBuf> {
     match &link.subdir {
@@ -269,7 +337,7 @@ pub fn link(
     subdir: Option<String>,
     domain: Option<String>,
     public: bool,
-) -> Result<(RepoLink, SyncOutcome)> {
+) -> Result<(RepoLink, SyncOutcome, Option<String>)> {
     let forge = crate::forge::get(forge_id)
         .with_context(|| format!("unknown forge {forge_id:?}"))?;
     if let Some(sub) = &subdir {
@@ -316,6 +384,28 @@ pub fn link(
     let tree = checkout(paths, service, &commit)?;
     let source = source_for(&link, &tree)?;
 
+    // Not an error — plenty of repos serve fine without an index — but the
+    // common case is a built site in a subdirectory, and catching it here
+    // turns a silent 404 into a one-word fix.
+    let warning = if source.join("index.html").is_file() {
+        None
+    } else {
+        Some(match suggest_subdir(&source) {
+            Some(dir) => format!(
+                "{} has no index.html at {} — but there is one in {dir:?}. \
+                 If the site lives there, link again with subdir: {dir:?}.",
+                link.repo,
+                link.subdir.as_deref().unwrap_or("its root"),
+            ),
+            None => format!(
+                "{} has no index.html at {} — visitors to the root will see a 404. \
+                 If this repository needs a build step, that is not supported yet.",
+                link.repo,
+                link.subdir.as_deref().unwrap_or("its root"),
+            ),
+        })
+    };
+
     let req = DeployRequest::static_site(
         service,
         None,
@@ -334,6 +424,11 @@ pub fn link(
 
     fs::create_dir_all(paths.repos_dir())?;
     fs::write(paths.repo_marker(service), &commit)?;
+    record_sync(
+        paths,
+        service,
+        &SyncState { at: unix_now(), ok: true, commit: Some(commit.clone()), error: None },
+    );
 
     Ok((
         link,
@@ -342,6 +437,7 @@ pub fn link(
             previous: None,
             generation: info.number,
         },
+        warning,
     ))
 }
 
@@ -359,6 +455,7 @@ pub fn unlink(paths: &Paths, service: &str) -> Result<()> {
     let _ = crate::util::remove_dir_all_forced(&paths.repo_git_dir(service));
     let _ = crate::util::remove_dir_all_forced(&paths.repo_tree_dir(service));
     let _ = fs::remove_file(paths.repo_marker(service));
+    let _ = fs::remove_file(sync_state_file(paths, service));
     Ok(())
 }
 
@@ -386,7 +483,7 @@ pub fn spawn(state: crate::web::SharedState) {
                 // The same lock every deploy path takes, so a poll can never
                 // race an operator's own deploy on the generation directory.
                 let _guard = state.apply_lock.lock().unwrap();
-                match sync(&state.paths, state.builder.as_ref(), &name, false) {
+                match sync_recorded(&state.paths, state.builder.as_ref(), &name, false) {
                     Ok(SyncOutcome::Deployed { commit, generation, .. }) => {
                         tracing::info!("pull: {name}: deployed {commit} as generation #{generation}");
                     }

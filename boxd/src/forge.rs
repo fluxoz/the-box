@@ -192,6 +192,16 @@ pub trait Forge: Send + Sync {
     /// On an app-based forge this is the ordinary case on first connect, not an
     /// error, and the fix is one click on the forge's own screen.
     fn grant_more_url(&self, cfg: &ForgeConfig) -> Option<String>;
+    /// When the list of repositories comes back empty, say WHICH empty this is.
+    /// "Zero repositories" has three different causes on an app-based forge —
+    /// not installed anywhere, installed but nothing ticked, or an app
+    /// registration that requests no repository permissions at all — and they
+    /// have three different fixes, only one of which the person can do alone.
+    /// Telling them apart cost a live debugging session once; the API response
+    /// held the answer the whole time.
+    fn empty_hint(&self, _token: &str, _cfg: &ForgeConfig) -> Option<String> {
+        None
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -441,13 +451,29 @@ fn now() -> u64 {
         .unwrap_or_default()
 }
 
-/// Begin a connection and return what to show the person.
+/// Begin a connection and return what to show the person, plus whether the
+/// code is fresh.
 ///
 /// This returns in one round trip and never waits for them. An agent that
 /// blocks for fifteen minutes holding a tool call open is useless to whoever is
 /// talking to it — hand back the code, let them go and type it, and ask again.
-pub fn start(paths: &Paths, cfg: &ForgeConfig) -> Result<Pending> {
+///
+/// Calling this twice is safe, and that is deliberate: a flow already waiting
+/// on the person returns the SAME code, because an agent that loses track and
+/// asks again must not invalidate the code someone is in the middle of typing.
+/// A fresh code is minted only when there is no live one — including when the
+/// old one expired, so recovering from "they went to get coffee" is just
+/// calling this again. Under a minute of validity counts as dead: handing
+/// someone a code that expires while they type it is worse than a new one.
+pub fn start(paths: &Paths, cfg: &ForgeConfig) -> Result<(Pending, bool)> {
     let forge = get(&cfg.provider).with_context(|| format!("unknown forge {:?}", cfg.provider))?;
+    if let Some(raw) = crate::secrets::get(paths, &pending_secret(forge.id()))? {
+        if let Ok(p) = serde_json::from_str::<Pending>(&raw) {
+            if p.expires_at.saturating_sub(now()) > 60 {
+                return Ok((p, false));
+            }
+        }
+    }
     let ep = forge.endpoints(cfg)?;
     let value = send(&device_code_request(&ep))?;
     let pending = parse_pending(&value, now())?;
@@ -456,7 +482,7 @@ pub fn start(paths: &Paths, cfg: &ForgeConfig) -> Result<Pending> {
         &pending_secret(forge.id()),
         &serde_json::to_string(&pending)?,
     )?;
-    Ok(pending)
+    Ok((pending, true))
 }
 
 /// Where a connection has got to.
@@ -671,6 +697,47 @@ mod tests {
         });
         let err = parse_pending(&observed, 0).unwrap_err().to_string();
         assert_eq!(err, "Device Flow must be explicitly enabled for this App");
+    }
+
+    #[test]
+    fn asking_twice_returns_the_code_someone_is_already_typing() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let paths = Paths::new(tmp.path().to_path_buf());
+        paths.ensure().unwrap();
+
+        // A flow is mid-air: the person has a code in front of them.
+        let live = Pending {
+            device_code: "dc".into(),
+            user_code: "AAAA-BBBB".into(),
+            verification_uri: "https://example.test/activate".into(),
+            interval: 5,
+            expires_at: now() + 600,
+        };
+        crate::secrets::set(
+            &paths,
+            &pending_secret("gitlab"),
+            &serde_json::to_string(&live).unwrap(),
+        )
+        .unwrap();
+
+        // start() must hand back that same code without touching the network —
+        // proven by using a forge whose endpoints() cannot even be built here.
+        let cfg = ForgeConfig::new("gitlab");
+        let (p, fresh) = start(&paths, &cfg).unwrap();
+        assert_eq!(p.user_code, "AAAA-BBBB");
+        assert!(!fresh);
+
+        // A nearly-dead code is NOT reused — and with no client id configured,
+        // minting a fresh one fails at endpoints() before any network call,
+        // which both proves the reuse path was skipped and keeps this offline.
+        let dying = Pending { expires_at: now() + 30, ..live };
+        crate::secrets::set(
+            &paths,
+            &pending_secret("gitlab"),
+            &serde_json::to_string(&dying).unwrap(),
+        )
+        .unwrap();
+        assert!(start(&paths, &cfg).is_err());
     }
 
     #[test]

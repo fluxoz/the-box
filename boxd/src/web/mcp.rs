@@ -303,6 +303,35 @@ fn tool_definitions() -> Value {
             },
         },
         {
+            "name": "verify_service",
+            "description": "Prove a service is actually reachable, end to end, instead of assuming from configuration. Checks the whole chain — is the system apply finished, is the web server running, is anything listening where the tunnel points, is the tunnel up — and then FETCHES the service's real URLs, including the public one through the actual internet edge. Call this after deploying or publishing, and any time someone says 'it's not working': the verdict names the first broken link in the chain, which beats reading four green statuses over a dark site. May take ~15 seconds when it fetches the public URL.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "The service to verify" }
+                },
+                "required": ["name"],
+                "additionalProperties": false,
+            },
+        },
+        {
+            "name": "channel_update",
+            "description": "Apply a platform update: rebuild this Box's system from its update channel and switch to it, rolling back automatically if the new system fails its health check. Call channel_check first to see whether there is anything to update to. This takes minutes, so it runs as a background job — you get a job id back immediately; poll job_status to follow it. Safe by construction (every generation remains bootable and a failed switch rolls itself back), but tell the person before you run it: services blip during the switch, and a demo link from the quick-share rung gets a NEW address afterward.",
+            "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false },
+        },
+        {
+            "name": "job_status",
+            "description": "Follow a background job (a platform update, a long deploy) by the id a tool handed back: current phase, recent log lines, and whether it finished or failed. Poll every few seconds while narrating progress to the person; 'failed' comes with the reason.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "The job id another tool returned" }
+                },
+                "required": ["id"],
+                "additionalProperties": false,
+            },
+        },
+        {
             "name": "service_logs",
             "description": "Recent log lines for a deployed service, straight from the system journal — what you read to find out why something is not working. Returns the most recent lines, oldest first.",
             "inputSchema": {
@@ -605,7 +634,26 @@ async fn execute(
                     .into_iter()
                     .map(|(service, url)| json!({ "service": service, "url": url }))
                     .collect();
-                Ok(json!({ "ingress": status, "published": urls }))
+                // The trap this closes: tunnel "running", service "published",
+                // and the public URL answering 502 — because nothing on this
+                // machine listens where the tunnel points. All three tools used
+                // to look green while the site was dark.
+                let origin = origin_listening();
+                let mut value = json!({
+                    "ingress": status,
+                    "published": urls,
+                    "origin_listening": origin,
+                });
+                if status.enabled && !origin {
+                    value["warning"] = json!(
+                        "The tunnel is up but nothing on this Box is listening on the public \
+                         port yet, so public URLs will answer 502. On a Box this resolves when \
+                         the system apply after publishing finishes (give it a minute, then \
+                         check again, or call verify_service). If this is a dev machine with no \
+                         OS tier, there is no public listener at all and that is why."
+                    );
+                }
+                Ok(value)
             })
             .await)
         }
@@ -718,11 +766,12 @@ async fn execute(
                 } else {
                     crate::forge::config_for(&state.paths, &provider)?
                 };
-                let p = crate::forge::start(&state.paths, &cfg)?;
+                let (p, fresh) = crate::forge::start(&state.paths, &cfg)?;
                 Ok(json!({
                     "state": "waiting",
                     "user_code": p.user_code,
                     "verification_uri": p.verification_uri,
+                    "code_is_new": fresh,
                     "expires_in_seconds": p.expires_at.saturating_sub(
                         std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
@@ -730,9 +779,16 @@ async fn execute(
                             .unwrap_or_default(),
                     ),
                     "poll_every_seconds": p.interval,
-                    "instructions": "Give them the link and the code, in that order, and let them \
-                                     go and do it. Then call forge_connect_status — do not call \
-                                     this tool again, which would start over with a new code.",
+                    "instructions": if fresh {
+                        "Give them the link and the code, in that order, and let them go and do \
+                         it. Then call forge_connect_status. Calling this tool again is safe — \
+                         it returns this same code while it is valid, and a new one once it has \
+                         expired."
+                    } else {
+                        "A code is already waiting on them — this is that same code, not a new \
+                         one, so whatever they have in front of them is still right. Call \
+                         forge_connect_status to see whether they have finished."
+                    },
                 }))
             })
             .await)
@@ -767,14 +823,17 @@ async fn execute(
                 let mut value = json!({ "repositories": repos, "count": repos.len() });
                 if repos.is_empty() {
                     // Not an error on an app-based forge: they consented, then
-                    // shared nothing. Saying "no repositories" without the fix
-                    // reads as a bug in the Box.
+                    // shared nothing. But "zero repositories" has more than one
+                    // cause, and the diagnosis says which one this is — the
+                    // difference between a fix the person clicks and a fix only
+                    // the app's owner can make.
                     value["share_more_url"] = json!(forge.grant_more_url(&cfg));
-                    value["message"] = json!(
+                    value["message"] = json!(forge.empty_hint(&token, &cfg).unwrap_or_else(|| {
                         "The account is connected but no repositories are shared with this Box \
                          yet. If there is a share_more_url, send it to them — they tick the \
                          repositories they want and this call then returns them."
-                    );
+                            .into()
+                    }));
                 }
                 Ok(value)
             })
@@ -794,7 +853,7 @@ async fn execute(
                 (str_arg("branch"), str_arg("subdir"), str_arg("domain"));
             let public = args.get("public").and_then(Value::as_bool).unwrap_or(false);
             Ok(run_locked(&state, move |state| {
-                let (link, outcome) = crate::pull::link(
+                let (link, outcome, warning) = crate::pull::link(
                     &state.paths,
                     state.builder.as_ref(),
                     &name,
@@ -812,6 +871,10 @@ async fn execute(
                 let mut value = deploy_result(state, &name, generation);
                 value["linked"] = serde_json::to_value(&link)?;
                 value["sync"] = serde_json::to_value(&outcome)?;
+                if let Some(w) = warning {
+                    // "It deployed" and "it will 404" can both be true; say so.
+                    value["warning"] = json!(w);
+                }
                 value["note"] = json!(format!(
                     "From now on, pushing to {} on {} deploys automatically within about a minute.",
                     link.branch, link.repo
@@ -826,7 +889,7 @@ async fn execute(
             };
             Ok(run_locked(&state, move |state| {
                 let outcome =
-                    crate::pull::sync(&state.paths, state.builder.as_ref(), &name, false)?;
+                    crate::pull::sync_recorded(&state.paths, state.builder.as_ref(), &name, false)?;
                 Ok(serde_json::to_value(&outcome)?)
             })
             .await)
@@ -860,6 +923,69 @@ async fn execute(
                          {provider} account settings."
                     ),
                 }))
+            })
+            .await)
+        }
+        "verify_service" => {
+            let Some(name) = str_arg("name") else {
+                return Err((-32602, "missing required argument: name".into()));
+            };
+            let state = state.clone();
+            Ok(blocking(move || verify_service(&state, &name)).await)
+        }
+        "channel_update" => {
+            let state = state.clone();
+            Ok(blocking(move || {
+                let cfg = crate::channel::ChannelConfig::load(&state.paths)?
+                    .ok_or_else(|| anyhow::anyhow!("no update channel configured on this Box"))?;
+                let status = crate::channel::check(&state.paths, &cfg)?;
+                if !status.update_available {
+                    return Ok(json!({
+                        "started": false,
+                        "message": format!("Already current ({}).", status.latest),
+                    }));
+                }
+                let paths = state.paths.clone();
+                let jobs = state.jobs.clone();
+                let id = jobs.start(
+                    "platform-update",
+                    format!("platform update to {}", status.latest),
+                    "system",
+                    move |progress| {
+                        progress.phase("building the new system");
+                        let config = crate::config::BoxConfig::load(&paths)?;
+                        let toplevel = crate::channel::update_and_switch(
+                            &paths,
+                            &config,
+                            &cfg,
+                            true,
+                            &crate::ostier::default_system_health,
+                        )?;
+                        Ok(format!("switched to {}", toplevel.display()))
+                    },
+                );
+                Ok(json!({
+                    "started": true,
+                    "job": id,
+                    "updating_to": status.latest,
+                    "note": "Poll job_status with this id. Services blip during the switch; a \
+                             quick-share demo address will be NEW afterward (check \
+                             ingress_status when the job finishes).",
+                }))
+            })
+            .await)
+        }
+        "job_status" => {
+            let Some(id) = str_arg("id") else {
+                return Err((-32602, "missing required argument: id".into()));
+            };
+            let state = state.clone();
+            Ok(blocking(move || {
+                let job = state
+                    .jobs
+                    .get(&id)
+                    .ok_or_else(|| anyhow::anyhow!("no job with id {id:?} (jobs are kept in memory; a restart forgets them)"))?;
+                Ok(serde_json::to_value(&job)?)
             })
             .await)
         }
@@ -952,6 +1078,164 @@ fn status(state: &SharedState) -> anyhow::Result<Value> {
     }))
 }
 
+/// Is anything listening where the tunnel points? One TCP dial answers the
+/// question three green dashboards failed to.
+fn origin_listening() -> bool {
+    std::net::TcpStream::connect_timeout(
+        &std::net::SocketAddr::from(([127, 0, 0, 1], crate::ingress::PUBLIC_PORT)),
+        std::time::Duration::from_secs(1),
+    )
+    .is_ok()
+}
+
+/// Walk the serving chain for one service and report the FIRST broken link.
+///
+/// Every check here earns its place by having actually fooled someone: a
+/// switch that "succeeded" with the web server dead, a tunnel "running" into a
+/// port nobody listened on, a publish whose system apply had not landed yet.
+/// The last step fetches the real public URL through the real edge, because
+/// the only statement worth making to a person is "I loaded it and it loaded".
+fn verify_service(state: &SharedState, name: &str) -> anyhow::Result<Value> {
+    use anyhow::Context as _;
+    let config = BoxConfig::load(&state.paths)?;
+    let svc = config
+        .find(name)
+        .with_context(|| format!("no service named {name:?}"))?;
+
+    let active: Vec<String> = store::current(&state.paths)?
+        .and_then(|c| manifest::read_manifest(&c.store_path).ok())
+        .map(|m| m.services.into_iter().map(|s| s.name).collect())
+        .unwrap_or_default();
+    let status = crate::ops::service_status(&state.paths, svc, active.contains(&svc.name.clone()));
+
+    let mut checks = serde_json::Map::new();
+    let mut verdict: Option<String> = None;
+    let mut fix: Option<String> = None;
+
+    // These first two checks judge the machine by Box rules, so they apply
+    // only where the platform module manages the system. A dev server is not
+    // a broken Box; it is not a Box at all, and saying otherwise sent this
+    // very tool chasing a "failed system" that was a laptop.
+    let managed = crate::ostier::managed_system();
+    if managed {
+        // 1. Is the OS tier caught up with the config?
+        let pending = crate::ostier::is_pending(&state.paths);
+        checks.insert("os_apply_pending".into(), json!(pending));
+        if pending {
+            let reason = crate::ostier::pending_reason(&state.paths);
+            checks.insert("os_apply_reason".into(), json!(reason));
+            verdict.get_or_insert(
+                "the system has not caught up with the configuration — what you configured is \
+                 not what is running yet"
+                    .into(),
+            );
+            fix.get_or_insert("wait for or retry the system apply; the reason field says why it is pending".into());
+        }
+
+        // 2. Is the web server alive?
+        let nginx = std::process::Command::new("systemctl")
+            .args(["is-active", "--quiet", "nginx.service"])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        checks.insert("web_server_running".into(), json!(nginx));
+        if !nginx {
+            verdict.get_or_insert(
+                "nginx is not running, so NOTHING on this Box is being served, this service \
+                 included"
+                    .into(),
+            );
+            fix.get_or_insert("check service_logs and the system journal for nginx; a recent structural change may have failed".into());
+        }
+    } else {
+        checks.insert("managed_system".into(), json!(false));
+        checks.insert(
+            "note".into(),
+            json!("not a managed Box (dev mode) — system-level checks skipped"),
+        );
+    }
+
+    // 3+4. The public half, only for a published service.
+    if svc.public {
+        let listening = origin_listening();
+        checks.insert("origin_listening".into(), json!(listening));
+        if !listening {
+            verdict.get_or_insert(
+                "published, but nothing listens on the Box's public port — a tunnel pointing \
+                 here answers 502"
+                    .into(),
+            );
+            fix.get_or_insert(
+                "on a Box this appears when the system apply after publishing finishes; on a \
+                 dev machine there is no public listener at all"
+                    .into(),
+            );
+        }
+
+        let tunnel = state.tunnel.status();
+        checks.insert("tunnel".into(), json!(tunnel.state));
+        let public_url = crate::ingress::published_urls(&state.paths, tunnel.address.as_deref())
+            .into_iter()
+            .find(|(s, _)| s == name)
+            .map(|(_, u)| u);
+        checks.insert("public_url".into(), json!(public_url));
+
+        if !tunnel.enabled {
+            verdict.get_or_insert(
+                "published, but no way in from the internet is turned on".into(),
+            );
+            fix.get_or_insert("ask for ingress_options and turn one on with ingress_configure".into());
+        } else if public_url.is_none() {
+            verdict.get_or_insert(
+                "published and the way in is starting, but it has no address yet".into(),
+            );
+            fix.get_or_insert("check back in a moment (ingress_status carries the address when it exists)".into());
+        } else if verdict.is_none() {
+            // Nothing known to be broken: prove it. Through the actual edge,
+            // like a stranger would reach it.
+            let url = public_url.clone().unwrap();
+            let code = std::process::Command::new("curl")
+                .args(["-sS", "-o", "/dev/null", "-w", "%{http_code}", "-m", "15", &url])
+                .output()
+                .ok()
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                .unwrap_or_default();
+            checks.insert("public_fetch_http_status".into(), json!(code));
+            match code.as_str() {
+                c if c.starts_with('2') || c.starts_with('3') => {
+                    verdict = Some(format!("reachable — fetched {url} from here and it answered {c}"));
+                }
+                "502" | "503" => {
+                    verdict = Some(format!("the edge answers but this Box does not ({code} at {url})"));
+                    fix = Some("the tunnel or the origin came up in the last few seconds, or the system apply is still settling — try once more shortly".into());
+                }
+                "" => {
+                    verdict = Some(format!("could not fetch {url} from this Box at all"));
+                    fix = Some("check this Box's own internet connection".into());
+                }
+                other => {
+                    verdict = Some(format!("{url} answers, but with HTTP {other}"));
+                    fix = Some("a 404 here usually means the content has no index.html at its root — for a repo-linked service, see link_repo's subdir".into());
+                }
+            }
+        }
+    } else if verdict.is_none() {
+        verdict = Some(format!(
+            "healthy but not published — served on your own network only ({})",
+            status.url.as_deref().unwrap_or("no URL")
+        ));
+    }
+
+    Ok(json!({
+        "service": name,
+        "state": status.state,
+        "note": status.note,
+        "checks": checks,
+        "verdict": verdict,
+        "fix": fix,
+    }))
+}
+
 fn services(state: &SharedState) -> anyhow::Result<Value> {
     let config = BoxConfig::load(&state.paths)?;
     let active: Vec<String> = store::current(&state.paths)?
@@ -972,8 +1256,12 @@ fn services(state: &SharedState) -> anyhow::Result<Value> {
                 "state": status.state,
                 "note": status.note,
                 // Present only for repo-linked services: where the content
-                // comes from, so an agent can see which sites update themselves.
+                // comes from, so an agent can see which sites update themselves
+                // — and whether the last pull worked, because a poller that has
+                // been failing quietly for a week must not look like one that
+                // deployed an hour ago.
                 "repo": s.repo,
+                "last_sync": s.repo.as_ref().and_then(|_| crate::pull::read_sync_state(&state.paths, &s.name)),
             })
         })
         .collect();
