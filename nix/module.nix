@@ -5,6 +5,22 @@ let
   # Only what the operator actually published.
   published = lib.filterAttrs (_: s: s.public);
 
+  # Exactly ONE default server on :80, however many services lack a domain.
+  # Every domain-less vhost used to claim `default_server`, and nginx treats
+  # two claimants as a fatal configuration error — so the second domain-less
+  # service you deployed took every site on the Box offline, and the switch
+  # still reported success. Found on a real Box, not in review. The first
+  # domain-less site wins (alphabetically), then apps, then containers; the
+  # prefixes keep a site and an app with the same name from colliding.
+  domainless = attrs: lib.attrNames (lib.filterAttrs (_: v: v.domain == null) attrs);
+  defaultOwner =
+    let candidates =
+      (map (n: "site:${n}") (domainless cfg.sites))
+      ++ (map (n: "app:${n}") (domainless cfg.apps))
+      ++ (map (n: "container:${n}")
+        (domainless (lib.filterAttrs (_: c: c.mode == "proxied") cfg.containers)));
+    in if candidates == [ ] then null else lib.head candidates;
+
   # What a service's virtual host serves, independent of which plane it is on.
   siteVhost = name: site: {
     serverName = if site.domain != null then site.domain else name;
@@ -30,10 +46,11 @@ let
     domain = c.domain;
   };
 
-  # Your own network: everything, on :80, exactly as before.
-  lanVhost = v: (removeAttrs v [ "domain" ]) // {
+  # Your own network: everything, on :80, exactly as before. `key` is this
+  # vhost's "<kind>:<name>", judged against defaultOwner above.
+  lanVhost = key: v: (removeAttrs v [ "domain" ]) // {
     serverName = if v.serverName != null then v.serverName else "_";
-    default = v.domain == null;
+    default = key == defaultOwner;
   };
 
   # The internet, via the tunnel: loopback-only, and a service must have a
@@ -494,8 +511,8 @@ in
         # The public listener is loopback-only: nothing reaches it except
         # cloudflared on this machine, and the firewall never opens it.
         virtualHosts =
-          (lib.mapAttrs (name: site: lanVhost (siteVhost name site)) cfg.sites)
-          // (lib.mapAttrs (name: app: lanVhost (appVhost app)) cfg.apps)
+          (lib.mapAttrs (name: site: lanVhost "site:${name}" (siteVhost name site)) cfg.sites)
+          // (lib.mapAttrs (name: app: lanVhost "app:${name}" (appVhost app)) cfg.apps)
           // (lib.mapAttrs' (name: site: lib.nameValuePair "${name}-public"
             (publicVhost (siteVhost name site))) (published cfg.sites))
           // (lib.mapAttrs' (name: app: lib.nameValuePair "${name}-public"
@@ -564,7 +581,7 @@ in
           virtualHosts =
             let proxied = lib.filterAttrs (_: c: c.mode == "proxied") cfg.containers;
             in
-            (lib.mapAttrs (name: c: lanVhost (proxyVhost name c)) proxied)
+            (lib.mapAttrs (name: c: lanVhost "container:${name}" (proxyVhost name c)) proxied)
             // (lib.mapAttrs' (name: c: lib.nameValuePair "${name}-public"
               (publicVhost (proxyVhost name c))) (published proxied));
         };
