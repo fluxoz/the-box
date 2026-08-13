@@ -221,6 +221,7 @@ mod tests {
                 domain: Some("blog.example.com".into()),
                 public: true,
                 port: None,
+                repo: None,
                 created_at: Utc::now(),
             }],
             ..Default::default()
@@ -317,6 +318,7 @@ mod tests {
                 domain: None,
                 public: false,
                 port: Some(8042),
+                repo: None,
                 created_at: Utc::now(),
             }],
             ..Default::default()

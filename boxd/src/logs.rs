@@ -105,6 +105,7 @@ mod tests {
                 domain: None,
                 public: false,
                 port: Some(8000),
+                repo: None,
                 created_at: Utc::now(),
             }],
             ..Default::default()

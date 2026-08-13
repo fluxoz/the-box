@@ -491,6 +491,10 @@ pub fn deploy(
             domain: req.domain.clone(),
             public,
             port,
+            // A link is attached by crate::pull AFTER the first deploy; and on
+            // updates the arm above deliberately leaves `repo` alone, so a
+            // redeploy never silently severs a service from its repository.
+            repo: None,
             created_at: Utc::now(),
         }),
     }
@@ -613,6 +617,11 @@ pub fn delete_service(paths: &Paths, builder: &dyn Builder, name: &str) -> Resul
     }
     config.save(paths)?;
     util::remove_dir_all_forced(&paths.source_dir(name))?;
+    // A repo-linked service leaves a clone behind; deleting the service means
+    // deleting the copy of someone's repository too.
+    let _ = util::remove_dir_all_forced(&paths.repo_git_dir(name));
+    let _ = util::remove_dir_all_forced(&paths.repo_tree_dir(name));
+    let _ = std::fs::remove_file(paths.repo_marker(name));
     let info = apply_checked(paths, builder, &default_health)?;
     history::commit_soft(
         paths,
@@ -781,6 +790,7 @@ mod tests {
                 domain: domain.map(Into::into),
                 public: false,
                 port: None,
+                repo: None,
                 created_at: Utc::now(),
             }],
             ..Default::default()

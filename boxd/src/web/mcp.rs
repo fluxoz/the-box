@@ -235,6 +235,48 @@ fn tool_definitions() -> Value {
             },
         },
         {
+            "name": "link_repo",
+            "description": "Deploy a repository from a connected forge as a service, and keep it deployed: the Box checks for new commits about once a minute and redeploys automatically, so after this one call, pushing to the branch IS deploying. Only static file trees for now — a repository that needs a build step is not supported yet, say so honestly. The repository must already be shared with this Box (see forge_repos). Creates the service if it does not exist. The service starts on the local network only unless public is set; publishing is a deliberate act.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "Service name: 1-32 chars of a-z, 0-9 and '-'" },
+                    "forge": { "type": "string", "description": "'github' or 'gitlab'" },
+                    "repo": { "type": "string", "description": "owner/name, exactly as forge_repos lists it" },
+                    "branch": { "type": "string", "description": "Branch to track. Defaults to the repository's default branch." },
+                    "subdir": { "type": "string", "description": "Deploy this subdirectory instead of the repo root, e.g. 'public' or 'dist' for a repo that commits its built site." },
+                    "domain": { "type": "string", "description": "Serve at this domain (must be configured for ingress)." },
+                    "public": { "type": "boolean", "description": "Publish to the internet immediately (default false)." }
+                },
+                "required": ["name", "forge", "repo"],
+                "additionalProperties": false,
+            },
+        },
+        {
+            "name": "sync_repo",
+            "description": "Check a repo-linked service for new commits right now instead of waiting for the next automatic poll, and deploy if there is anything new. Reports up_to_date with the current commit, or deployed with the new one. Useful right after someone says they pushed.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "A repo-linked service" }
+                },
+                "required": ["name"],
+                "additionalProperties": false,
+            },
+        },
+        {
+            "name": "unlink_repo",
+            "description": "Stop keeping a service in step with its repository. The service and its currently deployed content stay exactly as they are — this stops future automatic deploys, it does not take anything down or delete the service.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "A repo-linked service" }
+                },
+                "required": ["name"],
+                "additionalProperties": false,
+            },
+        },
+        {
             "name": "forge_disconnect",
             "description": "Forget a connected account, deleting the stored token from this Box. Tell the person plainly that this does NOT revoke anything at the forge — only they can do that, from their own account settings — so if the worry is a leaked token, deleting it here is not sufficient.",
             "inputSchema": {
@@ -738,6 +780,71 @@ async fn execute(
             })
             .await)
         }
+        "link_repo" => {
+            let Some(name) = str_arg("name") else {
+                return Err((-32602, "missing required argument: name".into()));
+            };
+            let Some(forge) = str_arg("forge") else {
+                return Err((-32602, "missing required argument: forge".into()));
+            };
+            let Some(repo) = str_arg("repo") else {
+                return Err((-32602, "missing required argument: repo".into()));
+            };
+            let (branch, subdir, domain) =
+                (str_arg("branch"), str_arg("subdir"), str_arg("domain"));
+            let public = args.get("public").and_then(Value::as_bool).unwrap_or(false);
+            Ok(run_locked(&state, move |state| {
+                let (link, outcome) = crate::pull::link(
+                    &state.paths,
+                    state.builder.as_ref(),
+                    &name,
+                    &forge,
+                    &repo,
+                    branch,
+                    subdir,
+                    domain,
+                    public,
+                )?;
+                let generation = match &outcome {
+                    crate::pull::SyncOutcome::Deployed { generation, .. } => *generation,
+                    _ => 0,
+                };
+                let mut value = deploy_result(state, &name, generation);
+                value["linked"] = serde_json::to_value(&link)?;
+                value["sync"] = serde_json::to_value(&outcome)?;
+                value["note"] = json!(format!(
+                    "From now on, pushing to {} on {} deploys automatically within about a minute.",
+                    link.branch, link.repo
+                ));
+                Ok(value)
+            })
+            .await)
+        }
+        "sync_repo" => {
+            let Some(name) = str_arg("name") else {
+                return Err((-32602, "missing required argument: name".into()));
+            };
+            Ok(run_locked(&state, move |state| {
+                let outcome =
+                    crate::pull::sync(&state.paths, state.builder.as_ref(), &name, false)?;
+                Ok(serde_json::to_value(&outcome)?)
+            })
+            .await)
+        }
+        "unlink_repo" => {
+            let Some(name) = str_arg("name") else {
+                return Err((-32602, "missing required argument: name".into()));
+            };
+            let state = state.clone();
+            Ok(blocking(move || {
+                crate::pull::unlink(&state.paths, &name)?;
+                Ok(json!({
+                    "unlinked": name,
+                    "message": "Automatic deploys are off. The service and its current content are untouched.",
+                }))
+            })
+            .await)
+        }
         "forge_disconnect" => {
             let Some(provider) = str_arg("provider") else {
                 return Err((-32602, "missing required argument: provider".into()));
@@ -864,6 +971,9 @@ fn services(state: &SharedState) -> anyhow::Result<Value> {
                 "url": status.url,
                 "state": status.state,
                 "note": status.note,
+                // Present only for repo-linked services: where the content
+                // comes from, so an agent can see which sites update themselves.
+                "repo": s.repo,
             })
         })
         .collect();

@@ -23,6 +23,8 @@ use std::time::{Duration, Instant};
 use anyhow::{bail, Context, Result};
 use serde_json::{json, Value};
 
+use crate::util::base64_encode;
+
 /// Where the takeover installer lives (overridable for forks/mirrors/tests).
 pub const DEFAULT_INSTALL_URL: &str = "https://thebox.build/install.sh";
 /// The Box management port (dashboard, API, MCP).
@@ -226,32 +228,6 @@ fn is_pubkey(line: &str) -> bool {
     ]
     .iter()
     .any(|p| line.starts_with(p))
-}
-
-/// Standard base64 (with padding) — small enough to carry ourselves rather than
-/// add a dependency, and it must match what `base64 -d` in install.sh expects.
-fn base64_encode(data: &[u8]) -> String {
-    const B64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
-    for chunk in data.chunks(3) {
-        let b0 = chunk[0] as u32;
-        let b1 = *chunk.get(1).unwrap_or(&0) as u32;
-        let b2 = *chunk.get(2).unwrap_or(&0) as u32;
-        let n = (b0 << 16) | (b1 << 8) | b2;
-        out.push(B64[((n >> 18) & 63) as usize] as char);
-        out.push(B64[((n >> 12) & 63) as usize] as char);
-        out.push(if chunk.len() > 1 {
-            B64[((n >> 6) & 63) as usize] as char
-        } else {
-            '='
-        });
-        out.push(if chunk.len() > 2 {
-            B64[(n & 63) as usize] as char
-        } else {
-            '='
-        });
-    }
-    out
 }
 
 /// The other direction, for content that arrives base64-encoded (a binary file
