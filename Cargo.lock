@@ -219,7 +219,7 @@ dependencies = [
 
 [[package]]
 name = "box-core"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "serde",
  "serde_json",
@@ -227,7 +227,7 @@ dependencies = [
 
 [[package]]
 name = "box-installer"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "anyhow",
  "box-core",
@@ -239,7 +239,7 @@ dependencies = [
 
 [[package]]
 name = "boxd"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "anyhow",
  "axum",
