@@ -207,13 +207,24 @@ verified, and what is not — kept honest, because the gap between "built" and
   service confirmed unreachable at the same address.
 - Container deploy through boxd, offline, in a VM check.
 - OS-tier switch and rollback on a live system.
+- **A GitHub account connected over MCP through the shipped GitHub App** —
+  device code issued, authorized by a real person, 28 repositories listed with
+  private flags right. Found live, not in review: a fresh App registration has
+  the device flow off, and an installation can exist with zero repositories.
+- **A private repository pulled and deployed in one MCP call** (`link_repo`),
+  served HTTP 200, with the token verified absent from disk, argv and git
+  config afterward.
 
 ### Known gaps
 
 - **Your own domain is untested end to end** — blocked on attaching a domain to
   a Cloudflare account. The tunnel connects; nothing has routed to it yet.
-- **No git push-to-deploy, no build step, no previews.** The closest thing is
-  uploading already-built files. This is the biggest product gap (see Roadmap).
+- **Push-to-deploy exists for file trees only; no build step, no previews.**
+  A repo-linked service redeploys itself on new commits, but a repository that
+  needs `npm build` is not supported yet — the sandboxed builder is the next
+  increment (see Roadmap).
+- **GitLab is built but has never run** against a real instance — it needs a
+  per-instance application registration nobody has made yet.
 - **No TLS of our own.** Fine while a tunnel terminates it; needed for the
   direct/port-forward path we have not built.
 - **No Console page for the ingress ladder** — agents can drive it, people
@@ -252,25 +263,37 @@ Nobody chooses a host for edge middleware or ISR. What people experience as
 "Vercel" is a loop: **push to git → it builds → it is live → every branch gets a
 preview → roll back instantly.** Match the loop; skip the features.
 
-Designed, adversarially verified against the code, and the two open research
-questions have now been answered — one of them by building and running a real
-smart-HTTP git receiver rather than reading documentation.
+**How a change arrives — built and verified live: the Box pulls from the forge
+the code already lives on.** An earlier design had the Box hosting the git
+remote (verified feasible: `git-http-backend`'s whole push gate is one
+environment variable — the receiver research is in the history if it is ever
+wanted). It was dropped for a product reason, not a technical one: people's
+code is already on GitHub, and asking them to add a second remote is asking
+them to change their workflow to suit our architecture.
 
-**How a push arrives: the Box hosts the git remote.** It works behind a home
-router with ingress off, which is the state a Box starts in, and it sidesteps
-the fact that this codebase has no outbound git credentials at all. Verified:
-`git-http-backend`'s entire push gate is a non-empty `REMOTE_USER` environment
-variable — no root, no sshd, no `authorized_keys`, no privileged helper. boxd
-terminates HTTP, authenticates with the token model it already has, and spawns
-the backend as an unprivileged child. Packs over 1 MiB arrive chunked with no
-Content-Length, so the handler streams. Pre-receive output streams back to the
-pushing client, which gives build progress in the user's own terminal for free.
+What exists now, verified against real GitHub with a real private repository:
+connect an account with the OAuth device flow (a code you type into a page you
+are already signed into — no callback URL, because a Box has no public
+address; no client secret, because an OS image that ships cannot keep one),
+then `link_repo` ties a service to a repository and the Box fetches about once
+a minute and redeploys on a new commit. On GitHub, consent is per repository,
+picked on GitHub's own screen. GitLab sits behind the same seam, honestly
+labelled: its scopes read everything the account can see, and it needs a
+per-instance application.
 
-Worth knowing: of the comparable self-hosted systems, only Dokku has a genuine
-server-side git remote, and only over SSH — HTTP push is a paid feature there.
-Coolify, Dokploy and CapRover are webhook-driven and need to be reachable from
-the internet, which behind NAT means standing up a tunnel before you can deploy
-at all.
+**Polling rather than webhooks is the point.** Coolify, Dokploy and CapRover
+are webhook-driven, so behind NAT you stand up a tunnel before your first
+deploy. A poll works from the first minute with ingress off; once ingress is
+up, registering a webhook is a strict upgrade the Box can do itself, without
+changing the model.
+
+The credential rules, because this token sits next to code we did not write:
+it lives in the encrypted secret store and is not readable back through the
+API; git gets it as a header in the *environment*, scoped to the forge's URL
+prefix, so it is never in a URL, never in argv, never in `.git/config`, and a
+submodule pointing elsewhere never receives it; and what gets published is a
+clean checkout with no `.git`, because serving a private repository's history
+would leak the whole thing.
 
 **How a build runs: a trusted image, never a user Containerfile.** Both current
 classes of container escape are triggered by attacker-controlled build contexts,
@@ -387,13 +410,12 @@ shelved to fix the core product first.
    accepts one stops mattering. Untested against a live zone: nobody has
    attached a domain yet, and given how often a guessed API shape has been wrong
    this week, treat it as unverified until it runs.
-2. **Build deploy-loop increment 1**: the Box as a git remote. Smart HTTP behind
-   the existing auth — the push gate is one environment variable, verified by
-   running it, so no privileged helper is involved. A *scoped* token, because
-   the credential that ends up in `.git/config` on someone's laptop must not be
-   able to delete every service on the Box. And build workspaces added to the
-   config repo's gitignore, because the data directory *is* a git repository and
-   would otherwise commit someone's source into their own config history.
+2. **Build the sandboxed build step** (deploy-loop increment 2b): repositories
+   that need `npm build` before they are a file tree, in the trusted builder
+   image with the two-phase network design above. Static trees deploy today;
+   this is what turns "my Next site" from a refusal into a deploy. Then
+   previews: a branch-linked service is just a second `link_repo` with a
+   `branch` — the machinery already exists.
 3. **Add `Cache-Control` headers.** Small, independent, and it answers the
    latency objection without operating any infrastructure.
 4. **Then stop building and go find ten users.** The engineering is not the

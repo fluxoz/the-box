@@ -240,6 +240,99 @@ async fn mcp_forge_tools_refuse_with_the_missing_piece_named() {
     assert!(text(&off).contains("NOT"), "{}", text(&off));
 }
 
+/// The deploy loop, end to end and offline: a service linked to a git
+/// repository, synced through MCP, redeployed when the repository moves.
+///
+/// The upstream is a real git repo on disk (file:// needs no forge account),
+/// so this exercises the same fetch/checkout/deploy machinery a GitHub-linked
+/// service runs — everything except the HTTPS auth header.
+#[tokio::test]
+async fn mcp_repo_linked_service_follows_the_repository() {
+    let (_tmp, app, token) = app();
+
+    let text = |v: &Value| v["result"]["content"][0]["text"].as_str().unwrap().to_string();
+
+    // A real upstream with a first commit.
+    let upstream = TempDir::new().unwrap();
+    let git = |args: &[&str]| {
+        let out = std::process::Command::new("git")
+            .args(args)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+    };
+    let up = upstream.path().to_str().unwrap().to_string();
+    git(&["init", "-q", "-b", "main", &up]);
+    std::fs::write(upstream.path().join("index.html"), "pulled v1").unwrap();
+    git(&["-C", &up, "add", "."]);
+    git(&["-C", &up, "commit", "-qm", "v1"]);
+
+    // The service exists first (any deploy creates it), then gains its link.
+    // Linking through link_repo needs a connected forge, which an offline test
+    // cannot have — so the link is written the way a restored config would
+    // arrive: directly in box.toml.
+    let deploy = call_tool(
+        &app, &token, "deploy_static_site",
+        json!({ "name": "blog", "index_html": "placeholder" }),
+    )
+    .await;
+    assert_eq!(deploy["result"]["isError"], false, "{deploy}");
+
+    {
+        let paths = boxd::paths::Paths::new(_tmp.path().to_path_buf());
+        let mut config = boxd::config::BoxConfig::load(&paths).unwrap();
+        config.services[0].repo = Some(boxd::config::RepoLink {
+            forge: "github".into(),
+            repo: "local/blog".into(),
+            clone_url: format!("file://{up}"),
+            branch: "main".into(),
+            subdir: None,
+        });
+        config.save(&paths).unwrap();
+    }
+
+    // First sync deploys the repository's content over the placeholder.
+    let sync = call_tool(&app, &token, "sync_repo", json!({ "name": "blog" })).await;
+    assert_eq!(sync["result"]["isError"], false, "{sync}");
+    assert!(text(&sync).contains("deployed"), "{}", text(&sync));
+    let (status, body) = get(&app, "/sites/blog/", "127.0.0.1", Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("pulled v1"), "{body}");
+
+    // Nothing new upstream → nothing happens, and it says so.
+    let sync = call_tool(&app, &token, "sync_repo", json!({ "name": "blog" })).await;
+    assert!(text(&sync).contains("up_to_date"), "{}", text(&sync));
+
+    // Push. Sync. Live. That is the whole product.
+    std::fs::write(upstream.path().join("index.html"), "pulled v2").unwrap();
+    git(&["-C", &up, "add", "."]);
+    git(&["-C", &up, "commit", "-qm", "v2"]);
+    let sync = call_tool(&app, &token, "sync_repo", json!({ "name": "blog" })).await;
+    assert!(text(&sync).contains("deployed"), "{}", text(&sync));
+    let (_, body) = get(&app, "/sites/blog/", "127.0.0.1", Some(&token)).await;
+    assert!(body.contains("pulled v2"), "{body}");
+
+    // The checkout that got published is clean: no .git, no repo history.
+    let paths = boxd::paths::Paths::new(_tmp.path().to_path_buf());
+    assert!(paths.repo_tree_dir("blog").join("index.html").exists());
+    assert!(!paths.repo_tree_dir("blog").join(".git").exists());
+
+    // The link is visible to agents, and unlinking stops the loop without
+    // touching the deployed site.
+    let services = call_tool(&app, &token, "list_services", json!({})).await;
+    assert!(text(&services).contains("local/blog"), "{}", text(&services));
+    let off = call_tool(&app, &token, "unlink_repo", json!({ "name": "blog" })).await;
+    assert_eq!(off["result"]["isError"], false, "{off}");
+    let (_, body) = get(&app, "/sites/blog/", "127.0.0.1", Some(&token)).await;
+    assert!(body.contains("pulled v2"), "unlink must not undeploy: {body}");
+    let sync = call_tool(&app, &token, "sync_repo", json!({ "name": "blog" })).await;
+    assert_eq!(sync["result"]["isError"], true, "sync after unlink must refuse");
+}
+
 #[tokio::test]
 async fn mcp_deploy_host_routing_and_rollback() {
     let (_tmp, app, token) = app();

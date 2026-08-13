@@ -52,6 +52,33 @@ impl Paths {
         self.uploads_dir().join(service)
     }
 
+    /// Bare git dirs for repo-linked services, plus their deployed-commit
+    /// markers. Never published, never committed to the config repo.
+    pub fn repos_dir(&self) -> PathBuf {
+        self.data_dir.join("repos")
+    }
+
+    pub fn repo_git_dir(&self, service: &str) -> PathBuf {
+        self.repos_dir().join(format!("{service}.git"))
+    }
+
+    /// The commit currently deployed for a repo-linked service. State, not
+    /// configuration — which is why it lives here and not in box.toml.
+    pub fn repo_marker(&self, service: &str) -> PathBuf {
+        self.repos_dir().join(format!("{service}.deployed"))
+    }
+
+    /// Clean checkouts (no `.git`) staged for publishing, one per service.
+    /// Like `uploads/`, this holds exactly what is meant to be published —
+    /// the git dirs stay in `repos/`, which never is.
+    pub fn repo_trees_dir(&self) -> PathBuf {
+        self.data_dir.join("repo-trees")
+    }
+
+    pub fn repo_tree_dir(&self, service: &str) -> PathBuf {
+        self.repo_trees_dir().join(service)
+    }
+
     pub fn profiles_dir(&self) -> PathBuf {
         self.data_dir.join("profiles")
     }

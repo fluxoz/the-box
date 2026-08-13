@@ -894,6 +894,9 @@ fn run_server(paths: Paths, builder: Box<dyn Builder>, listen: SocketAddr) -> Re
     boxd::secrets::migrate_plaintext(&paths);
     let state = AppState::new(paths, builder);
     state.tunnel.startup();
+    // Repo-linked services: fetch, compare, deploy — push-to-deploy without
+    // anything pushing at us.
+    boxd::pull::spawn(state.clone());
     let runtime = tokio::runtime::Runtime::new()?;
     runtime.block_on(async move {
         let app = web::router(state);

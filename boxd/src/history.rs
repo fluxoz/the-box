@@ -28,6 +28,11 @@ const GITIGNORE: &str = "\
 /profiles/
 /generation-src/
 /logs/
+# Repo-linked services: cloned git dirs and their checkouts are caches of
+# someone ELSE'S repository. Committing them here would copy a person's
+# source tree into their own config history on every deploy.
+/repos/
+/repo-trees/
 /network.toml
 /auth.json
 /config-remote

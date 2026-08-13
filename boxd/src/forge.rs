@@ -144,12 +144,41 @@ pub struct Repo {
     pub clone_url: String,
 }
 
+/// How git authenticates to a forge over HTTPS, without the credential ever
+/// touching a URL, an argv (world-readable in /proc), or a file on disk. The
+/// header goes into git's environment as `http.<prefix>.extraheader`, and the
+/// prefix scoping is load-bearing: a submodule or redirect pointing anywhere
+/// else never sees it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GitAuth {
+    /// Requests to URLs under this prefix carry the header; nothing else does.
+    pub url_prefix: String,
+    /// The complete header, e.g. `AUTHORIZATION: basic <b64>`.
+    pub header: String,
+}
+
+impl GitAuth {
+    /// Both forges take the token as HTTP basic auth with a well-known
+    /// username — `x-access-token` on GitHub, `oauth2` on GitLab.
+    pub fn basic(url_prefix: impl Into<String>, user: &str, token: &str) -> Self {
+        Self {
+            url_prefix: url_prefix.into(),
+            header: format!(
+                "AUTHORIZATION: basic {}",
+                crate::util::base64_encode(format!("{user}:{token}").as_bytes())
+            ),
+        }
+    }
+}
+
 pub trait Forge: Send + Sync {
     fn id(&self) -> &'static str;
     fn title(&self) -> &'static str;
     /// One sentence, for a person choosing between these.
     fn description(&self) -> &'static str;
     fn requirements(&self) -> Requirements;
+    /// How git reaches this forge's repositories with the connected token.
+    fn git_auth(&self, cfg: &ForgeConfig, token: &str) -> GitAuth;
     /// What is left for a human, in order. Empty means nothing.
     fn steps(&self) -> Vec<&'static str> {
         Vec::new()

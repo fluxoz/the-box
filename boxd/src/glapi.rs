@@ -69,6 +69,12 @@ impl Forge for GitLab {
         ]
     }
 
+    fn git_auth(&self, cfg: &ForgeConfig, token: &str) -> crate::forge::GitAuth {
+        // `oauth2` is GitLab's documented basic-auth username for OAuth tokens.
+        // Scoped to this instance's own address, and to nothing else.
+        crate::forge::GitAuth::basic(format!("{}/", base_url(cfg)), "oauth2", token)
+    }
+
     fn endpoints(&self, cfg: &ForgeConfig) -> Result<Endpoints> {
         let base = base_url(cfg);
         let baked = (base == DEFAULT_BASE_URL).then_some(CLIENT_ID).flatten();

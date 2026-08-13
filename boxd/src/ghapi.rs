@@ -62,6 +62,12 @@ impl Forge for GitHub {
         ]
     }
 
+    fn git_auth(&self, _cfg: &ForgeConfig, token: &str) -> crate::forge::GitAuth {
+        // `x-access-token` is GitHub's documented basic-auth username for app
+        // tokens. Scoped to github.com, so nothing else ever sees the header.
+        crate::forge::GitAuth::basic("https://github.com/", "x-access-token", token)
+    }
+
     fn endpoints(&self, cfg: &ForgeConfig) -> Result<Endpoints> {
         let client_id = cfg
             .client_id

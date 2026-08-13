@@ -183,7 +183,29 @@ pub struct ServiceConfig {
     /// `None` for file-served services like static-site.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub port: Option<u16>,
+    /// The repository this service is kept in step with, if it came from one.
+    /// Content flows one way — the Box pulls; it never writes back.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo: Option<RepoLink>,
     pub created_at: DateTime<Utc>,
+}
+
+/// A service's upstream repository. Declarative like the rest of box.toml: it
+/// says where the content comes from, and [`crate::pull`] makes it true. No
+/// credential lives here — the forge token is in the secret store, and the
+/// clone URL is credential-free so it can sit in a config repo history.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RepoLink {
+    /// Which forge holds it. See `crate::forge::forges()`.
+    pub forge: String,
+    /// `owner/name`, as the forge lists it.
+    pub repo: String,
+    /// HTTPS clone URL. Auth is supplied per-invocation, never embedded.
+    pub clone_url: String,
+    pub branch: String,
+    /// Deploy this subdirectory of the repository rather than its root.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subdir: Option<String>,
 }
 
 impl BoxConfig {
@@ -313,6 +335,7 @@ mod tests {
                 domain: Some("hello.example.com".into()),
                 public: true,
                 port: None,
+                repo: None,
                 created_at: Utc::now(),
             }],
             ..Default::default()
