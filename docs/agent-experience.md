@@ -42,6 +42,9 @@ obvious within an hour on real hardware.
 |---|---|
 | A Box on an old release had `channel_check` but **no way to apply an update over MCP** — a human had to SSH, which a non-technical user cannot do | **fixed** — `channel_update` applies it as a background job (health-checked, auto-rollback), `job_status` follows it. The last SSH-only operation in the core journey is gone |
 | Long operations blocked MCP calls or were invisible | **fixed** — job pattern: kick off, get an id, poll `job_status`, narrate phases to the person |
+| **A failed update left the pin advanced, and every later check said "up to date" while the system ran old code** — self-concealing, hit live | **fixed** — the pin-restore guard now covers the bump step itself (the hole was a `?` that walked out before restoring); `channel_check` additionally reports `running_release` and `channel_update` takes `force: true` to close any pin/system gap by hand |
+| **The update job vanished mid-update** — the switch restarts boxd, boxd forgot its in-memory jobs, and `job_status` said "no such job" at the exact moment it mattered | **fixed** — jobs persist to disk; a job found still "running" after a restart is re-marked *interrupted* with a message saying where to look for the outcome (for an update, the restart usually IS the success path) |
+| Updating over SSH-as-root hit two Box-OS quirks: nix's libgit2 refuses the boxd-owned data-dir flake input without root `safe.directory`, and git/nix live only on the boxd *unit's* PATH | **obsolete by design** — `channel_update` over MCP runs as the boxd user and hits neither; the SSH path remains documented here for whoever insists |
 | Quick-share URLs change when the tunnel restarts (updates included) | **by design** on the free rung — the agent should re-read `ingress_status` after any update and re-share the URL; the real answer is the BYO-domain rung (stable), still blocked on attaching a domain to a Cloudflare account |
 
 ## The repo loop
@@ -54,6 +57,13 @@ obvious within an hour on real hardware.
 
 ## Flows an agent should know (the recipes)
 
+0. **Bootstrap** — the only two steps that are not MCP, both by nature:
+   the machine gets Box OS (installer USB, lab VM, or another Box's
+   `provision_machine`), and the agent redeems the pairing code the person
+   reads to it (`POST /pair/redeem {code, label}` → session token). An
+   unauthenticated request to any Box answers 401 *with these instructions
+   in the body*, so first contact is self-explaining. Everything after —
+   including OS updates and provisioning further machines — is MCP.
 1. **First contact with a fresh Box**: `get_status` → `forge_options` →
    `forge_connect` (relay code+link, poll status) → `forge_repos` →
    `link_repo` → `verify_service` → done: pushing deploys.
@@ -68,20 +78,28 @@ obvious within an hour on real hardware.
    re-share any quick-share URL that changed.
 5. **A preview**: `link_repo` again with the same repo, a `branch`, and a new
    service name. Previews are just services.
+6. **Growing the fleet**: `provision_machine {target, ssh_public_keys}` on any
+   existing Box turns a spare machine into a new one — a job whose result is
+   the new Box's MCP address and session token. It ERASES the target's disk:
+   name the machine and get an explicit yes first. The new Box is then driven
+   exactly like this one, from recipe 1.
 
 ## Still open, in value order
 
-1. **Adopting an existing Box without SSH** — pairing exists (Console shows a
-   code, `/pair/redeem` is machine-readable), but the "agent discovers a Box on
-   the LAN and asks to pair" flow has no MCP surface on the agent's side.
-2. **The sandboxed build step** — the largest remaining "my repo doesn't
+1. **The sandboxed build step** — the largest remaining "my repo doesn't
    deploy" class.
-3. **BYO-domain live test** (`ingress_setup`) — written, never run against a
+2. **BYO-domain live test** (`ingress_setup`) — written, never run against a
    real zone; quick-share URL churn stays until this lands.
-4. **Webhook upgrade** once stable ingress exists — push-to-deploy in seconds
+3. **Webhook upgrade** once stable ingress exists — push-to-deploy in seconds
    instead of a minute, registered by the Box itself.
-5. **`auto_update` on by default for appliance users**, with `get_status`
+4. **`auto_update` on by default for appliance users**, with `get_status`
    carrying a cached "update available" hint so agents mention it naturally.
-6. **Token lifetime**: the shipped App has token expiry off; a self-registered
+5. **Token lifetime**: the shipped App has token expiry off; a self-registered
    App with 8-hour tokens would silently kill the poller — refresh-token
    support or a clear `last_sync` error is the guard today.
+6. **`provision_machine` live proof** — the tool wraps the CLI flow that was
+   proven against real hardware, but the tool itself has not yet wiped a real
+   machine end to end. Treat the first run as the verification.
+7. **Restore with a repo-linked service** — designed to just work (the link is
+   in box.toml, the token re-keys, the clone is refetchable cache) but never
+   yet run through destroy-and-recreate.
