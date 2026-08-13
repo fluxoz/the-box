@@ -627,6 +627,21 @@ pub fn delete_service(paths: &Paths, builder: &dyn Builder, name: &str) -> Resul
         paths,
         &format!("generation #{}: delete {}", info.number, name),
     );
+    // Deleting is always structural: the config no longer has the service, but
+    // until the OS tier catches up, nginx keeps serving it — a "deleted" site
+    // that still answers, found live on a Box where the deletion also needed to
+    // repair the web server and nothing ever asked the system to change.
+    match ostier::request_apply(paths) {
+        ostier::ApplyOutcome::Applied | ostier::ApplyOutcome::NotABox => {}
+        ostier::ApplyOutcome::Failed(detail) => {
+            bail!(
+                "generation #{} was built without {}, but applying it to the system failed \
+                 (the system rolled itself back), so it may still be served: {detail}",
+                info.number,
+                name
+            );
+        }
+    }
     Ok(info)
 }
 

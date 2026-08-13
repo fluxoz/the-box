@@ -2,6 +2,13 @@
 # port, nginx routes its domain to it, and the app's port is NOT reachable from
 # the LAN — only nginx (80) is. This is the firewall/proxy contract the port
 # model promises, exercised on a booted system.
+#
+# It also carries the duplicate-default regression: several services with no
+# domain at once. Every domain-less vhost used to claim `default_server`, and
+# nginx treats two claimants as a fatal configuration error — the second
+# domain-less site deployed onto a real Box took every site on it offline,
+# and the switch reported success. Exactly one deterministic winner now; this
+# test is the shape that machine was in.
 { self, nixpkgs, system }:
 let
   lib = nixpkgs.lib;
@@ -22,16 +29,29 @@ pkgs.testers.runNixOSTest {
   name = "box-service-proxy";
 
   nodes = {
-    # A Box running one reverse-proxied app on port 8000, as boxd's generated
-    # module would configure it.
+    # A Box with THREE domain-less claimants (two sites and an app is the
+    # nginx-fatal shape), plus a domain'd app for the proxy contract.
     box = { ... }: {
       imports = [ self.nixosModules.platform ];
       networking.hostName = "box";
       networking.networkmanager.enable = lib.mkForce false;
+      services.the-box.sites.alpha = {
+        root = pkgs.writeTextDir "index.html" "alpha is the default";
+        domain = null;
+      };
+      services.the-box.sites.zulu = {
+        root = pkgs.writeTextDir "index.html" "zulu answers to its name";
+        domain = null;
+      };
       services.the-box.apps.demo = {
         command = "${pkgs.python3}/bin/python3 ${serverPy}";
         port = 8000;
-        domain = null; # default vhost
+        domain = "demo.lan";
+      };
+      services.the-box.apps.bare = {
+        command = "${pkgs.python3}/bin/python3 ${serverPy}";
+        port = 8001;
+        domain = null; # a third domain-less claimant
       };
     };
     # Another machine on the same segment, to test what the LAN can reach.
@@ -43,15 +63,20 @@ pkgs.testers.runNixOSTest {
   testScript = ''
     start_all()
     box.wait_for_unit("box-app-demo.service")
+    # The regression: with several domain-less services, nginx used to refuse
+    # its own config ("a duplicate default server") and never come up at all.
     box.wait_for_unit("nginx.service")
     box.wait_for_open_port(80)
 
-    # nginx reverse-proxies (the default vhost) to the app on loopback.
+    # Exactly one deterministic default: the first domain-less site by name.
     box.wait_until_succeeds(
-        "curl -sf http://localhost/ | grep -i 'hello from the box app'", timeout=60
+        "curl -sf http://localhost/ | grep 'alpha is the default'", timeout=60
     )
+    # The others are still there, by their names.
+    box.succeed("curl -sf -H 'Host: zulu' http://localhost/ | grep 'zulu answers'")
+    box.succeed("curl -sf -H 'Host: demo.lan' http://localhost/ | grep -i 'hello from the box app'")
 
-    # The app binds loopback only, never the LAN interface.
+    # The apps bind loopback only, never the LAN interface.
     box.succeed("ss -ltn | grep 127.0.0.1:8000")
     box.fail("ss -ltn | grep -E '0.0.0.0:8000|\\*:8000'")
 
@@ -59,10 +84,10 @@ pkgs.testers.runNixOSTest {
     # firewalled off — proxied services never expose their port.
     client.wait_for_unit("multi-user.target")
     client.wait_until_succeeds(
-        "curl -sf http://box/ | grep -i 'hello from the box app'", timeout=60
+        "curl -sf -H 'Host: demo.lan' http://box/ | grep -i 'hello from the box app'", timeout=60
     )
     client.fail("curl -s -m 5 http://box:8000/")
 
-    print("app on loopback, nginx proxies it, app port closed to the LAN")
+    print("one default among many domain-less services, nginx alive, ports closed")
   '';
 }

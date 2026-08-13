@@ -221,11 +221,13 @@ pub fn default_system_health() -> Result<()> {
     const INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
 
     let mut consecutive = 0;
+    let mut settled = false;
     for poll in 0..POLLS {
         if unit_is_active("boxd.service")? {
             consecutive += 1;
             if consecutive >= SETTLED {
-                return Ok(());
+                settled = true;
+                break;
             }
         } else {
             consecutive = 0;
@@ -234,7 +236,34 @@ pub fn default_system_health() -> Result<()> {
             std::thread::sleep(INTERVAL);
         }
     }
-    bail!("boxd.service did not stay active after the switch (crash-looping or failed to start)")
+    if !settled {
+        bail!("boxd.service did not stay active after the switch (crash-looping or failed to start)");
+    }
+
+    // boxd being up is necessary, not sufficient. nginx is how every service
+    // on this Box is actually served, and a switch can leave it dead while
+    // everything else looks fine — it happened: an invalid nginx config took
+    // every site offline and the switch still reported success, because only
+    // boxd was checked. Any unit the new system *enables* has to actually run
+    // before we keep the switch; a Box with no services has no nginx, and the
+    // is-enabled probe skips it there rather than failing.
+    for unit in ["nginx.service"] {
+        if !unit_is_enabled(unit)? {
+            continue;
+        }
+        let mut up = false;
+        for _ in 0..POLLS {
+            if unit_is_active(unit)? {
+                up = true;
+                break;
+            }
+            std::thread::sleep(INTERVAL);
+        }
+        if !up {
+            bail!("{unit} is enabled in the new system but did not come up after the switch — rolling back rather than serving nothing");
+        }
+    }
+    Ok(())
 }
 
 fn unit_is_active(unit: &str) -> Result<bool> {
@@ -242,6 +271,17 @@ fn unit_is_active(unit: &str) -> Result<bool> {
         .args(["is-active", "--quiet", unit])
         .status()
         .with_context(|| format!("running systemctl is-active {unit}"))?
+        .success())
+}
+
+/// Whether the current system includes this unit at all. `is-enabled` exits
+/// non-zero both for "disabled" and "no such unit", which collapses exactly
+/// the cases where demanding the unit be active would be wrong.
+fn unit_is_enabled(unit: &str) -> Result<bool> {
+    Ok(Command::new("systemctl")
+        .args(["is-enabled", "--quiet", unit])
+        .status()
+        .with_context(|| format!("running systemctl is-enabled {unit}"))?
         .success())
 }
 
