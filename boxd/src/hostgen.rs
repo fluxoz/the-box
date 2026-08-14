@@ -202,6 +202,13 @@ pub fn write_host_repo(
         std::fs::write(out_dir.join("flake.lock"), lock)?;
     }
 
+    // The root oneshots (channel update, os-apply) regenerate this repo too,
+    // and a root-owned os-config makes the unprivileged updater's next
+    // `remove_dir_all` fail with a bare Permission denied — which is exactly
+    // how the first MCP-driven update on the real Pi died. Whoever wrote it,
+    // the data dir's owner must be able to replace it.
+    util::chown_tree_like(&paths.data_dir, out_dir);
+
     Ok(())
 }
 

@@ -82,6 +82,10 @@ impl ChannelConfig {
         let body = toml::to_string_pretty(self).context("serializing channel config")?;
         let file = paths.channel_file();
         std::fs::write(&file, body).with_context(|| format!("writing {}", file.display()))?;
+        // Root writes this too (first-boot channel-init, SSH operators), and a
+        // root-owned channel.toml makes the unprivileged updater fail its very
+        // first pin write with a bare Permission denied. Found on the real Pi.
+        crate::util::chown_like(&paths.data_dir, &file);
         Ok(())
     }
 

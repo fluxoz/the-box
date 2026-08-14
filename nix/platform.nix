@@ -85,10 +85,17 @@
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
+      # As the boxd user, NOT root: a root-owned channel.toml makes the
+      # unprivileged updater's first pin write die with Permission denied —
+      # the first MCP-driven update on the real Pi failed exactly there.
+      # StateDirectory (not mkdir) so the data dir exists with the right owner
+      # even when this runs before boxd itself ever has.
+      User = "boxd";
+      Group = "boxd";
+      StateDirectory = "boxd";
     };
     script = ''
       [ -e /var/lib/boxd/channel.toml ] && exit 0
-      mkdir -p /var/lib/boxd
       boxd --data-dir /var/lib/boxd channel set \
         --host-id "$(cat /proc/sys/kernel/hostname)" \
         --system ${pkgs.stdenv.hostPlatform.system}

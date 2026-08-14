@@ -47,6 +47,15 @@ pkgs.testers.runNixOSTest {
     box.wait_until_succeeds("systemctl is-active boxd", timeout=90)
     box.wait_for_open_port(2693)
 
+    # The channel binding must belong to the boxd user, however it was made:
+    # by the first-boot unit (runs as boxd now), or by root at a shell (save
+    # chowns it back). A root-owned channel.toml killed the first MCP-driven
+    # update on the real Pi with a bare Permission denied.
+    box.wait_until_succeeds("test -e /var/lib/boxd/channel.toml", timeout=60)
+    box.succeed("stat -c %U /var/lib/boxd/channel.toml | grep -qx boxd")
+    box.succeed("boxd channel set --host-id box --system x86_64-linux")  # as root
+    box.succeed("stat -c %U /var/lib/boxd/channel.toml | grep -qx boxd")
+
     # An upstream repository the boxd user can fetch over file:// — owned by
     # boxd, because git refuses to serve a repo owned by someone else. Its
     # site does not exist until a build writes it.
