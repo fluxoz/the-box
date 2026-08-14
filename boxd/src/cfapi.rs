@@ -37,7 +37,13 @@ pub struct Request {
 pub fn verify_token() -> Request {
     Request {
         method: "GET",
-        url: format!("{API}/user/tokens/verify"),
+        // NOT /user/tokens/verify: that endpoint only answers for user-owned
+        // tokens, and Cloudflare's dashboard now mints ACCOUNT-owned tokens
+        // (cfat_…) by default — a working token was refused as "Invalid API
+        // Token" on the first real BYO-domain run. Listing zones proves the
+        // token works AND that it has the Zone:Read this Box actually needs,
+        // for both token kinds.
+        url: format!("{API}/zones?per_page=1"),
         body: None,
     }
 }

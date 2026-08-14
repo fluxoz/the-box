@@ -56,6 +56,12 @@ obvious within an hour on real hardware.
 | **`channel_update` over MCP could never actually switch**: past the ownership fix, the in-process update built the new system as the boxd user and then died registering the system generation — root-only by nature. The tool that ended "the last SSH-only operation" had never completed a real switch | **fixed** — on a managed Box the job now hands the whole update to the root oneshot (`boxd-channel-update.service`, the polkit-blessed path the dashboard button already took) and reports its outcome; in-process remains only where no unit exists (dev). The job-interrupted-by-restart story is unchanged and true. And `/etc/gitconfig` now ships `safe.directory` for the boxd-owned os-config repo, so root's nix accepts the git+file input without the hand-written /root/.gitconfig the first Pi needed |
 | Quick-share URLs change when the tunnel restarts (updates included) | **by design** on the free rung — the agent should re-read `ingress_status` after any update and re-share the URL; the real answer is the BYO-domain rung (stable), still blocked on attaching a domain to a Cloudflare account |
 
+## Your own domain (the BYO rung)
+
+| Pain | Status |
+|---|---|
+| A **working** Cloudflare token was refused as "Invalid API Token" — the Box verified via `/user/tokens/verify`, which only answers for user-owned tokens, and Cloudflare's dashboard now mints account-owned (`cfat_…`) tokens by default | **fixed** — verification now lists zones instead, which proves the token works and holds the Zone:Read the Box needs, for both token kinds |
+
 ## The repo loop
 
 | Pain | Status |
