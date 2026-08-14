@@ -23,6 +23,10 @@ use crate::tunnel::TunnelManager;
 pub struct AppState {
     pub paths: Paths,
     pub builder: Box<dyn Builder>,
+    /// How this machine runs repository build steps: the sandbox on a managed
+    /// Box, nothing on a bare dev machine. Detected once so every code path
+    /// (poller, MCP, link) agrees.
+    pub build_exec: crate::build::BuildExec,
     pub tunnel: Arc<TunnelManager>,
     /// Long operations (deploy, rollback, recreate, backup, platform update)
     /// run here instead of inside the request, so the console can show progress
@@ -39,12 +43,24 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(paths: Paths, builder: Box<dyn Builder>) -> SharedState {
+        Self::with_build_exec(paths, builder, crate::build::BuildExec::detect())
+    }
+
+    /// Tests pass [`crate::build::BuildExec::Direct`] to run build phases
+    /// without a container runtime; everything real goes through `new`, which
+    /// detects what this machine actually has.
+    pub fn with_build_exec(
+        paths: Paths,
+        builder: Box<dyn Builder>,
+        build_exec: crate::build::BuildExec,
+    ) -> SharedState {
         let tunnel = TunnelManager::new(paths.clone());
         Arc::new(Self {
             jobs: crate::jobs::Registry::persistent(paths.data_dir.join("jobs")),
             paths,
             builder,
             tunnel,
+            build_exec,
             ceremonies: Arc::new(crate::webauthn::Ceremonies::new()),
             apply_lock: Mutex::new(()),
         })

@@ -236,7 +236,7 @@ fn tool_definitions() -> Value {
         },
         {
             "name": "link_repo",
-            "description": "Deploy a repository from a connected forge as a service, and keep it deployed: the Box checks for new commits about once a minute and redeploys automatically, so after this one call, pushing to the branch IS deploying. Only static file trees for now — a repository that needs a build step is not supported yet, say so honestly. The repository must already be shared with this Box (see forge_repos). Creates the service if it does not exist. The service starts on the local network only unless public is set; publishing is a deliberate act.",
+            "description": "Deploy a repository from a connected forge as a service, and keep it deployed: the Box checks for new commits about once a minute and redeploys automatically, so after this one call, pushing to the branch IS deploying. Static file trees deploy as-is; a repository that needs a build first (Vite, Astro, a static-export Next site, anything whose site is not committed) gets one by passing build_command — the build runs on the Box in a sandboxed container (Node, npm/yarn/pnpm; install runs with the network, the build itself without, hard memory and time limits) and the resulting directory is what gets served. Build failures come back with the tail of the build log. The repository must already be shared with this Box (see forge_repos). Creates the service if it does not exist. The service starts on the local network only unless public is set; publishing is a deliberate act.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -244,7 +244,10 @@ fn tool_definitions() -> Value {
                     "forge": { "type": "string", "description": "'github' or 'gitlab'" },
                     "repo": { "type": "string", "description": "owner/name, exactly as forge_repos lists it" },
                     "branch": { "type": "string", "description": "Branch to track. Defaults to the repository's default branch." },
-                    "subdir": { "type": "string", "description": "Deploy this subdirectory instead of the repo root, e.g. 'public' or 'dist' for a repo that commits its built site." },
+                    "subdir": { "type": "string", "description": "Without build_command: deploy this subdirectory instead of the repo root, e.g. 'public' for a repo that commits its built site. With build_command: run the build in this subdirectory (the monorepo case)." },
+                    "build_command": { "type": "string", "description": "Build the site on every new commit with this command, e.g. 'npm run build', in the sandbox. Dependencies are installed first (from the lockfile: npm ci / yarn / pnpm; override with install_command)." },
+                    "install_command": { "type": "string", "description": "Override the detected dependency install step that runs before build_command." },
+                    "output_dir": { "type": "string", "description": "Where the build writes the site, relative to the app root, e.g. 'dist'. Detected (dist/, build/, out/, public/, …) when omitted." },
                     "domain": { "type": "string", "description": "Serve at this domain (must be configured for ingress)." },
                     "public": { "type": "boolean", "description": "Publish to the internet immediately (default false)." }
                 },
@@ -873,15 +876,31 @@ async fn execute(
             let (branch, subdir, domain) =
                 (str_arg("branch"), str_arg("subdir"), str_arg("domain"));
             let public = args.get("public").and_then(Value::as_bool).unwrap_or(false);
+            let build = match (str_arg("build_command"), str_arg("install_command"), str_arg("output_dir")) {
+                (Some(command), install, output_dir) => {
+                    Some(crate::build::BuildSpec { command, install, output_dir })
+                }
+                (None, None, None) => None,
+                _ => {
+                    return Err((
+                        -32602,
+                        "install_command and output_dir only mean something alongside \
+                         build_command — pass build_command, or neither"
+                            .into(),
+                    ))
+                }
+            };
             Ok(run_locked(&state, move |state| {
                 let (link, outcome, warning) = crate::pull::link(
                     &state.paths,
                     state.builder.as_ref(),
+                    &state.build_exec,
                     &name,
                     &forge,
                     &repo,
                     branch,
                     subdir,
+                    build,
                     domain,
                     public,
                 )?;
@@ -909,8 +928,13 @@ async fn execute(
                 return Err((-32602, "missing required argument: name".into()));
             };
             Ok(run_locked(&state, move |state| {
-                let outcome =
-                    crate::pull::sync_recorded(&state.paths, state.builder.as_ref(), &name, false)?;
+                let outcome = crate::pull::sync_recorded(
+                    &state.paths,
+                    state.builder.as_ref(),
+                    &state.build_exec,
+                    &name,
+                    false,
+                )?;
                 Ok(serde_json::to_value(&outcome)?)
             })
             .await)
@@ -1291,7 +1315,7 @@ fn verify_service(state: &SharedState, name: &str) -> anyhow::Result<Value> {
                 }
                 other => {
                     verdict = Some(format!("{url} answers, but with HTTP {other}"));
-                    fix = Some("a 404 here usually means the content has no index.html at its root — for a repo-linked service, see link_repo's subdir".into());
+                    fix = Some("a 404 here usually means the content has no index.html at its root — for a repo-linked service, see link_repo's subdir (or, for one with a build step, output_dir)".into());
                 }
             }
         }

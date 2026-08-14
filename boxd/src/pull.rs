@@ -226,10 +226,11 @@ fn unix_now() -> u64 {
 pub fn sync_recorded(
     paths: &Paths,
     builder: &dyn Builder,
+    exec: &crate::build::BuildExec,
     name: &str,
     force: bool,
 ) -> Result<SyncOutcome> {
-    let result = sync(paths, builder, name, force);
+    let result = sync(paths, builder, exec, name, force);
     let state = match &result {
         Ok(SyncOutcome::UpToDate { commit }) | Ok(SyncOutcome::Deployed { commit, .. }) => {
             SyncState { at: unix_now(), ok: true, commit: Some(commit.clone()), error: None }
@@ -276,7 +277,13 @@ fn source_for(link: &RepoLink, tree: &std::path::Path) -> Result<PathBuf> {
 /// The deploy is [`crate::ops::deploy`] with the service's own shape and only
 /// the source pointed at the fresh checkout — domain, visibility and the rest
 /// stay exactly as configured, so a poll can never take a site off its domain.
-pub fn sync(paths: &Paths, builder: &dyn Builder, name: &str, force: bool) -> Result<SyncOutcome> {
+pub fn sync(
+    paths: &Paths,
+    builder: &dyn Builder,
+    exec: &crate::build::BuildExec,
+    name: &str,
+    force: bool,
+) -> Result<SyncOutcome> {
     let config = BoxConfig::load(paths)?;
     let svc = config
         .find(name)
@@ -293,7 +300,10 @@ pub fn sync(paths: &Paths, builder: &dyn Builder, name: &str, force: bool) -> Re
     }
 
     let tree = checkout(paths, name, &commit)?;
-    let source = source_for(&link, &tree)?;
+    let source = match &link.build {
+        Some(spec) => crate::build::run(paths, exec, name, &tree, link.subdir.as_deref(), spec)?,
+        None => source_for(&link, &tree)?,
+    };
 
     let mut params = svc.params.clone();
     if let Some(obj) = params.as_object_mut() {
@@ -330,11 +340,13 @@ pub fn sync(paths: &Paths, builder: &dyn Builder, name: &str, force: bool) -> Re
 pub fn link(
     paths: &Paths,
     builder: &dyn Builder,
+    exec: &crate::build::BuildExec,
     service: &str,
     forge_id: &str,
     repo_name: &str,
     branch: Option<String>,
     subdir: Option<String>,
+    build: Option<crate::build::BuildSpec>,
     domain: Option<String>,
     public: bool,
 ) -> Result<(RepoLink, SyncOutcome, Option<String>)> {
@@ -344,8 +356,6 @@ pub fn link(
         validate_subdir(sub)?;
     }
 
-    // v1 is file trees. A repository that needs a build step is the next
-    // increment (the sandboxed builder), and saying so beats a broken deploy.
     let config = BoxConfig::load(paths)?;
     if let Some(existing) = config.find(service) {
         if existing.template != "static-site" {
@@ -377,18 +387,31 @@ pub fn link(
         clone_url: repo.clone_url.clone(),
         branch: branch.unwrap_or_else(|| repo.default_branch.clone()),
         subdir,
+        build,
     };
 
-    // Prove the fetch and the checkout before the config learns anything.
+    // Prove the fetch, the checkout — and the build, when there is one —
+    // before the config learns anything. A build that cannot pass must not
+    // leave behind a service that never worked.
     let commit = fetch(paths, service, &link)?;
     let tree = checkout(paths, service, &commit)?;
-    let source = source_for(&link, &tree)?;
+    let source = match &link.build {
+        Some(spec) => crate::build::run(paths, exec, service, &tree, link.subdir.as_deref(), spec)?,
+        None => source_for(&link, &tree)?,
+    };
 
     // Not an error — plenty of repos serve fine without an index — but the
     // common case is a built site in a subdirectory, and catching it here
     // turns a silent 404 into a one-word fix.
     let warning = if source.join("index.html").is_file() {
         None
+    } else if link.build.is_some() {
+        Some(
+            "the build succeeded, but its output has no index.html — visitors \
+             to the root will see a 404. If the site lands somewhere else, \
+             link again with output_dir."
+                .to_string(),
+        )
     } else {
         Some(match suggest_subdir(&source) {
             Some(dir) => format!(
@@ -399,7 +422,9 @@ pub fn link(
             ),
             None => format!(
                 "{} has no index.html at {} — visitors to the root will see a 404. \
-                 If this repository needs a build step, that is not supported yet.",
+                 If this repository needs a build step, link again with \
+                 build_command (and output_dir if the output lands somewhere \
+                 unusual).",
                 link.repo,
                 link.subdir.as_deref().unwrap_or("its root"),
             ),
@@ -454,7 +479,9 @@ pub fn unlink(paths: &Paths, service: &str) -> Result<()> {
     config.save(paths)?;
     let _ = crate::util::remove_dir_all_forced(&paths.repo_git_dir(service));
     let _ = crate::util::remove_dir_all_forced(&paths.repo_tree_dir(service));
+    let _ = crate::util::remove_dir_all_forced(&paths.build_cache_dir(service));
     let _ = fs::remove_file(paths.repo_marker(service));
+    let _ = fs::remove_file(paths.build_log(service));
     let _ = fs::remove_file(sync_state_file(paths, service));
     Ok(())
 }
@@ -483,7 +510,13 @@ pub fn spawn(state: crate::web::SharedState) {
                 // The same lock every deploy path takes, so a poll can never
                 // race an operator's own deploy on the generation directory.
                 let _guard = state.apply_lock.lock().unwrap();
-                match sync_recorded(&state.paths, state.builder.as_ref(), &name, false) {
+                match sync_recorded(
+                    &state.paths,
+                    state.builder.as_ref(),
+                    &state.build_exec,
+                    &name,
+                    false,
+                ) {
                     Ok(SyncOutcome::Deployed { commit, generation, .. }) => {
                         tracing::info!("pull: {name}: deployed {commit} as generation #{generation}");
                     }
@@ -542,6 +575,7 @@ mod tests {
             clone_url: "file:///somewhere/repo.git".into(),
             branch: "main".into(),
             subdir: None,
+            build: None,
         };
         // No github account is connected on this fresh Box, and none is needed.
         assert!(auth_for(&paths, &link).unwrap().is_none());

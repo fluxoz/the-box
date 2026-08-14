@@ -60,7 +60,7 @@ obvious within an hour on real hardware.
 |---|---|
 | A repo without `index.html` at its root deploys "successfully" and serves 404s | **fixed** — `link_repo` warns at link time and, when the site clearly lives in `public/`, `dist/`, etc., names the exact `subdir` to pass |
 | Poller failures were visible only in server logs; a link failing for a week looked like a healthy one | **fixed** — every sync records its outcome; `list_services` carries `last_sync` (when, ok, commit or error) |
-| Repos that need a build step | **open** — the sandboxed builder (trusted image, install-with-network then build-without) is the next big increment; until then `link_repo`'s description says so honestly |
+| Repos that need a build step | **fixed** — `link_repo` takes `build_command` (plus `install_command` / `output_dir` when detection isn't enough) and the build runs on the Box in the sandboxed builder: a trusted Node image shipped in the OS closure, install with the network, build with `--network=none`, hard memory/pids/time limits. Build failures return the tail of the build log — the compiler's words, not "it failed". Awaiting its first real-hardware run (VM-tested). |
 
 ## Flows an agent should know (the recipes)
 
@@ -73,7 +73,12 @@ obvious within an hour on real hardware.
    including OS updates and provisioning further machines — is MCP.
 1. **First contact with a fresh Box**: `get_status` → `forge_options` →
    `forge_connect` (relay code+link, poll status) → `forge_repos` →
-   `link_repo` → `verify_service` → done: pushing deploys.
+   `link_repo` → `verify_service` → done: pushing deploys. If the repo is not
+   a ready file tree (no committed index.html, a framework in package.json),
+   pass `build_command` right in the `link_repo` call — the link fails cleanly
+   if the build does, with the log tail, so there is no broken half-service to
+   clean up. A build-step link takes as long as the build; that is the call
+   working, not hanging.
 2. **Putting it on the internet**: `ingress_options` (read the trade-offs to
    the person — quick-share's address changes, Funnel is private-by-default,
    BYO-domain is forever) → `ingress_configure` → `publish_service` → poll
@@ -93,10 +98,13 @@ obvious within an hour on real hardware.
 
 ## Still open, in value order
 
-1. **The sandboxed build step** — the largest remaining "my repo doesn't
-   deploy" class.
-2. **BYO-domain live test** (`ingress_setup`) — written, never run against a
+1. **BYO-domain live test** (`ingress_setup`) — written, never run against a
    real zone; quick-share URL churn stays until this lands.
+1a. **Build syncs are synchronous.** A build runs inside the sync that wants
+   it: `link_repo`/`sync_repo` hold their MCP call (and the deploy lock) for
+   the build's duration, up to the 15-minute phase ceiling. Fine for the small
+   sites this rung serves; if real builds prove long, syncs join the job
+   pattern like updates did.
 3. **Webhook upgrade** once stable ingress exists — push-to-deploy in seconds
    instead of a minute, registered by the Box itself.
 4. **`auto_update` on by default for appliance users**, with `get_status`

@@ -2,6 +2,46 @@
 let
   cfg = config.services.the-box;
 
+  # The trusted builder image for repository build steps (see boxd/src/build.rs).
+  # Built from this very nixpkgs and shipped IN the platform closure — never
+  # pulled from a registry — so it is pinned like everything else and updates
+  # through the release channel. The user's repository is only ever data on a
+  # bind mount handed to this image; there is no `podman build` on anything a
+  # user wrote, because attacker-controlled build contexts are what trigger
+  # container escapes.
+  builderImage = pkgs.dockerTools.buildLayeredImage {
+    name = "box-builder";
+    tag = "latest"; # boxd retags by store hash so channel updates reload it
+    contents = [
+      # /bin/sh and /usr/bin/env exist: node's child_process and every npm
+      # script shebang assume them.
+      pkgs.dockerTools.binSh
+      pkgs.dockerTools.usrBinEnv
+      pkgs.dockerTools.caCertificates
+      pkgs.bashInteractive
+      pkgs.coreutils
+      pkgs.gnugrep
+      pkgs.gnused
+      pkgs.gnutar
+      pkgs.gzip
+      pkgs.findutils
+      pkgs.nodejs
+      pkgs.yarn
+      pkgs.pnpm
+      pkgs.git
+    ];
+    config = {
+      Env = [
+        "PATH=/usr/bin:/bin"
+        # The install phase talks TLS to registries; give every tool the same
+        # trust root. (Node ships its own bundle; npm and git read these.)
+        "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
+        "GIT_SSL_CAINFO=/etc/ssl/certs/ca-bundle.crt"
+      ];
+      WorkingDir = "/work";
+    };
+  };
+
   # Only what the operator actually published.
   published = lib.filterAttrs (_: s: s.public);
 
@@ -286,8 +326,17 @@ in
       users.users.boxd = {
         isSystemUser = true;
         group = "boxd";
+        # Rootless podman (the build sandbox) needs subordinate id ranges to
+        # map user namespaces from. A range no normal user reaches.
+        subUidRanges = [{ startUid = 300000; count = 65536; }];
+        subGidRanges = [{ startGid = 300000; count = 65536; }];
       };
       users.groups.boxd = { };
+
+      # The build sandbox's runtime. Always on (not just when containers are
+      # deployed): a Box that cannot build is a Box that refuses half the
+      # repositories people actually have.
+      virtualisation.podman.enable = true;
 
       systemd.services.boxd = {
         description = "The Box daemon";
@@ -309,6 +358,11 @@ in
           pkgs.tailscale
           pkgs.restic
           pkgs.openssh
+          # The build sandbox: rootless podman, plus the setuid newuidmap /
+          # newgidmap wrappers it maps user namespaces with ("/run/wrappers"
+          # resolves to /run/wrappers/bin).
+          pkgs.podman
+          "/run/wrappers"
         ];
         environment = {
           # nix (invoked by boxd for generation builds) needs a writable cache
@@ -323,6 +377,14 @@ in
           # deploy at all) and could otherwise drift to a different nixpkgs than
           # the one whose closure is already on this disk.
           BOX_NIXPKGS = "${pkgs.path}";
+          # The trusted builder image for repository build steps, as a tarball
+          # in this closure. Its presence is what tells boxd this machine can
+          # run builds at all (BuildExec::detect).
+          BOX_BUILDER_IMAGE = "${builderImage}";
+          # Rootless podman keeps its runtime state under XDG_RUNTIME_DIR;
+          # without one it guesses, and a system unit has no session to guess
+          # from. RuntimeDirectory=boxd provides /run/boxd below.
+          XDG_RUNTIME_DIR = "/run/boxd";
         };
         serviceConfig = {
           ExecStart = "${lib.getExe cfg.package} --data-dir ${cfg.dataDir} serve --listen ${cfg.listen}";
@@ -334,6 +396,11 @@ in
           # of the operation, so it never touches a disk.
           RuntimeDirectory = "boxd";
           RuntimeDirectoryMode = "0700";
+          # Hand this unit its own cgroup subtree. Without delegation, the
+          # build sandbox's --memory/--pids limits are DECORATIVE for a
+          # rootless podman run from a system unit — they apply nothing and
+          # report nothing, silently (the exact trap PLAN §1 warns about).
+          Delegate = "cpu cpuset io memory pids";
           Restart = "on-failure";
           RestartSec = 2;
         };
