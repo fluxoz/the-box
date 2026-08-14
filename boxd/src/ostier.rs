@@ -154,13 +154,54 @@ pub fn request_apply(paths: &Paths) -> ApplyOutcome {
 /// The tail of the apply unit's journal, so a failure says what went wrong
 /// rather than just "job failed".
 fn last_apply_log() -> String {
+    last_unit_log(APPLY_UNIT)
+}
+
+fn last_unit_log(unit: &str) -> String {
     Command::new("journalctl")
-        .args(["-u", APPLY_UNIT, "-n", "20", "--no-pager", "-o", "cat"])
+        .args(["-u", unit, "-n", "20", "--no-pager", "-o", "cat"])
         .output()
         .ok()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "see `journalctl -u boxd-os-apply`".to_string())
+        .unwrap_or_else(|| format!("see `journalctl -u {unit}`"))
+}
+
+/// The root oneshot that applies a platform update — same shape as
+/// [`APPLY_UNIT`], for the same reason: registering and switching the system
+/// profile needs root, and boxd is not root. The polkit rule that lets boxd
+/// start it ships with the platform module.
+pub const UPDATE_UNIT: &str = "boxd-channel-update.service";
+
+pub fn update_unit_available() -> bool {
+    Command::new("systemctl")
+        .args(["cat", UPDATE_UNIT])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// Run the platform update through the root oneshot, blocking until it
+/// finishes. The update's switch restarts boxd, so the caller may well die
+/// mid-call — that is the persistent-job "interrupted, and for an update the
+/// restart usually IS the success path" story, and it is the truth.
+pub fn run_update_unit() -> Result<()> {
+    let out = Command::new("systemctl")
+        .args(["start", UPDATE_UNIT])
+        .output()
+        .with_context(|| format!("starting {UPDATE_UNIT}"))?;
+    if out.status.success() {
+        return Ok(());
+    }
+    let detail = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    let detail = if detail.is_empty() {
+        last_unit_log(UPDATE_UNIT)
+    } else {
+        detail
+    };
+    bail!("the platform update failed: {detail}")
 }
 
 /// `nix build` args for a per-box system's toplevel from its generated repo.

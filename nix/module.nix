@@ -515,6 +515,17 @@ in
         release = cfg.platform.release;
       };
 
+      # The per-box OS repo is a git+file flake input owned by boxd, and the
+      # ROOT oneshots (channel update, os-apply) build from it: without this,
+      # git's dubious-ownership check makes root's nix refuse boxd's repo and
+      # the update dies. System-wide, so it holds for root units and SSH
+      # operators alike — the fix that used to be a hand-written
+      # /root/.gitconfig on the first real Pi.
+      environment.etc.gitconfig.text = ''
+        [safe]
+        	directory = ${cfg.dataDir}/os-config
+      '';
+
       # The boxd CLI is on PATH and defaults to the box's data dir, so an
       # operator who SSHes in can just run `boxd auth enroll`, `boxd status`,
       # etc. — no wrapper, no --data-dir. (Auth writes chown to the data dir
