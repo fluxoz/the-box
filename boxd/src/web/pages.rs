@@ -2116,26 +2116,42 @@ pub async fn pair_claim(State(state): State<SharedState>, headers: HeaderMap) ->
     }
 }
 
-#[derive(Deserialize)]
-pub struct CodeForm {
-    code: String,
-}
-
 pub async fn pair_redeem(
     State(state): State<SharedState>,
     headers: HeaderMap,
-    Form(form): Form<CodeForm>,
+    body: String,
 ) -> Response {
     // Agents ask for JSON and get the token in the body (used as a Bearer
     // token); browsers get a redirect that sets the session cookie. This is the
     // machine-readable side of `boxd provision`: after a Box comes up, the agent
     // redeems its one-time pairing code here for a session it can drive /mcp with.
+    //
+    // The body may be JSON or a form, because both spell {code} and this is
+    // the BOOTSTRAP — the first request an agent ever authenticates with. The
+    // 401 signpost tells agents to POST JSON, an agent did, and the form-only
+    // parser refused the very instructions the Box itself had handed out.
+    // Refusing over framing is pedantry a front door cannot afford.
+    let code = serde_json::from_str::<serde_json::Value>(&body)
+        .ok()
+        .and_then(|v| v.get("code").and_then(serde_json::Value::as_str).map(str::to_string))
+        .or_else(|| {
+            body.split('&').find_map(|pair| {
+                let (k, v) = pair.split_once('=')?;
+                if k != "code" {
+                    return None;
+                }
+                let plus = v.replace('+', " ");
+                let decoded = urlencoding::decode(&plus).ok()?;
+                Some(decoded.trim().to_string())
+            })
+        })
+        .unwrap_or_default();
     let wants_json = headers
         .get(header::ACCEPT)
         .and_then(|v| v.to_str().ok())
         .is_some_and(|a| a.contains("application/json"));
     let label = if wants_json { "agent" } else { "browser" };
-    match crate::auth::redeem_code(&state.paths, &form.code, label) {
+    match crate::auth::redeem_code(&state.paths, &code, label) {
         Ok(token) => {
             if wants_json {
                 axum::Json(serde_json::json!({ "token": token, "label": label })).into_response()

@@ -50,15 +50,15 @@ async fn mcp_post(app: &Router, body: Value, bearer: Option<&str>) -> (StatusCod
     (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
 }
 
-async fn redeem_json(app: &Router, code: &str) -> (StatusCode, Value) {
+async fn redeem(app: &Router, content_type: &str, body: String) -> (StatusCode, Value) {
     let response = app
         .clone()
         .oneshot(
             Request::post("/pair/redeem")
-                .header("content-type", "application/x-www-form-urlencoded")
+                .header("content-type", content_type)
                 .header("accept", "application/json")
                 .extension(remote())
-                .body(Body::from(format!("code={code}")))
+                .body(Body::from(body))
                 .unwrap(),
         )
         .await
@@ -66,6 +66,23 @@ async fn redeem_json(app: &Router, code: &str) -> (StatusCode, Value) {
     let status = response.status();
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
     (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+}
+
+/// What the 401 signpost tells agents to send: a JSON body. This exact request
+/// was once refused by a form-only parser — the Box handing out instructions
+/// its own front door rejected.
+async fn redeem_json(app: &Router, code: &str) -> (StatusCode, Value) {
+    redeem(app, "application/json", json!({ "code": code }).to_string()).await
+}
+
+/// What the /pair browser form sends.
+async fn redeem_form(app: &Router, code: &str) -> (StatusCode, Value) {
+    redeem(
+        app,
+        "application/x-www-form-urlencoded",
+        format!("code={code}"),
+    )
+    .await
 }
 
 async fn call_tool(app: &Router, token: &str, name: &str, arguments: Value) -> Value {
@@ -110,6 +127,12 @@ async fn agent_pairs_over_http_then_drives_mcp_from_off_box() {
     // The pairing code is single-use: a replay is refused.
     let (status, _) = redeem_json(&app, &code).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    // Browsers speak forms at the same door: a fresh code redeems that way too.
+    let code2 = boxd::auth::mint_code(&paths, "enrollment").unwrap();
+    let (status, body) = redeem_form(&app, &code2).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body["token"].as_str().is_some(), "{body}");
 
     // 3. With the token as a Bearer header, the agent drives /mcp from off-box.
     let (status, init) = mcp_post(

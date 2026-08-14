@@ -8,30 +8,9 @@ let
   operatorKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICRyw8DcPB6PN/KAuFNV47vjjKc4oNSc1yemko7hObTi murphy@tower";
 in
 {
-  # Bind a freshly flashed Pi to the platform update channel on first boot:
-  # host id from the hostname, board auto-detected from the device tree. This
-  # is what makes the dashboard's "Update now" work out of the box — without
-  # it, the channel would need a one-time `boxd channel set` over SSH.
-  # Idempotent: a box that already has a binding is left alone (so this is
-  # also harmless on systems rebuilt by a channel update, which import this
-  # module via boxSystem).
-  systemd.services.boxd-channel-init = {
-    description = "The Box: bind the platform update channel (first boot)";
-    wantedBy = [ "multi-user.target" ];
-    after = [ "local-fs.target" ];
-    path = [ config.services.the-box.package ];
-    serviceConfig = {
-      Type = "oneshot";
-      RemainAfterExit = true;
-    };
-    script = ''
-      [ -e /var/lib/boxd/channel.toml ] && exit 0
-      mkdir -p /var/lib/boxd
-      boxd --data-dir /var/lib/boxd channel set \
-        --host-id "$(cat /proc/sys/kernel/hostname)" \
-        --system aarch64-linux
-    '';
-  };
+  # The channel binding (boxd-channel-init) now comes from platform.nix, so
+  # every Box gets it — it lived only here once, and x86 Boxes came up unable
+  # to update themselves.
 
   users.users.murphy = {
     isNormalUser = true;
