@@ -199,7 +199,52 @@ pub struct Snapshot {
 }
 
 /// Initialize the repository if it isn't already (idempotent).
+/// What a curl failure against the endpoint means, in words an operator can
+/// act on. Split out pure so the R2 case stays tested.
+pub fn endpoint_diagnosis(curl_stderr: &str) -> &'static str {
+    if curl_stderr.contains("TLS") || curl_stderr.contains("SSL") {
+        // Seen live: a fresh Cloudflare account with R2 keys but R2 never
+        // activated has NO working TLS on its S3 endpoint at all.
+        " The endpoint refused TLS entirely. For Cloudflare R2 this usually \
+         means R2 was never enabled on the account — that is a one-time step \
+         in Cloudflare's dashboard, not something a key can do."
+    } else if curl_stderr.contains("resolve") {
+        " The hostname does not resolve — check the endpoint for typos."
+    } else {
+        ""
+    }
+}
+
+/// Prove the S3 endpoint answers HTTPS at all before handing it to restic.
+/// restic retries backend errors with exponential backoff and no output, so a
+/// dead endpoint looks like a hung backup for fifteen minutes — live, it was
+/// an R2 endpoint whose TLS did not exist yet, and the first `backup_now` sat
+/// silent past a ten-minute timeout. Any HTTP answer (403 included) passes;
+/// only "cannot even talk to it" fails here, in seconds, with a diagnosis.
+fn probe_s3_endpoint(b: &BackendConfig) -> Result<()> {
+    if b.kind != "s3" {
+        return Ok(());
+    }
+    let Some(ep) = b.endpoint.as_deref().filter(|e| !e.is_empty()) else {
+        return Ok(()); // repo_url reports the missing field better
+    };
+    let url = if ep.contains("://") { ep.to_string() } else { format!("https://{ep}") };
+    let out = std::process::Command::new("curl")
+        .args(["-sS", "-m", "10", "-o", "/dev/null", &url])
+        .output()
+        .context("running curl to probe the backup endpoint")?;
+    if out.status.success() {
+        return Ok(());
+    }
+    let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    bail!(
+        "the backup endpoint {url} is not reachable: {err}.{}",
+        endpoint_diagnosis(&err)
+    )
+}
+
 pub fn ensure_init(paths: &Paths, bc: &BackupConfig) -> Result<()> {
+    probe_s3_endpoint(&bc.backend)?;
     let exists = restic(paths, bc)?
         .args(["cat", "config"])
         .output()
@@ -367,6 +412,18 @@ mod tests {
     //! due-check either skips backups or hammers the backend.
     use super::*;
     use crate::config::Retention;
+
+    #[test]
+    fn a_tls_failure_names_the_r2_activation_step() {
+        // The live failure: curl exit 35 against an R2 endpoint on an account
+        // where R2 was never enabled. The words must point at the dashboard
+        // step, because no key or retry can fix it.
+        let d = endpoint_diagnosis("curl: (35) TLS connect error: error:0A000410:SSL routines::ssl/tls alert handshake failure");
+        assert!(d.contains("R2 was never enabled"), "{d}");
+        let d = endpoint_diagnosis("curl: (6) Could not resolve host: nope.example");
+        assert!(d.contains("does not resolve"), "{d}");
+        assert_eq!(endpoint_diagnosis("curl: (7) Failed to connect"), "");
+    }
 
     fn backend(kind: &str) -> BackendConfig {
         BackendConfig {

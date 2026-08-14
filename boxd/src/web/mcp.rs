@@ -424,7 +424,7 @@ fn tool_definitions() -> Value {
         }),
         json!({
             "name": "backup_now",
-            "description": "Take a backup snapshot now (e.g. before a risky change), then apply the retention policy. Blocks until the backup finishes.",
+            "description": "Take a backup snapshot now (e.g. before a risky change), then apply the retention policy. Runs as a background job — you get a job id back; poll job_status. A first backup uploads everything and takes as long as the connection allows.",
             "inputSchema": no_args,
         }),
         json!({
@@ -502,8 +502,31 @@ async fn execute(
             Ok(blocking(move || backup_snapshots(&state)).await)
         }
         "backup_now" => {
+            // A job, not a blocking call: a first backup uploads everything
+            // and takes as long as the uplink allows, and the one time it
+            // blocked it sat past a ten-minute client timeout with nothing to
+            // show. The job pattern is what the description promises anyway.
             let state = state.clone();
-            Ok(blocking(move || backup_now(&state)).await)
+            Ok(blocking(move || {
+                let paths = state.paths.clone();
+                let (config, bc) = backup_bc(&state)?;
+                let id = state.jobs.start(
+                    "backup",
+                    "backup to the configured backend".to_string(),
+                    "backup",
+                    move |progress| {
+                        progress.phase("backing up");
+                        crate::backup::run(&paths, &config, &bc)?;
+                        Ok("backup complete".to_string())
+                    },
+                );
+                Ok(json!({
+                    "started": true,
+                    "job": id,
+                    "note": "Poll job_status with this id; backup_status shows the last snapshot when it finishes.",
+                }))
+            })
+            .await)
         }
         "backup_restore" => {
             let snapshot = str_arg("snapshot").unwrap_or_else(|| "latest".into());
@@ -1509,12 +1532,6 @@ fn backup_status(state: &SharedState) -> anyhow::Result<Value> {
 fn backup_snapshots(state: &SharedState) -> anyhow::Result<Value> {
     let (_, bc) = backup_bc(state)?;
     Ok(serde_json::json!({ "snapshots": crate::backup::snapshots(&state.paths, &bc)? }))
-}
-
-fn backup_now(state: &SharedState) -> anyhow::Result<Value> {
-    let (config, bc) = backup_bc(state)?;
-    crate::backup::run(&state.paths, &config, &bc)?;
-    Ok(serde_json::json!({ "ok": true, "message": "backup complete" }))
 }
 
 fn backup_restore(state: &SharedState, snapshot: &str, scope: &str) -> anyhow::Result<Value> {

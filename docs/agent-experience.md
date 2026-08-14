@@ -61,6 +61,13 @@ obvious within an hour on real hardware.
 | Pain | Status |
 |---|---|
 | A **working** Cloudflare token was refused as "Invalid API Token" — the Box verified via `/user/tokens/verify`, which only answers for user-owned tokens, and Cloudflare's dashboard now mints account-owned (`cfat_…`) tokens by default | **fixed** — verification now lists zones instead, which proves the token works and holds the Zone:Read the Box needs, for both token kinds |
+| People hand over whatever Cloudflare credential they have — live, the "token" was actually the R2 storage token (right account, wrong scopes: could create tunnels, could not touch DNS, expired in a week) | **flow** — `ingress_setup` already reports partial results honestly (`did` + `still_needed`); the agent should read `still_needed` back and, on a permission refusal, send the person the pre-filled token link rather than debugging further. The link creates a user token with exactly the three scopes needed and no expiry |
+
+## Backups (the BYO tier)
+
+| Pain | Status |
+|---|---|
+| A dead S3 endpoint made the first backup look HUNG: restic retries backend errors with exponential backoff and no output, so `backup_now` sat silent past a ten-minute timeout — live, the endpoint was a fresh R2 account whose S3 TLS **does not exist** until R2 is enabled once in Cloudflare's dashboard | **fixed** — the endpoint is probed with one HTTPS request before restic is involved; "cannot even talk to it" now fails in seconds and the TLS case names the R2 activation step. `backup_now` over MCP is also a proper job now (it claimed to block "until finished", and the one real run outlived its caller) |
 
 ## The repo loop
 
