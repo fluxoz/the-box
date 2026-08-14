@@ -452,6 +452,13 @@
         inherit self nixpkgs;
         system = "x86_64-linux";
       };
+      # The sandboxed build step: rootless podman as the boxd system user,
+      # builder image from the closure, no registry, no network. The subuid /
+      # wrapper / delegation plumbing this proves fails silently everywhere else.
+      checks.x86_64-linux.build-step = import ./nix/tests/build-step.nix {
+        inherit self nixpkgs;
+        system = "x86_64-linux";
+      };
       checks.x86_64-linux.restore = import ./nix/tests/restore.nix {
         inherit self nixpkgs;
         system = "x86_64-linux";

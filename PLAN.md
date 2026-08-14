@@ -219,10 +219,11 @@ verified, and what is not — kept honest, because the gap between "built" and
 
 - **Your own domain is untested end to end** — blocked on attaching a domain to
   a Cloudflare account. The tunnel connects; nothing has routed to it yet.
-- **Push-to-deploy exists for file trees only; no build step, no previews.**
-  A repo-linked service redeploys itself on new commits, but a repository that
-  needs `npm build` is not supported yet — the sandboxed builder is the next
-  increment (see Roadmap).
+- **The build step has not built on real hardware yet.** A repository that
+  needs `npm build` now builds in the sandboxed builder on every new commit
+  (VM-tested end to end, offline), but no real Pi has run a real `npm install`
+  against the real registry through it. Previews remain unbuilt as a feature
+  but are just `link_repo` with a `branch`.
 - **GitLab is built but has never run** against a real instance — it needs a
   per-instance application registration nobody has made yet.
 - **No TLS of our own.** Fine while a tunnel terminates it; needed for the
@@ -410,12 +411,15 @@ shelved to fix the core product first.
    accepts one stops mattering. Untested against a live zone: nobody has
    attached a domain yet, and given how often a guessed API shape has been wrong
    this week, treat it as unverified until it runs.
-2. **Build the sandboxed build step** (deploy-loop increment 2b): repositories
-   that need `npm build` before they are a file tree, in the trusted builder
-   image with the two-phase network design above. Static trees deploy today;
-   this is what turns "my Next site" from a refusal into a deploy. Then
-   previews: a branch-linked service is just a second `link_repo` with a
-   `branch` — the machinery already exists.
+2. **Run the sandboxed build step on real hardware.** Built (deploy-loop
+   increment 2b): `link_repo` takes `build_command`, the build runs in the
+   trusted builder image with the two-phase network design above, and the
+   whole loop is VM-tested — rootless podman as the boxd unit user, image
+   from the closure, no registry. What a VM cannot prove is a real npm
+   install against the real registry on a real Pi; treat the first live
+   build as the verification, like everything else here. Then previews: a
+   branch-linked service is just a second `link_repo` with a `branch` — the
+   machinery already exists.
 3. **Add `Cache-Control` headers.** Small, independent, and it answers the
    latency objection without operating any infrastructure.
 4. **Then stop building and go find ten users.** The engineering is not the

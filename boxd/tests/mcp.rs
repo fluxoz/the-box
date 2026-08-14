@@ -30,6 +30,20 @@ fn app() -> (TempDir, Router, String) {
     (tmp, web::router(state), token)
 }
 
+/// Like [`app`], but able to run build steps: phases execute directly on the
+/// host (the commands below are our own), where the real thing runs them in
+/// the podman sandbox. The sandbox mechanics have their own VM test.
+fn app_with_builds() -> (TempDir, Router, String) {
+    let tmp = TempDir::new().unwrap();
+    let paths = Paths::new(tmp.path().to_path_buf());
+    paths.ensure().unwrap();
+    let builder = LocalBuilder::new(&paths);
+    let token = boxd::auth::mint_session(&paths, "test-agent").unwrap();
+    let state =
+        AppState::with_build_exec(paths, Box::new(builder), boxd::build::BuildExec::Direct);
+    (tmp, web::router(state), token)
+}
+
 async fn rpc(app: &Router, token: &str, body: Value) -> Value {
     let response = app
         .clone()
@@ -298,6 +312,7 @@ async fn mcp_repo_linked_service_follows_the_repository() {
             clone_url: format!("file://{up}"),
             branch: "main".into(),
             subdir: None,
+            build: None,
         });
         config.save(&paths).unwrap();
     }
@@ -346,6 +361,152 @@ async fn mcp_repo_linked_service_follows_the_repository() {
     assert!(body.contains("pulled v2"), "unlink must not undeploy: {body}");
     let sync = call_tool(&app, &token, "sync_repo", json!({ "name": "blog" })).await;
     assert_eq!(sync["result"]["isError"], true, "sync after unlink must refuse");
+}
+
+/// The build step, end to end and offline: a repository that is NOT a file
+/// tree until a build runs — install phase first, build phase after it, the
+/// detected output directory deployed, a broken build refused without taking
+/// the site down. Execution is direct (no container) because this test's
+/// commands are our own; the podman sandbox itself is proven in the VM test.
+#[tokio::test]
+async fn mcp_repo_with_build_step_builds_then_deploys() {
+    let (_tmp, app, token) = app_with_builds();
+    let text = |v: &Value| v["result"]["content"][0]["text"].as_str().unwrap().to_string();
+
+    let upstream = TempDir::new().unwrap();
+    let git = |args: &[&str]| {
+        let out = std::process::Command::new("git")
+            .args(args)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+    };
+    let up = upstream.path().to_str().unwrap().to_string();
+    git(&["init", "-q", "-b", "main", &up]);
+    // No index.html anywhere: this repo serves nothing until a build runs.
+    std::fs::write(upstream.path().join("page.src"), "assembled, not committed").unwrap();
+    std::fs::write(upstream.path().join("README"), "a repo that needs building").unwrap();
+    git(&["-C", &up, "add", "."]);
+    git(&["-C", &up, "commit", "-qm", "v1"]);
+
+    let deploy = call_tool(
+        &app, &token, "deploy_static_site",
+        json!({ "name": "site", "index_html": "placeholder" }),
+    )
+    .await;
+    assert_eq!(deploy["result"]["isError"], false, "{deploy}");
+
+    // The link arrives the way a restored config would: directly in box.toml
+    // (link_repo needs a connected forge, which an offline test cannot have).
+    // The build depends on the install phase's output, so a deploy proves the
+    // phases ran in order. No output_dir: dist/ must be detected.
+    {
+        let paths = boxd::paths::Paths::new(_tmp.path().to_path_buf());
+        let mut config = boxd::config::BoxConfig::load(&paths).unwrap();
+        config.services[0].repo = Some(boxd::config::RepoLink {
+            forge: "github".into(),
+            repo: "local/site".into(),
+            clone_url: format!("file://{up}"),
+            branch: "main".into(),
+            subdir: None,
+            build: Some(boxd::build::BuildSpec {
+                command: "mkdir -p dist && cp staged.src dist/index.html".into(),
+                install: Some("cp page.src staged.src".into()),
+                output_dir: None,
+            }),
+        });
+        config.save(&paths).unwrap();
+    }
+
+    let sync = call_tool(&app, &token, "sync_repo", json!({ "name": "site" })).await;
+    assert_eq!(sync["result"]["isError"], false, "{sync}");
+    assert!(text(&sync).contains("deployed"), "{}", text(&sync));
+    let (status, body) = get(&app, "/sites/site/", "127.0.0.1", Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("assembled, not committed"), "{body}");
+
+    // Push → rebuilt → live. The loop, now with a build in the middle.
+    std::fs::write(upstream.path().join("page.src"), "assembled v2").unwrap();
+    git(&["-C", &up, "add", "."]);
+    git(&["-C", &up, "commit", "-qm", "v2"]);
+    let sync = call_tool(&app, &token, "sync_repo", json!({ "name": "site" })).await;
+    assert!(text(&sync).contains("deployed"), "{}", text(&sync));
+    let (_, body) = get(&app, "/sites/site/", "127.0.0.1", Some(&token)).await;
+    assert!(body.contains("assembled v2"), "{body}");
+
+    // A commit that breaks the build: the sync fails, the error carries the
+    // build log (an agent needs the compiler's words, not "it failed"), and
+    // the site keeps serving what last built.
+    git(&["-C", &up, "rm", "-q", "page.src"]);
+    git(&["-C", &up, "commit", "-qm", "break the build"]);
+    let sync = call_tool(&app, &token, "sync_repo", json!({ "name": "site" })).await;
+    assert_eq!(sync["result"]["isError"], true, "a broken build must not deploy");
+    assert!(text(&sync).contains("build log"), "{}", text(&sync));
+    let (_, body) = get(&app, "/sites/site/", "127.0.0.1", Some(&token)).await;
+    assert!(body.contains("assembled v2"), "a broken build must not take the site down: {body}");
+
+    // And the failure is visible later, not just in the moment.
+    let services = call_tool(&app, &token, "list_services", json!({})).await;
+    let parsed: Value = serde_json::from_str(&text(&services)).unwrap();
+    let site = parsed.as_array().unwrap().iter().find(|s| s["name"] == "site").unwrap();
+    assert_eq!(site["last_sync"]["ok"], false, "{site}");
+}
+
+/// A machine with no sandbox refuses a build-step sync with an explanation,
+/// not a broken deploy — and never runs repository code on the bare host.
+#[tokio::test]
+async fn mcp_build_step_without_a_sandbox_is_refused_honestly() {
+    let (_tmp, app, token) = app(); // BuildExec::detect() on a test machine: Unavailable
+    let text = |v: &Value| v["result"]["content"][0]["text"].as_str().unwrap().to_string();
+
+    let upstream = TempDir::new().unwrap();
+    let up = upstream.path().to_str().unwrap().to_string();
+    let git = |args: &[&str]| {
+        let out = std::process::Command::new("git")
+            .args(args)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}");
+    };
+    git(&["init", "-q", "-b", "main", &up]);
+    std::fs::write(upstream.path().join("page.src"), "x").unwrap();
+    git(&["-C", &up, "add", "."]);
+    git(&["-C", &up, "commit", "-qm", "v1"]);
+
+    let deploy = call_tool(
+        &app, &token, "deploy_static_site",
+        json!({ "name": "site", "index_html": "placeholder" }),
+    )
+    .await;
+    assert_eq!(deploy["result"]["isError"], false, "{deploy}");
+    {
+        let paths = boxd::paths::Paths::new(_tmp.path().to_path_buf());
+        let mut config = boxd::config::BoxConfig::load(&paths).unwrap();
+        config.services[0].repo = Some(boxd::config::RepoLink {
+            forge: "github".into(),
+            repo: "local/site".into(),
+            clone_url: format!("file://{up}"),
+            branch: "main".into(),
+            subdir: None,
+            build: Some(boxd::build::BuildSpec {
+                command: "echo pwned > /tmp/never".into(),
+                install: None,
+                output_dir: None,
+            }),
+        });
+        config.save(&paths).unwrap();
+    }
+    let sync = call_tool(&app, &token, "sync_repo", json!({ "name": "site" })).await;
+    assert_eq!(sync["result"]["isError"], true, "{sync}");
+    assert!(text(&sync).contains("build sandbox"), "{}", text(&sync));
 }
 
 #[tokio::test]

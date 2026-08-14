@@ -203,9 +203,15 @@ pub struct RepoLink {
     /// HTTPS clone URL. Auth is supplied per-invocation, never embedded.
     pub clone_url: String,
     pub branch: String,
-    /// Deploy this subdirectory of the repository rather than its root.
+    /// Deploy this subdirectory of the repository rather than its root — or,
+    /// when a build step is set, run the build there (the monorepo case).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subdir: Option<String>,
+    /// How a checkout becomes servable, for repositories that are not yet a
+    /// file tree. Runs in the sandboxed builder (see [`crate::build`]). Last
+    /// field on purpose: TOML wants the sub-table after the scalars.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub build: Option<crate::build::BuildSpec>,
 }
 
 impl BoxConfig {

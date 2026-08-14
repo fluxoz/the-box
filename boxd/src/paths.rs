@@ -68,6 +68,19 @@ impl Paths {
         self.repos_dir().join(format!("{service}.deployed"))
     }
 
+    /// The build cache volume for a repo-linked service with a build step:
+    /// package-manager caches that persist across builds, so a Pi is not
+    /// reinstalling the world on every push. Refetchable, never published.
+    pub fn build_cache_dir(&self, service: &str) -> PathBuf {
+        self.repos_dir().join(format!("{service}.cache"))
+    }
+
+    /// The last build's full output. The error message carries the tail; the
+    /// whole thing is here for when the tail is not enough.
+    pub fn build_log(&self, service: &str) -> PathBuf {
+        self.repos_dir().join(format!("{service}.build-log"))
+    }
+
     /// Clean checkouts (no `.git`) staged for publishing, one per service.
     /// Like `uploads/`, this holds exactly what is meant to be published —
     /// the git dirs stay in `repos/`, which never is.
