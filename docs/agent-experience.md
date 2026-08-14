@@ -13,6 +13,13 @@ Everything below was actually hit, in order. **Fixed** means code shipped;
 The standing lesson, again: every one of these was invisible to unit tests and
 obvious within an hour on real hardware.
 
+## First contact (the bootstrap)
+
+| Pain | Status |
+|---|---|
+| The 401 signpost says "POST /pair/redeem with JSON `{code}`" — and the endpoint parsed only browser form bodies, so the Box refused the very instructions it had handed out | **fixed** — the redeem endpoint reads `{code}` in either framing (JSON or form); the first request an agent ever authenticates with cannot fail over pedantry |
+| An x86 Box came up with **no update channel binding at all** — the first-boot binding lived only in the Pi image module, so `channel_check`/`channel_update` answered "no update channel configured" and nothing over MCP could write one | **fixed** — the binding now comes from the shared platform module; every Box can update itself from birth |
+
 ## The connect flow (forge → Box)
 
 | Pain | Status |

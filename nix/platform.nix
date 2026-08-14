@@ -68,5 +68,32 @@
   # relay (paid) — so nothing is enabled toward any server until they enroll.
   services.tailscale.enable = true;
 
+  # Bind every freshly installed Box to the platform update channel on first
+  # boot. This lived only in the Pi image module, so an x86 Box came up with
+  # no channel binding at all — and a Box without one cannot take an update
+  # by ANY means an agent has: channel_check and channel_update both answer
+  # "no update channel configured", and nothing over MCP can write one. An
+  # appliance that cannot update itself is a defect, not a configuration.
+  # Idempotent: a box that already has a binding is left alone.
+  systemd.services.boxd-channel-init = {
+    description = "The Box: bind the platform update channel (first boot)";
+    wantedBy = [ "multi-user.target" ];
+    # box-firstboot (where it exists) sets the hostname this reads; on systems
+    # without that unit, the `after` entry is ignored.
+    after = [ "local-fs.target" "box-firstboot.service" ];
+    path = [ config.services.the-box.package ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+    script = ''
+      [ -e /var/lib/boxd/channel.toml ] && exit 0
+      mkdir -p /var/lib/boxd
+      boxd --data-dir /var/lib/boxd channel set \
+        --host-id "$(cat /proc/sys/kernel/hostname)" \
+        --system ${pkgs.stdenv.hostPlatform.system}
+    '';
+  };
+
   system.stateVersion = "25.11";
 }
