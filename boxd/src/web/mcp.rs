@@ -1002,6 +1002,24 @@ async fn execute(
                     format!("platform update to {}", status.latest),
                     "system",
                     move |progress| {
+                        // On a managed Box, the switch MUST go through the
+                        // root oneshot: registering the system generation
+                        // needs root, and this process is not root. The
+                        // in-process path below built the system fine and
+                        // then died exactly there, live, on the first real
+                        // MCP-driven update — the polkit-blessed unit is the
+                        // same path the dashboard's "Update now" takes.
+                        if crate::ostier::update_unit_available() {
+                            progress.phase("handing the switch to the system updater");
+                            crate::ostier::run_update_unit()?;
+                            let release = platform_release()
+                                .unwrap_or_else(|| "unknown".into());
+                            return Ok(format!(
+                                "updated; running platform release {release}"
+                            ));
+                        }
+                        // No unit means no OS tier gating (a root-run dev
+                        // serve, tests): do the whole thing here.
                         progress.phase("building the new system");
                         let config = crate::config::BoxConfig::load(&paths)?;
                         let toplevel = crate::channel::update_and_switch(

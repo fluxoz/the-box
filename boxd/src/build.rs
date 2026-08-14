@@ -235,7 +235,9 @@ fn phase_env() -> Vec<(String, String)> {
         ("npm_config_cache".into(), "/cache/npm".into()),
         ("XDG_CACHE_HOME".into(), "/cache/xdg".into()),
         ("YARN_CACHE_FOLDER".into(), "/cache/yarn".into()),
-        ("npm_config_store_dir".into(), "/cache/pnpm-store".into()),
+        // No pnpm store override: npm warns about the unknown key on EVERY
+        // build (seen in the first live log), and pnpm's default store lands
+        // under $HOME — which is already on the cache volume.
         ("CI".into(), "1".into()),
         (
             "NODE_OPTIONS".into(),
