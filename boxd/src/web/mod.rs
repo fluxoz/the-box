@@ -135,6 +135,7 @@ pub fn router(state: SharedState) -> Router {
         .route("/system/check", post(pages::system_check))
         .route("/system/update", post(pages::system_update))
         .route("/system/apply", post(pages::system_apply))
+        .route("/system/meter-rate", post(pages::set_meter_rate))
         .route("/fleet", get(pages::fleet))
         .route("/pair", get(pages::pair))
         .route("/pair/redeem", post(pages::pair_redeem))

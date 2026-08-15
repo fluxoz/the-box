@@ -32,6 +32,7 @@ pub mod jobs;
 pub mod journal;
 pub mod logs;
 pub mod manifest;
+pub mod meter;
 pub mod nixgen;
 pub mod ops;
 pub mod ostier;
