@@ -228,12 +228,22 @@ async fn post_claim(app: &Router, proxied: bool) -> (StatusCode, Option<String>,
 async fn first_run_claim_flow() {
     let (_tmp, paths, app) = app();
 
-    // Fresh box on the LAN: /pair offers to claim.
+    // Fresh box on the LAN: /pair is the birth certificate — the moment the
+    // machine earned by wiping its old life. Mark, name, claim, next step.
     let (s, body) = get_pair(&app, false).await;
     assert_eq!(s, StatusCode::OK);
     assert!(
         body.contains("Claim this Box"),
         "fresh box should offer claim"
+    );
+    assert!(body.contains("A Box is born"), "the moment gets its due");
+    assert!(
+        body.contains("identity mark"),
+        "every Box draws its own mark"
+    );
+    assert!(
+        body.contains("thebox.build/connect"),
+        "the next step is stated"
     );
 
     // Through a tunnel (proxied): no claim offered, and claiming is refused.
