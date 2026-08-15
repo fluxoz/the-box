@@ -230,9 +230,17 @@ mod tests {
     // Generate an age identity; return (identity_path, recipient_string).
     fn keygen(dir: &Path, name: &str) -> (std::path::PathBuf, String) {
         let key = dir.join(name);
-        let out = Command::new("age-keygen").arg("-o").arg(&key).output().unwrap();
+        let out = Command::new("age-keygen")
+            .arg("-o")
+            .arg(&key)
+            .output()
+            .unwrap();
         assert!(out.status.success());
-        let pub_out = Command::new("age-keygen").arg("-y").arg(&key).output().unwrap();
+        let pub_out = Command::new("age-keygen")
+            .arg("-y")
+            .arg(&key)
+            .output()
+            .unwrap();
         let recipient = String::from_utf8_lossy(&pub_out.stdout).trim().to_string();
         (key, recipient)
     }
@@ -263,8 +271,14 @@ mod tests {
         rekey(&secret, &op_id, &[box2_rcpt.clone(), op_rcpt.clone()]).unwrap();
 
         // Now box2 decrypts unattended, the operator still can, and the old box can't.
-        assert_eq!(decrypt(&secret, &box2_id).unwrap(), b"POSTGRES_PASSWORD=hunter2");
-        assert_eq!(decrypt(&secret, &op_id).unwrap(), b"POSTGRES_PASSWORD=hunter2");
+        assert_eq!(
+            decrypt(&secret, &box2_id).unwrap(),
+            b"POSTGRES_PASSWORD=hunter2"
+        );
+        assert_eq!(
+            decrypt(&secret, &op_id).unwrap(),
+            b"POSTGRES_PASSWORD=hunter2"
+        );
         assert!(decrypt(&secret, &box1_id).is_err());
     }
 }

@@ -75,7 +75,10 @@ impl std::fmt::Display for PortError {
 impl std::error::Error for PortError {}
 
 fn reserved(port: u16) -> Option<&'static str> {
-    RESERVED.iter().find(|(p, _)| *p == port).map(|(_, who)| *who)
+    RESERVED
+        .iter()
+        .find(|(p, _)| *p == port)
+        .map(|(_, who)| *who)
 }
 
 /// Validate an explicit port request. `in_use` maps each taken port to the
@@ -143,12 +146,18 @@ mod tests {
     #[test]
     fn rejects_privileged_and_reserved() {
         let none = used(&[]);
-        assert_eq!(validate(22, &none, "x"), Err(PortError::Reserved(22, "SSH")));
+        assert_eq!(
+            validate(22, &none, "x"),
+            Err(PortError::Reserved(22, "SSH"))
+        );
         assert_eq!(
             validate(2693, &none, "x"),
             Err(PortError::Reserved(2693, "boxd (dashboard, API, MCP)"))
         );
-        assert_eq!(validate(80, &none, "x"), Err(PortError::Reserved(80, "nginx (HTTP reverse proxy)")));
+        assert_eq!(
+            validate(80, &none, "x"),
+            Err(PortError::Reserved(80, "nginx (HTTP reverse proxy)"))
+        );
         assert_eq!(validate(1000, &none, "x"), Err(PortError::Privileged(1000)));
         assert!(validate(8080, &none, "x").is_ok());
     }
@@ -187,8 +196,7 @@ mod tests {
 
     #[test]
     fn exhaustion_is_reported() {
-        let full: BTreeMap<u16, String> =
-            AUTO_RANGE.map(|p| (p, format!("s{p}"))).collect();
+        let full: BTreeMap<u16, String> = AUTO_RANGE.map(|p| (p, format!("s{p}"))).collect();
         assert_eq!(allocate(&full), Err(PortError::Exhausted));
     }
 }

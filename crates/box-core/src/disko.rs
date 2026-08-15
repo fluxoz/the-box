@@ -23,7 +23,12 @@ pub fn render(layout: &ResolvedLayout) -> String {
             // few-percent disk-size difference never trips mdadm's 1% check.
             const ESP_MIB: u64 = 1024; // matches the 1G ESP below
             const MARGIN_MIB: u64 = 128;
-            let min_bytes = layout.devices.iter().map(|d| d.size_bytes).min().unwrap_or(0);
+            let min_bytes = layout
+                .devices
+                .iter()
+                .map(|d| d.size_bytes)
+                .min()
+                .unwrap_or(0);
             let raid_mib = (min_bytes / (1024 * 1024)).saturating_sub(ESP_MIB + MARGIN_MIB);
             mirror(&devs, raid_mib)
         }

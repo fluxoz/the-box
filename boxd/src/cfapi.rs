@@ -314,9 +314,13 @@ mod tests {
         assert_eq!(policies.len(), 2);
         // Tunnel writes are account-scoped; DNS write + zone read are
         // zone-scoped. Wrong resource kinds make Cloudflare refuse the mint.
-        assert!(policies[0]["resources"].get("com.cloudflare.api.account.*").is_some());
+        assert!(policies[0]["resources"]
+            .get("com.cloudflare.api.account.*")
+            .is_some());
         assert_eq!(policies[0]["permission_groups"][0]["id"], "tid");
-        assert!(policies[1]["resources"].get("com.cloudflare.api.account.zone.*").is_some());
+        assert!(policies[1]["resources"]
+            .get("com.cloudflare.api.account.zone.*")
+            .is_some());
         let zone_groups = policies[1]["permission_groups"].as_array().unwrap();
         assert_eq!(zone_groups.len(), 2);
     }
@@ -348,7 +352,10 @@ mod tests {
 
     #[test]
     fn requests_target_the_documented_endpoints() {
-        assert_eq!(find_zone("example.com").url, format!("{API}/zones?name=example.com"));
+        assert_eq!(
+            find_zone("example.com").url,
+            format!("{API}/zones?name=example.com")
+        );
         // A zone name with a dot is fine; anything needing escaping is escaped.
         assert!(find_zone("a b.com").url.ends_with("a%20b.com"));
 
@@ -358,7 +365,9 @@ mod tests {
         // Edge-managed, so the ingress we PUT below is authoritative.
         assert_eq!(t.body.unwrap()["config_src"], "cloudflare");
 
-        assert!(tunnel_run_token("acct", "tid").url.ends_with("/cfd_tunnel/tid/token"));
+        assert!(tunnel_run_token("acct", "tid")
+            .url
+            .ends_with("/cfd_tunnel/tid/token"));
     }
 
     #[test]
@@ -376,7 +385,10 @@ mod tests {
 
         // Cloudflare rejects a rule set whose last entry names a hostname.
         let last = rules.last().unwrap();
-        assert!(last.get("hostname").is_none(), "last rule must be the catch-all");
+        assert!(
+            last.get("hostname").is_none(),
+            "last rule must be the catch-all"
+        );
         assert_eq!(last["service"], "http_status:404");
     }
 

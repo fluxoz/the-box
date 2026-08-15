@@ -94,6 +94,7 @@ fn layout(title: &str, flash: &Flash, body: Markup) -> Html<String> {
                     a.active[title == "Backup"] href="/backup" { "Backup" }
                     a.active[title == "Networking"] href="/network" { "Networking" }
                     a.active[title == "Devices"] href="/devices" { "Devices" }
+                    a.active[title == "Approvals"] href="/approvals" { "Approvals" }
                     a.btn.active[title == "Deploy"] href="/services/new" { "+ Deploy" }
                 }
                 main {
@@ -692,8 +693,10 @@ fn deploy_request_from_form(form: NewServiceForm) -> Result<ops::DeployRequest, 
         params.insert("expose".into(), expose.into());
     }
     if let Some(cmd) = none_if_empty(form.cmd) {
-        let argv: Vec<serde_json::Value> =
-            cmd.split_whitespace().map(serde_json::Value::from).collect();
+        let argv: Vec<serde_json::Value> = cmd
+            .split_whitespace()
+            .map(serde_json::Value::from)
+            .collect();
         params.insert("cmd".into(), argv.into());
     }
     if let Some(volumes) = none_if_empty(form.volumes) {
@@ -750,22 +753,17 @@ pub async fn create_service(
     // A deploy runs a build; it does not belong inside the request. Start it and
     // send the browser to the job view, which follows the phases live.
     let jobs = state.jobs.clone();
-    let id = jobs.start(
-        "deploy",
-        format!("Deploying {name}"),
-        "/",
-        move |p| {
-            p.phase("waiting for other changes to finish");
-            let _guard = state.apply_lock.lock().unwrap();
-            p.phase(format!("building generation for {name}"));
-            let info = ops::deploy(&state.paths, state.builder.as_ref(), request)?;
-            p.phase("activated");
-            Ok(format!(
-                "Deployed {name} — now at generation #{}",
-                info.number
-            ))
-        },
-    );
+    let id = jobs.start("deploy", format!("Deploying {name}"), "/", move |p| {
+        p.phase("waiting for other changes to finish");
+        let _guard = state.apply_lock.lock().unwrap();
+        p.phase(format!("building generation for {name}"));
+        let info = ops::deploy(&state.paths, state.builder.as_ref(), request)?;
+        p.phase("activated");
+        Ok(format!(
+            "Deployed {name} — now at generation #{}",
+            info.number
+        ))
+    });
     Redirect::to(&format!("/jobs/{id}"))
 }
 
@@ -776,18 +774,19 @@ pub async fn delete_service(
     let id = {
         let state = state.clone();
         let name = name.clone();
-        state.jobs.clone().start(
-            "delete",
-            format!("Removing {name}"),
-            "/",
-            move |p| {
+        state
+            .jobs
+            .clone()
+            .start("delete", format!("Removing {name}"), "/", move |p| {
                 p.phase("waiting for other changes to finish");
                 let _guard = state.apply_lock.lock().unwrap();
                 p.phase(format!("rebuilding without {name}"));
                 let info = ops::delete_service(&state.paths, state.builder.as_ref(), &name)?;
-                Ok(format!("Deleted {name} — now at generation #{}", info.number))
-            },
-        )
+                Ok(format!(
+                    "Deleted {name} — now at generation #{}",
+                    info.number
+                ))
+            })
     };
     Redirect::to(&format!("/jobs/{id}"))
 }
@@ -1008,13 +1007,17 @@ pub async fn connect_enroll(
     State(_state): State<SharedState>,
     Form(form): Form<ConnectForm>,
 ) -> Redirect {
-    let redirect =
-        |key: &str, msg: &str| Redirect::to(&format!("/network?{key}={}", urlencoding::encode(msg)));
+    let redirect = |key: &str, msg: &str| {
+        Redirect::to(&format!("/network?{key}={}", urlencoding::encode(msg)))
+    };
     let host = none_if_empty(form.hostname).unwrap_or_else(crate::connect::default_hostname);
     let server = form.server.trim().to_string();
     let authkey = form.authkey.trim().to_string();
     if server.is_empty() || authkey.is_empty() {
-        return redirect("err", "A coordinator URL and a pre-auth key are both required");
+        return redirect(
+            "err",
+            "A coordinator URL and a pre-auth key are both required",
+        );
     }
     let result = blocking(move || crate::connect::enroll(&server, &authkey, &host)).await;
     match result {
@@ -1024,8 +1027,9 @@ pub async fn connect_enroll(
 }
 
 pub async fn connect_down(State(_state): State<SharedState>) -> Redirect {
-    let redirect =
-        |key: &str, msg: &str| Redirect::to(&format!("/network?{key}={}", urlencoding::encode(msg)));
+    let redirect = |key: &str, msg: &str| {
+        Redirect::to(&format!("/network?{key}={}", urlencoding::encode(msg)))
+    };
     match blocking(crate::connect::down).await {
         Ok(()) => redirect("ok", "Left the mesh"),
         Err(e) => redirect("err", &format!("{e:#}")),
@@ -1374,8 +1378,9 @@ pub async fn recreate_run(
     headers: HeaderMap,
     Form(form): Form<RecreateForm>,
 ) -> Redirect {
-    let redirect =
-        |key: &str, msg: &str| Redirect::to(&format!("/recreate?{key}={}", urlencoding::encode(msg)));
+    let redirect = |key: &str, msg: &str| {
+        Redirect::to(&format!("/recreate?{key}={}", urlencoding::encode(msg)))
+    };
 
     // Enforced server-side too: the form is merely hidden on an unsafe
     // connection, and a hidden control is not a security boundary.
@@ -1518,7 +1523,10 @@ pub async fn configure_backup(
             .unwrap_or_default();
         config.backup = Some(crate::config::BackupConfig {
             enabled: true,
-            schedule: f.schedule.filter(|s| !s.is_empty()).unwrap_or_else(|| "daily".into()),
+            schedule: f
+                .schedule
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "daily".into()),
             retention,
             backend,
             extra_paths: Vec::new(),
@@ -1535,7 +1543,10 @@ pub async fn configure_backup(
         }
         Ok(())
     })();
-    backup_redirect(result, "Backup destination saved — reveal and save your recovery key below")
+    backup_redirect(
+        result,
+        "Backup destination saved — reveal and save your recovery key below",
+    )
 }
 
 pub async fn run_backup_now(State(state): State<SharedState>) -> Redirect {
@@ -1543,17 +1554,20 @@ pub async fn run_backup_now(State(state): State<SharedState>) -> Redirect {
     // nothing until you came back and refreshed. As a job it reports what it is
     // doing and whether it worked.
     let paths = state.paths.clone();
-    let id = state.jobs.clone().start("backup", "Backing up", "/backup", move |p| {
-        p.phase("reading config");
-        let config = BoxConfig::load(&paths)?;
-        let bc = config
-            .backup
-            .clone()
-            .ok_or_else(|| anyhow::anyhow!("no backup configured"))?;
-        p.phase(format!("sending to {}", bc.backend.kind));
-        crate::backup::run(&paths, &config, &bc)?;
-        Ok("Backup complete".to_string())
-    });
+    let id = state
+        .jobs
+        .clone()
+        .start("backup", "Backing up", "/backup", move |p| {
+            p.phase("reading config");
+            let config = BoxConfig::load(&paths)?;
+            let bc = config
+                .backup
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("no backup configured"))?;
+            p.phase(format!("sending to {}", bc.backend.kind));
+            crate::backup::run(&paths, &config, &bc)?;
+            Ok("Backup complete".to_string())
+        });
     Redirect::to(&format!("/jobs/{id}"))
 }
 
@@ -1848,20 +1862,29 @@ pub struct CloudForm {
     token: String,
 }
 
-pub async fn cloud_enroll(State(state): State<SharedState>, Form(form): Form<CloudForm>) -> Redirect {
+pub async fn cloud_enroll(
+    State(state): State<SharedState>,
+    Form(form): Form<CloudForm>,
+) -> Redirect {
     let redirect =
         |key: &str, msg: &str| Redirect::to(&format!("/system?{key}={}", urlencoding::encode(msg)));
     let server = form.server.trim().to_string();
     let token = form.token.trim().to_string();
     if server.is_empty() || token.is_empty() {
-        return redirect("err", "A cloud server and an enrollment token are both required");
+        return redirect(
+            "err",
+            "A cloud server and an enrollment token are both required",
+        );
     }
     let result = {
         let state = state.clone();
         blocking(move || crate::cloud::enroll(&state.paths, &server, &token)).await
     };
     match result {
-        Ok(()) => redirect("ok", "Linked — managed backup is on. Reveal your recovery key on the Backup page."),
+        Ok(()) => redirect(
+            "ok",
+            "Linked — managed backup is on. Reveal your recovery key on the Backup page.",
+        ),
         Err(e) => redirect("err", &format!("{e:#}")),
     }
 }
@@ -1948,9 +1971,9 @@ pub async fn system_apply(State(state): State<SharedState>) -> Redirect {
                         "This machine is not a Box: it has no OS tier, so services that need \
                          systemd or podman cannot run here. This works on a Box."
                     ),
-                    ostier::ApplyOutcome::Failed(detail) => anyhow::bail!(
-                        "The system apply failed and rolled itself back: {detail}"
-                    ),
+                    ostier::ApplyOutcome::Failed(detail) => {
+                        anyhow::bail!("The system apply failed and rolled itself back: {detail}")
+                    }
                 }
             },
         )
@@ -1997,8 +2020,7 @@ pub async fn pair(
     // First-run claim: a Box no one has set up yet can be claimed from the LAN
     // without a code, but never through a tunnel (a public visitor must not be
     // able to seize an unclaimed Box).
-    let claimable =
-        crate::auth::is_claimable(&state.paths) && !crate::auth::is_proxied(&headers);
+    let claimable = crate::auth::is_claimable(&state.paths) && !crate::auth::is_proxied(&headers);
     let has_keys = crate::auth::has_security_keys(&state.paths);
     let page = html! {
         (DOCTYPE)
@@ -2104,10 +2126,8 @@ pub async fn pair_claim(State(state): State<SharedState>, headers: HeaderMap) ->
                 resp
             }
         }
-        Ok(None) => {
-            Redirect::to("/pair?err=This+Box+is+already+claimed.+Enter+a+pairing+code")
-                .into_response()
-        }
+        Ok(None) => Redirect::to("/pair?err=This+Box+is+already+claimed.+Enter+a+pairing+code")
+            .into_response(),
         Err(err) => Redirect::to(&format!(
             "/pair?err={}",
             urlencoding::encode(&format!("{err:#}"))
@@ -2161,7 +2181,13 @@ pub async fn pair_redeem(
     let label = json_str("label")
         .filter(|l| !l.trim().is_empty())
         .map(|l| l.chars().take(64).collect::<String>())
-        .unwrap_or_else(|| if wants_json { "agent".into() } else { "browser".into() });
+        .unwrap_or_else(|| {
+            if wants_json {
+                "agent".into()
+            } else {
+                "browser".into()
+            }
+        });
     let label = label.as_str();
     match crate::auth::redeem_code(&state.paths, &code, label) {
         Ok(token) => {
@@ -2264,7 +2290,7 @@ fn devices_page(
             }
         } @else {
             table {
-                thead { tr { th { "Id" } th { "Label" } th { "Paired" } th {} } }
+                thead { tr { th { "Id" } th { "Label" } th { "Paired" } th { "Destructive ops" } th {} } }
                 tbody {
                     @for s in &sessions {
                         tr {
@@ -2274,6 +2300,27 @@ fn devices_page(
                                 @match chrono::DateTime::from_timestamp(s.created_at, 0) {
                                     Some(t) => (t.format("%Y-%m-%d %H:%M UTC")),
                                     None => "—",
+                                }
+                            }
+                            td {
+                                // The leash, per session: destructive calls
+                                // either wait on the Approvals page or run
+                                // straight through. Granting this is a real
+                                // decision; the button says which way it is.
+                                @if s.autonomous {
+                                    form method="post" action={ "/devices/" (s.id) "/autonomy" } {
+                                        input type="hidden" name="on" value="false";
+                                        button type="submit" title="This session may run destructive operations without asking. Click to require approval again." {
+                                            "Autonomous — revoke"
+                                        }
+                                    }
+                                } @else {
+                                    form method="post" action={ "/devices/" (s.id) "/autonomy" } {
+                                        input type="hidden" name="on" value="true";
+                                        button type="submit" title="Destructive operations from this session wait for your tap on the Approvals page. Click to let it act alone." {
+                                            "Needs approval"
+                                        }
+                                    }
                                 }
                             }
                             td {
@@ -2435,6 +2482,157 @@ pub async fn revoke_device(State(state): State<SharedState>, Path(id): Path<Stri
     }
 }
 
+#[derive(Deserialize)]
+pub struct AutonomyForm {
+    on: String,
+}
+
+/// The per-session leash: whether this device's destructive calls run alone
+/// or wait on the Approvals page. An operator decision, taken here in the
+/// device list where the session's label and age are in view.
+pub async fn set_device_autonomy(
+    State(state): State<SharedState>,
+    Path(id): Path<String>,
+    Form(f): Form<AutonomyForm>,
+) -> Redirect {
+    let on = f.on == "true";
+    match crate::auth::set_autonomous(&state.paths, &id, on) {
+        Ok(true) if on => Redirect::to(
+            "/devices?ok=This+session+may+now+run+destructive+operations+without+asking",
+        ),
+        Ok(true) => Redirect::to("/devices?ok=Destructive+operations+now+need+your+approval"),
+        Ok(false) => Redirect::to("/devices?err=No+such+device"),
+        Err(err) => Redirect::to(&format!(
+            "/devices?err={}",
+            urlencoding::encode(&format!("{err:#}"))
+        )),
+    }
+}
+
+/// The human half of the trust ceremony: what agents asked to do that they
+/// may not do alone. Approving runs the exact call; denying records the no.
+pub async fn approvals(
+    State(state): State<SharedState>,
+    Query(flash): Query<Flash>,
+) -> Html<String> {
+    let actions = crate::approvals::list(&state.paths);
+    let pending: Vec<_> = actions
+        .iter()
+        .filter(|a| a.state == crate::approvals::State::Pending)
+        .collect();
+    let decided: Vec<_> = actions
+        .iter()
+        .filter(|a| a.state != crate::approvals::State::Pending)
+        .take(20)
+        .collect();
+    let when = |unix: u64| {
+        chrono::DateTime::from_timestamp(unix as i64, 0)
+            .map(|t| t.format("%Y-%m-%d %H:%M UTC").to_string())
+            .unwrap_or_else(|| "—".into())
+    };
+    let body = html! {
+        h2 { "Approvals" }
+        p.muted {
+            "Agents run this Box, but destructive operations — erasing a machine, deleting a "
+            "service, restoring over live data — wait here for you unless you have granted a "
+            "session autonomy in the device list. Approving runs exactly what was asked; "
+            "denying tells the agent no."
+        }
+        @if pending.is_empty() {
+            div.empty { p { "Nothing is waiting on you." } }
+        } @else {
+            table {
+                thead { tr { th { "Asked" } th { "By" } th { "Would" } th {} } }
+                tbody {
+                    @for a in &pending {
+                        tr {
+                            td { (when(a.created_unix)) }
+                            td { (a.requested_by) }
+                            td { (a.summary) }
+                            td {
+                                form method="post" action={ "/approvals/" (a.id) "/approve" } style="display:inline" {
+                                    button.danger type="submit" { "Approve & run" }
+                                }
+                                " "
+                                form method="post" action={ "/approvals/" (a.id) "/deny" } style="display:inline" {
+                                    button type="submit" { "Deny" }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        @if !decided.is_empty() {
+            div.section-head { h2 { "Decided" } }
+            table {
+                thead { tr { th { "Asked" } th { "By" } th { "Would" } th { "Decision" } } }
+                tbody {
+                    @for a in &decided {
+                        tr {
+                            td { (when(a.created_unix)) }
+                            td { (a.requested_by) }
+                            td { (a.summary) }
+                            td {
+                                @match a.state {
+                                    crate::approvals::State::Approved => "approved",
+                                    crate::approvals::State::Denied => "denied",
+                                    crate::approvals::State::Pending => "pending",
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+    layout("Approvals", &flash, body)
+}
+
+pub async fn approve_action(State(state): State<SharedState>, Path(id): Path<String>) -> Redirect {
+    let Some(action) = crate::approvals::get(&state.paths, &id) else {
+        return Redirect::to("/approvals?err=No+such+pending+action");
+    };
+    if action.state != crate::approvals::State::Pending {
+        return Redirect::to("/approvals?err=Already+decided");
+    }
+    // The tap IS the consent: run the exact call the agent made, through the
+    // same code path it would have taken, and record what happened.
+    let outcome = crate::web::mcp::execute(state.clone(), &action.tool, action.args.clone()).await;
+    let result = match outcome {
+        Ok(Ok(v)) => serde_json::to_string_pretty(&v).unwrap_or_default(),
+        Ok(Err(e)) => format!("failed: {e:#}"),
+        Err((_, e)) => format!("failed: {e}"),
+    };
+    let failed = result.starts_with("failed:");
+    if let Err(e) = crate::approvals::resolve(
+        &state.paths,
+        &id,
+        crate::approvals::State::Approved,
+        Some(result),
+    ) {
+        return Redirect::to(&format!(
+            "/approvals?err={}",
+            urlencoding::encode(&format!("{e:#}"))
+        ));
+    }
+    if failed {
+        Redirect::to("/approvals?err=Approved%2C+but+the+operation+itself+failed+%E2%80%94+the+agent+sees+the+error")
+    } else {
+        Redirect::to("/approvals?ok=Approved+and+run+%E2%80%94+the+agent+sees+the+result")
+    }
+}
+
+pub async fn deny_action(State(state): State<SharedState>, Path(id): Path<String>) -> Redirect {
+    match crate::approvals::resolve(&state.paths, &id, crate::approvals::State::Denied, None) {
+        Ok(()) => Redirect::to("/approvals?ok=Denied+%E2%80%94+the+agent+is+told+no"),
+        Err(e) => Redirect::to(&format!(
+            "/approvals?err={}",
+            urlencoding::encode(&format!("{e:#}"))
+        )),
+    }
+}
+
 pub async fn fleet(
     State(state): State<SharedState>,
     Query(flash): Query<Flash>,
@@ -2551,7 +2749,9 @@ fn key_availability(headers: &HeaderMap) -> crate::webauthn::Availability {
         .get("host")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("localhost");
-    let proto = headers.get("x-forwarded-proto").and_then(|v| v.to_str().ok());
+    let proto = headers
+        .get("x-forwarded-proto")
+        .and_then(|v| v.to_str().ok());
     crate::webauthn::availability(host, proto)
 }
 
@@ -2619,7 +2819,10 @@ pub async fn key_register_finish(
     } else {
         body.label.trim().to_string()
     };
-    match state.ceremonies.finish_registration(&body.handle, body.response) {
+    match state
+        .ceremonies
+        .finish_registration(&body.handle, body.response)
+    {
         Ok(passkey) => match serde_json::to_value(&passkey)
             .map_err(anyhow::Error::from)
             .and_then(|v| crate::auth::add_key(&state.paths, &label, &avail.rp_id, v))
@@ -2672,14 +2875,18 @@ pub async fn key_signin_finish(
     State(state): State<SharedState>,
     axum::Json(body): axum::Json<KeySignin>,
 ) -> Response {
-    match state.ceremonies.finish_authentication(&body.handle, body.response) {
+    match state
+        .ceremonies
+        .finish_authentication(&body.handle, body.response)
+    {
         Ok(result) => {
             let cred_id: &[u8] = result.cred_id().as_ref();
             match crate::auth::session_from_key(&state.paths, cred_id, "security key") {
                 Ok(token) => {
                     let mut resp =
                         axum::Json(serde_json::json!({ "ok": true, "next": "/" })).into_response();
-                    if let Ok(cookie) = HeaderValue::from_str(&crate::auth::session_cookie(&token)) {
+                    if let Ok(cookie) = HeaderValue::from_str(&crate::auth::session_cookie(&token))
+                    {
                         resp.headers_mut().insert(header::SET_COOKIE, cookie);
                     }
                     resp

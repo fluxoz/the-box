@@ -47,7 +47,10 @@ async fn mcp_post(app: &Router, body: Value, bearer: Option<&str>) -> (StatusCod
         .unwrap();
     let status = response.status();
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
-    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
 }
 
 async fn redeem(app: &Router, content_type: &str, body: String) -> (StatusCode, Value) {
@@ -65,7 +68,10 @@ async fn redeem(app: &Router, content_type: &str, body: String) -> (StatusCode, 
         .unwrap();
     let status = response.status();
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
-    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
 }
 
 /// What the 401 signpost tells agents to send: a JSON body. This exact request
@@ -186,7 +192,11 @@ async fn get_pair(app: &Router, proxied: bool) -> (StatusCode, String) {
     if proxied {
         b = b.header("x-forwarded-for", "9.9.9.9");
     }
-    let resp = app.clone().oneshot(b.body(Body::empty()).unwrap()).await.unwrap();
+    let resp = app
+        .clone()
+        .oneshot(b.body(Body::empty()).unwrap())
+        .await
+        .unwrap();
     let status = resp.status();
     let bytes = resp.into_body().collect().await.unwrap().to_bytes();
     (status, String::from_utf8_lossy(&bytes).to_string())
@@ -197,7 +207,11 @@ async fn post_claim(app: &Router, proxied: bool) -> (StatusCode, Option<String>,
     if proxied {
         b = b.header("x-forwarded-for", "9.9.9.9");
     }
-    let resp = app.clone().oneshot(b.body(Body::empty()).unwrap()).await.unwrap();
+    let resp = app
+        .clone()
+        .oneshot(b.body(Body::empty()).unwrap())
+        .await
+        .unwrap();
     let status = resp.status();
     let s = |k: &str| {
         resp.headers()
@@ -217,22 +231,33 @@ async fn first_run_claim_flow() {
     // Fresh box on the LAN: /pair offers to claim.
     let (s, body) = get_pair(&app, false).await;
     assert_eq!(s, StatusCode::OK);
-    assert!(body.contains("Claim this Box"), "fresh box should offer claim");
+    assert!(
+        body.contains("Claim this Box"),
+        "fresh box should offer claim"
+    );
 
     // Through a tunnel (proxied): no claim offered, and claiming is refused.
     let (_s, pbody) = get_pair(&app, true).await;
-    assert!(!pbody.contains("Claim this Box"), "proxied /pair must not offer claim");
+    assert!(
+        !pbody.contains("Claim this Box"),
+        "proxied /pair must not offer claim"
+    );
     let (s, loc, cookie) = post_claim(&app, true).await;
     assert_eq!(s, StatusCode::SEE_OTHER);
     assert!(loc.unwrap().contains("local+network"));
     assert!(cookie.is_none());
-    assert!(boxd::auth::is_claimable(&paths), "still unclaimed after a tunnel attempt");
+    assert!(
+        boxd::auth::is_claimable(&paths),
+        "still unclaimed after a tunnel attempt"
+    );
 
     // From the LAN: claiming mints the first session (a cookie) and redirects home.
     let (s, loc, cookie) = post_claim(&app, false).await;
     assert_eq!(s, StatusCode::SEE_OTHER);
     assert_eq!(loc.as_deref(), Some("/?ok=Box+claimed"));
-    assert!(cookie.expect("claim sets a session cookie").contains("box_session="));
+    assert!(cookie
+        .expect("claim sets a session cookie")
+        .contains("box_session="));
 
     // Now claimed: /pair reverts to code entry, and a second claim is refused.
     assert!(!boxd::auth::is_claimable(&paths));

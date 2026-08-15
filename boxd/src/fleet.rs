@@ -68,15 +68,11 @@ pub fn self_health(paths: &Paths) -> CoarseHealth {
     let config = BoxConfig::load(paths).unwrap_or_default();
     let services = config.services.len();
     // Configured-but-stale: no backup yet, or the last one is over a day old.
-    let backup_stale = config
-        .backup
-        .as_ref()
-        .filter(|b| b.enabled)
-        .map(|_| {
-            crate::backup::last_backup_age(paths)
-                .map(|age| age > chrono::Duration::days(1))
-                .unwrap_or(true)
-        });
+    let backup_stale = config.backup.as_ref().filter(|b| b.enabled).map(|_| {
+        crate::backup::last_backup_age(paths)
+            .map(|age| age > chrono::Duration::days(1))
+            .unwrap_or(true)
+    });
     CoarseHealth {
         id: name.clone(),
         name,
@@ -148,7 +144,11 @@ fn run_with_deadline(cmd: &str, args: &[&str], secs: u64) -> Option<std::process
                     use std::io::Read;
                     let _ = out.read_to_end(&mut stdout);
                 }
-                return Some(std::process::Output { status, stdout, stderr: Vec::new() });
+                return Some(std::process::Output {
+                    status,
+                    stdout,
+                    stderr: Vec::new(),
+                });
             }
             Ok(None) => {
                 if std::time::Instant::now() >= deadline {
@@ -184,7 +184,11 @@ fn fetch_health(address: &str, port: u16) -> Option<CoarseHealth> {
     // IPv6 literals need brackets in a URL — without them a v6-only peer
     // (exactly what mDNS resolves first on some networks) reads as a garbage
     // port and its health silently shows unreachable.
-    let host = if address.contains(':') { format!("[{address}]") } else { address.to_string() };
+    let host = if address.contains(':') {
+        format!("[{address}]")
+    } else {
+        address.to_string()
+    };
     let url = format!("http://{host}:{port}/api/v1/health");
     let out = Command::new("curl")
         .args(["-s", "--max-time", "2", &url])
@@ -238,7 +242,11 @@ pub fn parse_tailscale_peers(status: &Value, tag: &str) -> Vec<(String, String)>
         let address = peer
             .get("TailscaleIPs")
             .and_then(Value::as_array)
-            .and_then(|ips| ips.iter().filter_map(Value::as_str).find(|ip| ip.contains('.')))
+            .and_then(|ips| {
+                ips.iter()
+                    .filter_map(Value::as_str)
+                    .find(|ip| ip.contains('.'))
+            })
             .unwrap_or_default()
             .to_string();
         if host.is_empty() || address.is_empty() {

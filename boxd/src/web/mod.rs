@@ -69,6 +69,15 @@ impl AppState {
 
 pub type SharedState = Arc<AppState>;
 
+/// Who is making this request, resolved by the auth middleware from the
+/// session the token belongs to. The destructive-op gate reads `autonomous`;
+/// approval records read `label` so the human sees who asked.
+#[derive(Clone, Debug)]
+pub struct Caller {
+    pub label: String,
+    pub autonomous: bool,
+}
+
 pub fn router(state: SharedState) -> Router {
     Router::new()
         .route("/", get(pages::index))
@@ -94,6 +103,10 @@ pub fn router(state: SharedState) -> Router {
         .route("/devices/add", post(pages::add_device))
         .route("/devices/agent", post(pages::create_agent_connection))
         .route("/devices/{id}/revoke", post(pages::revoke_device))
+        .route("/devices/{id}/autonomy", post(pages::set_device_autonomy))
+        .route("/approvals", get(pages::approvals))
+        .route("/approvals/{id}/approve", post(pages::approve_action))
+        .route("/approvals/{id}/deny", post(pages::deny_action))
         .route("/devices/keys/start", post(pages::key_register_start))
         .route("/devices/keys/finish", post(pages::key_register_finish))
         .route("/devices/keys/{id}/revoke", post(pages::revoke_key))
@@ -105,7 +118,10 @@ pub fn router(state: SharedState) -> Router {
         .route("/backup/restore", post(pages::restore_backup))
         .route("/backup/config-remote", post(pages::set_config_remote))
         .route("/backup/config-push", post(pages::push_config_now))
-        .route("/recreate", get(pages::recreate_page).post(pages::recreate_run))
+        .route(
+            "/recreate",
+            get(pages::recreate_page).post(pages::recreate_run),
+        )
         .route("/network", get(pages::network))
         .route("/network/connect", post(pages::connect_enroll))
         .route("/network/connect/down", post(pages::connect_down))
@@ -145,9 +161,10 @@ async fn require_auth(
         // `/sites/<name>/` is credential-free on your own network — that is
         // what the console promises. It is NOT credential-free through the
         // tunnel unless the operator published that service.
-        if let Some(name) = path.strip_prefix("/sites/").map(|rest| {
-            rest.split('/').next().unwrap_or_default().to_string()
-        }) {
+        if let Some(name) = path
+            .strip_prefix("/sites/")
+            .map(|rest| rest.split('/').next().unwrap_or_default().to_string())
+        {
             if !name.is_empty() && crate::auth::is_proxied(request.headers()) {
                 match sites::site_is_public(&state, &name) {
                     Some(true) => {}
@@ -181,10 +198,17 @@ async fn require_auth(
     // also reach 127.0.0.1:2693 — so a deployed app could mint a pairing code
     // and take the console over. A session token requires reading the data dir
     // (0700, boxd's own), which those services cannot do.
-    let authorized = crate::auth::extract_token(headers)
-        .is_some_and(|t| crate::auth::verify(&state.paths, &t));
+    let session = crate::auth::extract_token(headers)
+        .and_then(|t| crate::auth::session_for(&state.paths, &t));
     let _ = peer;
-    if authorized {
+    if let Some(session) = session {
+        // Handlers that must know WHO is asking (the destructive-op gate)
+        // read this; everything else ignores it.
+        let mut request = request;
+        request.extensions_mut().insert(Caller {
+            label: session.label,
+            autonomous: session.autonomous,
+        });
         return next.run(request).await;
     }
     let wants_html = headers

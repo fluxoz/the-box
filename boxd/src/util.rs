@@ -131,7 +131,10 @@ pub fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
         // pushed and served without credentials.
         let kind = entry.file_type()?;
         if kind.is_symlink() {
-            tracing::warn!("skipping symlink {} while copying a source tree", from.display());
+            tracing::warn!(
+                "skipping symlink {} while copying a source tree",
+                from.display()
+            );
             continue;
         }
         if kind.is_dir() {

@@ -77,6 +77,12 @@ obvious within an hour on real hardware.
 | Poller failures were visible only in server logs; a link failing for a week looked like a healthy one | **fixed** — every sync records its outcome; `list_services` carries `last_sync` (when, ok, commit or error) |
 | Repos that need a build step | **fixed and proven live** (2026-08-13, on the real Pi) — `link_repo` takes `build_command` (plus `install_command` / `output_dir` when detection isn't enough) and the build runs on the Box in the sandboxed builder: a trusted Node image shipped in the OS closure, install with the network, build with `--network=none`, hard memory/pids/time limits. First real run: npm pulled 13 packages from the registry, vite 7 built offline in 245 ms, the Box served the hashed bundle. Build failures return the tail of the build log — the compiler's words, not "it failed". |
 
+## The leash (destructive operations)
+
+| Pain | Status |
+|---|---|
+| Any paired agent could wipe a machine, delete a service, or restore over live data on its own say-so — "your LAN, your trust" was the whole model, which reads badly the moment a stranger's agent is the operator | **fixed** — `provision_machine`, `delete_service` and `backup_restore` now QUEUE for a human tap on the console's Approvals page unless the session was explicitly granted autonomy in the device list. The agent gets a `pending_approval` id, follows it with `approval_status`, and an approval runs the exact call it made. Agents: never re-submit to nag — the queue is the ask; talk to the person instead |
+
 ## Flows an agent should know (the recipes)
 
 0. **Bootstrap** — the only two steps that are not MCP, both by nature:

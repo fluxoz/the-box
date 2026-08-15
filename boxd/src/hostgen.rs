@@ -241,11 +241,7 @@ mod tests {
         let paths = Paths::new(tmp.path().join("data"));
         paths.ensure().unwrap();
         let out = tmp.path().join("repo");
-        let spec = HostSpec::new(
-            "demo-box",
-            "github:fluxoz/the-box",
-            "x86_64-linux",
-        );
+        let spec = HostSpec::new("demo-box", "github:fluxoz/the-box", "x86_64-linux");
 
         write_host_repo(&paths, &sample_config(), &spec, &out).unwrap();
 
@@ -335,18 +331,23 @@ mod tests {
         let spec = HostSpec::new("demo-box", "path:/platform", "x86_64-linux");
         write_host_repo(&paths, &config, &spec, &out).unwrap();
 
-        let module = std::fs::read_to_string(
-            out.join("nodes/hosts/demo-box/services/db.nix"),
-        )
-        .unwrap();
-        assert!(module.contains("port = 8042;"), "port must be real: {module}");
-        assert!(!module.contains("port = 0;"), "port must not be 0: {module}");
+        let module =
+            std::fs::read_to_string(out.join("nodes/hosts/demo-box/services/db.nix")).unwrap();
+        assert!(
+            module.contains("port = 8042;"),
+            "port must be real: {module}"
+        );
+        assert!(
+            !module.contains("port = 0;"),
+            "port must not be 0: {module}"
+        );
         assert!(
             module.contains("secretEnvFile = ./db-env.age;"),
             "module must point at its secrets: {module}"
         );
         assert!(
-            out.join("nodes/hosts/demo-box/services/db-env.age").exists(),
+            out.join("nodes/hosts/demo-box/services/db-env.age")
+                .exists(),
             "the encrypted env file must ship with the module"
         );
     }

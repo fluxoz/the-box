@@ -39,8 +39,7 @@ fn app_with_builds() -> (TempDir, Router, String) {
     paths.ensure().unwrap();
     let builder = LocalBuilder::new(&paths);
     let token = boxd::auth::mint_session(&paths, "test-agent").unwrap();
-    let state =
-        AppState::with_build_exec(paths, Box::new(builder), boxd::build::BuildExec::Direct);
+    let state = AppState::with_build_exec(paths, Box::new(builder), boxd::build::BuildExec::Direct);
     (tmp, web::router(state), token)
 }
 
@@ -83,11 +82,7 @@ async fn get(app: &Router, path: &str, host: &str, token: Option<&str>) -> (Stat
     }
     let response = app
         .clone()
-        .oneshot(
-            req.extension(local())
-                .body(Body::empty())
-                .unwrap(),
-        )
+        .oneshot(req.extension(local()).body(Body::empty()).unwrap())
         .await
         .unwrap();
     let status = response.status();
@@ -167,7 +162,12 @@ async fn mcp_handshake_and_tools() {
         assert!(names.contains(&expected), "missing tool {expected}");
     }
 
-    let unknown = rpc(&app, &token, json!({"jsonrpc": "2.0", "id": 2, "method": "nope"})).await;
+    let unknown = rpc(
+        &app,
+        &token,
+        json!({"jsonrpc": "2.0", "id": 2, "method": "nope"}),
+    )
+    .await;
     assert_eq!(unknown["error"]["code"], -32601);
 }
 
@@ -181,7 +181,12 @@ async fn mcp_handshake_and_tools() {
 async fn mcp_forge_tools_refuse_with_the_missing_piece_named() {
     let (_tmp, app, token) = app();
 
-    let text = |v: &Value| v["result"]["content"][0]["text"].as_str().unwrap().to_string();
+    let text = |v: &Value| {
+        v["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
 
     // The catalogue is honest about the difference between the two forges.
     let options = call_tool(&app, &token, "forge_options", json!({})).await;
@@ -271,7 +276,12 @@ async fn mcp_forge_tools_refuse_with_the_missing_piece_named() {
 async fn mcp_repo_linked_service_follows_the_repository() {
     let (_tmp, app, token) = app();
 
-    let text = |v: &Value| v["result"]["content"][0]["text"].as_str().unwrap().to_string();
+    let text = |v: &Value| {
+        v["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
 
     // A real upstream with a first commit.
     let upstream = TempDir::new().unwrap();
@@ -284,7 +294,11 @@ async fn mcp_repo_linked_service_follows_the_repository() {
             .env("GIT_COMMITTER_EMAIL", "t@t")
             .output()
             .unwrap();
-        assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+        assert!(
+            out.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
     };
     let up = upstream.path().to_str().unwrap().to_string();
     git(&["init", "-q", "-b", "main", &up]);
@@ -297,7 +311,9 @@ async fn mcp_repo_linked_service_follows_the_repository() {
     // cannot have — so the link is written the way a restored config would
     // arrive: directly in box.toml.
     let deploy = call_tool(
-        &app, &token, "deploy_static_site",
+        &app,
+        &token,
+        "deploy_static_site",
         json!({ "name": "blog", "index_html": "placeholder" }),
     )
     .await;
@@ -346,9 +362,18 @@ async fn mcp_repo_linked_service_follows_the_repository() {
     // The link is visible to agents — including whether the last pull worked,
     // because a quietly-failing poller must not look like a healthy one.
     let services = call_tool(&app, &token, "list_services", json!({})).await;
-    assert!(text(&services).contains("local/blog"), "{}", text(&services));
+    assert!(
+        text(&services).contains("local/blog"),
+        "{}",
+        text(&services)
+    );
     let parsed: Value = serde_json::from_str(&text(&services)).unwrap();
-    let blog = parsed.as_array().unwrap().iter().find(|s| s["name"] == "blog").unwrap();
+    let blog = parsed
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["name"] == "blog")
+        .unwrap();
     assert_eq!(blog["last_sync"]["ok"], true, "{blog}");
 
     // And the end-to-end checker tells the truth about an unpublished service.
@@ -358,9 +383,15 @@ async fn mcp_repo_linked_service_follows_the_repository() {
     let off = call_tool(&app, &token, "unlink_repo", json!({ "name": "blog" })).await;
     assert_eq!(off["result"]["isError"], false, "{off}");
     let (_, body) = get(&app, "/sites/blog/", "127.0.0.1", Some(&token)).await;
-    assert!(body.contains("pulled v2"), "unlink must not undeploy: {body}");
+    assert!(
+        body.contains("pulled v2"),
+        "unlink must not undeploy: {body}"
+    );
     let sync = call_tool(&app, &token, "sync_repo", json!({ "name": "blog" })).await;
-    assert_eq!(sync["result"]["isError"], true, "sync after unlink must refuse");
+    assert_eq!(
+        sync["result"]["isError"], true,
+        "sync after unlink must refuse"
+    );
 }
 
 /// The build step, end to end and offline: a repository that is NOT a file
@@ -371,7 +402,12 @@ async fn mcp_repo_linked_service_follows_the_repository() {
 #[tokio::test]
 async fn mcp_repo_with_build_step_builds_then_deploys() {
     let (_tmp, app, token) = app_with_builds();
-    let text = |v: &Value| v["result"]["content"][0]["text"].as_str().unwrap().to_string();
+    let text = |v: &Value| {
+        v["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
 
     let upstream = TempDir::new().unwrap();
     let git = |args: &[&str]| {
@@ -383,7 +419,11 @@ async fn mcp_repo_with_build_step_builds_then_deploys() {
             .env("GIT_COMMITTER_EMAIL", "t@t")
             .output()
             .unwrap();
-        assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+        assert!(
+            out.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
     };
     let up = upstream.path().to_str().unwrap().to_string();
     git(&["init", "-q", "-b", "main", &up]);
@@ -394,7 +434,9 @@ async fn mcp_repo_with_build_step_builds_then_deploys() {
     git(&["-C", &up, "commit", "-qm", "v1"]);
 
     let deploy = call_tool(
-        &app, &token, "deploy_static_site",
+        &app,
+        &token,
+        "deploy_static_site",
         json!({ "name": "site", "index_html": "placeholder" }),
     )
     .await;
@@ -444,16 +486,136 @@ async fn mcp_repo_with_build_step_builds_then_deploys() {
     git(&["-C", &up, "rm", "-q", "page.src"]);
     git(&["-C", &up, "commit", "-qm", "break the build"]);
     let sync = call_tool(&app, &token, "sync_repo", json!({ "name": "site" })).await;
-    assert_eq!(sync["result"]["isError"], true, "a broken build must not deploy");
+    assert_eq!(
+        sync["result"]["isError"], true,
+        "a broken build must not deploy"
+    );
     assert!(text(&sync).contains("build log"), "{}", text(&sync));
     let (_, body) = get(&app, "/sites/site/", "127.0.0.1", Some(&token)).await;
-    assert!(body.contains("assembled v2"), "a broken build must not take the site down: {body}");
+    assert!(
+        body.contains("assembled v2"),
+        "a broken build must not take the site down: {body}"
+    );
 
     // And the failure is visible later, not just in the moment.
     let services = call_tool(&app, &token, "list_services", json!({})).await;
     let parsed: Value = serde_json::from_str(&text(&services)).unwrap();
-    let site = parsed.as_array().unwrap().iter().find(|s| s["name"] == "site").unwrap();
+    let site = parsed
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["name"] == "site")
+        .unwrap();
     assert_eq!(site["last_sync"]["ok"], false, "{site}");
+}
+
+/// The trust ceremony, end to end: a destructive call from a normal session
+/// queues instead of running; the console tap runs the exact call; a denial
+/// is recorded and nothing happens; an autonomous session skips the queue.
+#[tokio::test]
+async fn destructive_ops_wait_for_the_human_tap() {
+    let (_tmp, app, token) = app();
+    let text = |v: &Value| {
+        v["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    let post = |path: String, token: String| {
+        let app = app.clone();
+        async move {
+            app.oneshot(
+                Request::post(path.as_str())
+                    .header("authorization", format!("Bearer {token}"))
+                    .extension(local())
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+            .status()
+        }
+    };
+
+    let deploy = call_tool(
+        &app,
+        &token,
+        "deploy_static_site",
+        json!({ "name": "blog", "index_html": "precious" }),
+    )
+    .await;
+    assert_eq!(deploy["result"]["isError"], false, "{deploy}");
+
+    // 1. The ask queues; nothing is deleted.
+    let del = call_tool(&app, &token, "delete_service", json!({ "name": "blog" })).await;
+    assert_eq!(del["result"]["isError"], false, "{del}");
+    let body: Value = serde_json::from_str(&text(&del)).unwrap();
+    let id = body["pending_approval"]
+        .as_str()
+        .expect("a pending id")
+        .to_string();
+    assert!(body["would"].as_str().unwrap().contains("blog"), "{body}");
+    let services = call_tool(&app, &token, "list_services", json!({})).await;
+    assert!(
+        text(&services).contains("blog"),
+        "not deleted before approval"
+    );
+
+    let st = call_tool(&app, &token, "approval_status", json!({ "id": id })).await;
+    assert!(text(&st).contains("pending"), "{}", text(&st));
+
+    // 2. The tap runs the exact call.
+    let status = post(format!("/approvals/{id}/approve"), token.clone()).await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    let services = call_tool(&app, &token, "list_services", json!({})).await;
+    assert!(
+        !text(&services).contains("blog"),
+        "approval must actually delete"
+    );
+    let st = call_tool(&app, &token, "approval_status", json!({ "id": id })).await;
+    assert!(text(&st).contains("approved"), "{}", text(&st));
+    assert!(
+        text(&st).contains("deleted"),
+        "the agent sees the result: {}",
+        text(&st)
+    );
+
+    // 3. A denial is a recorded no.
+    let deploy = call_tool(
+        &app,
+        &token,
+        "deploy_static_site",
+        json!({ "name": "diary", "index_html": "also precious" }),
+    )
+    .await;
+    assert_eq!(deploy["result"]["isError"], false, "{deploy}");
+    let del = call_tool(&app, &token, "delete_service", json!({ "name": "diary" })).await;
+    let body: Value = serde_json::from_str(&text(&del)).unwrap();
+    let id2 = body["pending_approval"].as_str().unwrap().to_string();
+    let status = post(format!("/approvals/{id2}/deny"), token.clone()).await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    let st = call_tool(&app, &token, "approval_status", json!({ "id": id2 })).await;
+    assert!(text(&st).contains("denied"), "{}", text(&st));
+    let services = call_tool(&app, &token, "list_services", json!({})).await;
+    assert!(text(&services).contains("diary"), "denied means untouched");
+
+    // 4. An explicitly autonomous session skips the queue.
+    let paths = boxd::paths::Paths::new(_tmp.path().to_path_buf());
+    let session = boxd::auth::list(&paths)
+        .into_iter()
+        .find(|s| s.label == "test-agent")
+        .expect("the test session");
+    assert!(!session.autonomous, "off by default");
+    boxd::auth::set_autonomous(&paths, &session.id, true).unwrap();
+    let del = call_tool(&app, &token, "delete_service", json!({ "name": "diary" })).await;
+    assert_eq!(del["result"]["isError"], false, "{del}");
+    assert!(
+        text(&del).contains("deleted"),
+        "autonomous runs immediately: {}",
+        text(&del)
+    );
+    let services = call_tool(&app, &token, "list_services", json!({})).await;
+    assert!(!text(&services).contains("diary"), "{}", text(&services));
 }
 
 /// A machine with no sandbox refuses a build-step sync with an explanation,
@@ -461,7 +623,12 @@ async fn mcp_repo_with_build_step_builds_then_deploys() {
 #[tokio::test]
 async fn mcp_build_step_without_a_sandbox_is_refused_honestly() {
     let (_tmp, app, token) = app(); // BuildExec::detect() on a test machine: Unavailable
-    let text = |v: &Value| v["result"]["content"][0]["text"].as_str().unwrap().to_string();
+    let text = |v: &Value| {
+        v["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
 
     let upstream = TempDir::new().unwrap();
     let up = upstream.path().to_str().unwrap().to_string();
@@ -482,7 +649,9 @@ async fn mcp_build_step_without_a_sandbox_is_refused_honestly() {
     git(&["-C", &up, "commit", "-qm", "v1"]);
 
     let deploy = call_tool(
-        &app, &token, "deploy_static_site",
+        &app,
+        &token,
+        "deploy_static_site",
         json!({ "name": "site", "index_html": "placeholder" }),
     )
     .await;
@@ -546,8 +715,14 @@ async fn mcp_deploy_host_routing_and_rollback() {
     // here, and "pairing required" with no next step once sent one to SSH.
     let (status, body) = get(&app, "/", "localhost:2693", None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
-    assert!(body.contains("/pair/redeem"), "the 401 must say how to pair: {body}");
-    assert!(body.contains("Bearer"), "the 401 must say how to authenticate: {body}");
+    assert!(
+        body.contains("/pair/redeem"),
+        "the 401 must say how to pair: {body}"
+    );
+    assert!(
+        body.contains("Bearer"),
+        "the 401 must say how to authenticate: {body}"
+    );
 
     // With an operator session it is reachable as before.
     let (status, body) = get(&app, "/", "localhost:2693", Some(&token)).await;

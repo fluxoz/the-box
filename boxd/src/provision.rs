@@ -71,8 +71,10 @@ pub struct Provisioned {
 /// JSON for an agent.
 pub fn run(opts: &ProvisionOpts) -> Result<Provisioned> {
     if opts.ssh_keys.is_empty() {
-        bail!("no SSH key to authorize on the Box — the agent needs a key on it \
-               to connect after provisioning");
+        bail!(
+            "no SSH key to authorize on the Box — the agent needs a key on it \
+               to connect after provisioning"
+        );
     }
 
     // 1. Mint a one-time pairing code. Only its hash rides in the orders (seeded
@@ -91,7 +93,10 @@ pub fn run(opts: &ProvisionOpts) -> Result<Provisioned> {
 
     // 3. Ship the orders over SSH and start the takeover. The installer kexecs,
     //    so the connection drops mid-command — expected, not an error.
-    eprintln!("→ shipping orders to {} and starting the takeover …", opts.target);
+    eprintln!(
+        "→ shipping orders to {} and starting the takeover …",
+        opts.target
+    );
     ship_and_install(opts, &orders_b64)?;
 
     // 4. Wait for the machine to wipe, reinstall, reboot, and come up as a Box.
@@ -325,7 +330,10 @@ fn wait_for_box(address: &str, timeout_secs: u64) -> Result<()> {
     let mut last = String::new();
     while start.elapsed() < deadline {
         std::thread::sleep(Duration::from_secs(5));
-        match Command::new("curl").args(["-fsS", "-m", "5", &url]).output() {
+        match Command::new("curl")
+            .args(["-fsS", "-m", "5", &url])
+            .output()
+        {
             Ok(o) if o.status.success() => {
                 if serde_json::from_slice::<Value>(&o.stdout)
                     .map(|v| v.is_object())
@@ -380,7 +388,10 @@ mod tests {
         assert_eq!(base64_encode(b"box"), "Ym94");
         assert_eq!(base64_encode(b"Man"), "TWFu");
         assert_eq!(base64_encode(b"hello"), "aGVsbG8=");
-        assert_eq!(base64_encode(b"any carnal pleasure."), "YW55IGNhcm5hbCBwbGVhc3VyZS4=");
+        assert_eq!(
+            base64_encode(b"any carnal pleasure."),
+            "YW55IGNhcm5hbCBwbGVhc3VyZS4="
+        );
     }
 
     #[test]
@@ -421,8 +432,7 @@ mod tests {
 
     #[test]
     fn resolve_keys_accepts_literals_and_rejects_junk() {
-        let keys =
-            resolve_ssh_keys(vec!["ssh-ed25519 AAAAC3Nz agent@host".to_string()]).unwrap();
+        let keys = resolve_ssh_keys(vec!["ssh-ed25519 AAAAC3Nz agent@host".to_string()]).unwrap();
         assert_eq!(keys.len(), 1);
         assert!(resolve_ssh_keys(vec!["not-a-key".to_string()]).is_err());
     }

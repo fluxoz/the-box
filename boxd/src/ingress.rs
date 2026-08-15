@@ -140,8 +140,9 @@ impl IngressProvider for CloudflareTunnel {
             bail!("no Cloudflare tunnel token saved yet — paste one first");
         }
         match cfg.zone.as_deref().map(str::trim) {
-            Some(z) if !z.is_empty() => crate::config::validate_domain(z)
-                .context("the domain this Box publishes under")?,
+            Some(z) if !z.is_empty() => {
+                crate::config::validate_domain(z).context("the domain this Box publishes under")?
+            }
             _ => bail!("set the domain this Box publishes under, e.g. example.com"),
         }
         Ok(())
@@ -154,7 +155,12 @@ impl IngressProvider for CloudflareTunnel {
         cmd.args(["tunnel", "run"]).env("TUNNEL_TOKEN", token);
         Ok(Some(cmd))
     }
-    fn url_for(&self, cfg: &IngressConfig, service: &str, _runtime: Option<&str>) -> Option<String> {
+    fn url_for(
+        &self,
+        cfg: &IngressConfig,
+        service: &str,
+        _runtime: Option<&str>,
+    ) -> Option<String> {
         let zone = cfg.zone.as_deref()?.trim();
         if zone.is_empty() {
             return None;
@@ -227,7 +233,12 @@ impl IngressProvider for CloudflareQuick {
         ]);
         Ok(Some(cmd))
     }
-    fn url_for(&self, _cfg: &IngressConfig, _service: &str, runtime: Option<&str>) -> Option<String> {
+    fn url_for(
+        &self,
+        _cfg: &IngressConfig,
+        _service: &str,
+        runtime: Option<&str>,
+    ) -> Option<String> {
         // The address is assigned to us at runtime, and every published service
         // answers on it by Host header — which a temporary address cannot
         // carry. So this is the address of the Box, not of one service.
@@ -331,7 +342,12 @@ impl IngressProvider for TailscaleFunnel {
     fn deactivate(&self, _paths: &Paths) -> Result<()> {
         run_ok(&["tailscale", "funnel", "--https=443", "off"])
     }
-    fn url_for(&self, _cfg: &IngressConfig, _service: &str, runtime: Option<&str>) -> Option<String> {
+    fn url_for(
+        &self,
+        _cfg: &IngressConfig,
+        _service: &str,
+        runtime: Option<&str>,
+    ) -> Option<String> {
         runtime
             .map(|base| format!("{base}/"))
             .or_else(|| tailnet_address().map(|base| format!("{base}/")))
@@ -486,7 +502,11 @@ pub fn try_self_mint(token: &str) -> Option<String> {
     let groups = cfapi::call(token, &cfapi::list_permission_groups()).ok()?;
     let (tunnel, dns, zone) = cfapi::needed_group_ids(&groups).ok()?;
     let name = format!("The Box ({})", crate::fleet::hostname());
-    let created = cfapi::call(token, &cfapi::create_child_token(&name, &tunnel, &dns, &zone)).ok()?;
+    let created = cfapi::call(
+        token,
+        &cfapi::create_child_token(&name, &tunnel, &dns, &zone),
+    )
+    .ok()?;
     let child = created
         .get("result")
         .and_then(|r| r.get("value"))
@@ -517,7 +537,11 @@ pub fn remint_from_parent(paths: &Paths) -> Result<Option<String>> {
 /// dashboard collapse into one request. The credential never leaves this Box —
 /// an agent asks for the outcome and never sees the token, which matters
 /// because a Cloudflare token can rewrite DNS for every domain on the account.
-pub fn setup_cloudflare(paths: &Paths, zone: &str, hostname_label: Option<&str>) -> Result<SetupOutcome> {
+pub fn setup_cloudflare(
+    paths: &Paths,
+    zone: &str,
+    hostname_label: Option<&str>,
+) -> Result<SetupOutcome> {
     match setup_cloudflare_inner(paths, zone, hostname_label) {
         Err(e) if format!("{e:#}").contains("Authentication error") => {
             // The working token went bad (revoked, expired, under-scoped). If
@@ -697,7 +721,11 @@ mod tests {
         // Every rung that needs the person to do something says what.
         for p in providers() {
             if p.capabilities().needs_account {
-                assert!(!p.steps().is_empty(), "{} asks for an account silently", p.id());
+                assert!(
+                    !p.steps().is_empty(),
+                    "{} asks for an account silently",
+                    p.id()
+                );
             }
         }
     }

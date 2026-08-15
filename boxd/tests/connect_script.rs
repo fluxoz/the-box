@@ -62,16 +62,32 @@ fn serve() -> Server {
     let addr = format!("127.0.0.1:{port}");
     let data_path = data.path().to_path_buf();
     let child = Command::new(env!("CARGO_BIN_EXE_boxd"))
-        .args(["--data-dir", data.path().to_str().unwrap(), "serve", "--listen", &addr])
+        .args([
+            "--data-dir",
+            data.path().to_str().unwrap(),
+            "serve",
+            "--listen",
+            &addr,
+        ])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
         .expect("spawning boxd serve");
     // Into the struct immediately: every exit from here on — including the
     // panic below — goes through Drop, which kills and reaps the child.
-    let server = Server { child, addr, _data: data, data_path };
+    let server = Server {
+        child,
+        addr,
+        _data: data,
+        data_path,
+    };
     for _ in 0..100 {
-        let (ok, _) = curl(&["-fsS", "-m", "2", &format!("http://{}/api/v1/health", server.addr)]);
+        let (ok, _) = curl(&[
+            "-fsS",
+            "-m",
+            "2",
+            &format!("http://{}/api/v1/health", server.addr),
+        ]);
         if ok {
             return server;
         }
@@ -115,10 +131,17 @@ fn cursor_token(home: &TempDir) -> String {
 
 fn mcp_tools_list(addr: &str, token: &str) -> bool {
     let (ok, body) = curl(&[
-        "-fsS", "-m", "5", "-X", "POST",
-        "-H", &format!("Authorization: Bearer {token}"),
-        "-H", "Content-Type: application/json",
-        "-d", r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#,
+        "-fsS",
+        "-m",
+        "5",
+        "-X",
+        "POST",
+        "-H",
+        &format!("Authorization: Bearer {token}"),
+        "-H",
+        "Content-Type: application/json",
+        "-d",
+        r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#,
         &format!("http://{addr}/mcp"),
     ]);
     ok && body.contains("link_repo")
@@ -137,12 +160,19 @@ fn the_one_liner_claims_a_fresh_box_and_wires_the_agent() {
 
     let (ok, out) = run_connect(&server, &home, &[]);
     assert!(ok, "connect failed:\n{out}");
-    assert!(out.contains("yours now"), "should claim the fresh box: {out}");
+    assert!(
+        out.contains("yours now"),
+        "should claim the fresh box: {out}"
+    );
 
     // Both configs written, same working token.
     let token = cursor_token(&home);
-    let ws = std::fs::read_to_string(home.path().join(".codeium/windsurf/mcp_config.json")).unwrap();
-    assert!(ws.contains(&token), "windsurf config carries the same session");
+    let ws =
+        std::fs::read_to_string(home.path().join(".codeium/windsurf/mcp_config.json")).unwrap();
+    assert!(
+        ws.contains(&token),
+        "windsurf config carries the same session"
+    );
     assert!(
         mcp_tools_list(&server.addr, &token),
         "the token from the written config must drive /mcp"
@@ -151,7 +181,12 @@ fn the_one_liner_claims_a_fresh_box_and_wires_the_agent() {
     // And a second run against the now-claimed box, with a pairing code the
     // operator minted — the other door.
     let out = Command::new(env!("CARGO_BIN_EXE_boxd"))
-        .args(["--data-dir", server.data_path.to_str().unwrap(), "auth", "enroll"])
+        .args([
+            "--data-dir",
+            server.data_path.to_str().unwrap(),
+            "auth",
+            "enroll",
+        ])
         .output()
         .unwrap();
     let text = String::from_utf8_lossy(&out.stdout).to_string();
@@ -166,7 +201,10 @@ fn the_one_liner_claims_a_fresh_box_and_wires_the_agent() {
     let (ok, out) = run_connect(
         &server,
         &home2,
-        &[("THEBOX_CODE", code.as_str()), ("THEBOX_LABEL", "second-laptop")],
+        &[
+            ("THEBOX_CODE", code.as_str()),
+            ("THEBOX_LABEL", "second-laptop"),
+        ],
     );
     assert!(ok, "connect (claimed box) failed:\n{out}");
     let token2 = cursor_token(&home2);
@@ -175,12 +213,18 @@ fn the_one_liner_claims_a_fresh_box_and_wires_the_agent() {
 
     // The label the script sent is what the operator sees in the device list.
     let (ok, devices) = curl(&[
-        "-fsS", "-m", "5",
-        "-H", &format!("Authorization: Bearer {token}"),
+        "-fsS",
+        "-m",
+        "5",
+        "-H",
+        &format!("Authorization: Bearer {token}"),
         &format!("http://{}/devices", server.addr),
     ]);
     assert!(ok);
-    assert!(devices.contains("second-laptop"), "session label must show up: {devices}");
+    assert!(
+        devices.contains("second-laptop"),
+        "session label must show up: {devices}"
+    );
 }
 
 #[test]
@@ -191,7 +235,13 @@ fn a_wrong_code_fails_with_the_retry_story() {
     let server = serve();
     // Claim it first so the code door is the one being tested.
     let (ok, _) = curl(&[
-        "-fsS", "-m", "5", "-X", "POST", "-H", "Accept: application/json",
+        "-fsS",
+        "-m",
+        "5",
+        "-X",
+        "POST",
+        "-H",
+        "Accept: application/json",
         &format!("http://{}/pair/claim", server.addr),
     ]);
     assert!(ok, "claiming for setup");
@@ -199,7 +249,10 @@ fn a_wrong_code_fails_with_the_retry_story() {
     let home = TempDir::new().unwrap();
     let (ok, out) = run_connect(&server, &home, &[("THEBOX_CODE", "not-a-real-code")]);
     assert!(!ok, "a bad code must fail the script");
-    assert!(out.contains("expire"), "the failure must carry the retry story: {out}");
+    assert!(
+        out.contains("expire"),
+        "the failure must carry the retry story: {out}"
+    );
     assert!(
         !home.path().join(".cursor/mcp.json").exists(),
         "no config may be written without a session"

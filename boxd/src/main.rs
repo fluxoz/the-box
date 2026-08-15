@@ -497,9 +497,7 @@ fn main() -> Result<()> {
                         boxd::history::push(&paths)?;
                         println!("pushed config + encrypted secrets to {u}");
                     }
-                    None => println!(
-                        "no config remote set — run `boxd config remote <url>` first"
-                    ),
+                    None => println!("no config remote set — run `boxd config remote <url>` first"),
                 }
                 Ok(())
             }
@@ -535,7 +533,10 @@ fn main() -> Result<()> {
             CloudCmd::Status => {
                 let u = boxd::cloud::usage(&paths)?;
                 let bytes = u.get("bytes").and_then(|v| v.as_u64()).unwrap_or(0);
-                println!("managed backup: {:.2} MiB stored", bytes as f64 / 1_048_576.0);
+                println!(
+                    "managed backup: {:.2} MiB stored",
+                    bytes as f64 / 1_048_576.0
+                );
                 Ok(())
             }
             CloudCmd::Connect { hostname } => {
@@ -557,7 +558,10 @@ fn main() -> Result<()> {
                 Ok(())
             }
             ConnectCmd::Status => {
-                println!("{}", serde_json::to_string_pretty(&boxd::connect::status()?)?);
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&boxd::connect::status()?)?
+                );
                 Ok(())
             }
             ConnectCmd::Down => {
@@ -807,7 +811,10 @@ fn run_channel(paths: &Paths, action: ChannelCmd) -> Result<()> {
                     println!("host id:      {}", cfg.host_id);
                     println!("platform:     {}", cfg.platform_ref);
                     println!("system:       {}", cfg.system);
-                    println!("board:        {}", cfg.board.as_deref().unwrap_or("generic"));
+                    println!(
+                        "board:        {}",
+                        cfg.board.as_deref().unwrap_or("generic")
+                    );
                     println!("auto-update:  {}", cfg.auto_update);
                     println!(
                         "pinned to:    {}",

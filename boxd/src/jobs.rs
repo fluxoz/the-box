@@ -49,7 +49,9 @@ pub struct Job {
 
 impl Job {
     pub fn elapsed_secs(&self, now: i64) -> i64 {
-        self.finished_unix.unwrap_or(now).saturating_sub(self.started_unix)
+        self.finished_unix
+            .unwrap_or(now)
+            .saturating_sub(self.started_unix)
     }
 }
 
@@ -243,7 +245,8 @@ impl Registry {
                 id: job_id.clone(),
                 jobs: Arc::clone(&registry),
             };
-            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| work(&progress)));
+            let outcome =
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| work(&progress)));
             let (state, message) = match outcome {
                 Ok(Ok(msg)) => (State::Done, msg),
                 Ok(Err(e)) => (State::Failed, format!("{e:#}")),
@@ -387,6 +390,9 @@ mod tests {
         });
         let j = wait_for(&reg, &id, State::Done);
         assert!(j.log.len() <= LOG_LIMIT + 1, "log grew to {}", j.log.len());
-        assert!(j.log.iter().any(|l| l.contains(&format!("line {}", LOG_LIMIT + 49))));
+        assert!(j
+            .log
+            .iter()
+            .any(|l| l.contains(&format!("line {}", LOG_LIMIT + 49))));
     }
 }

@@ -127,9 +127,13 @@ impl Forge for GitHub {
 
     fn empty_hint(&self, token: &str, cfg: &ForgeConfig) -> Option<String> {
         let (value, _) =
-            crate::forge::get_json(&format!("{API}/user/installations?per_page=100"), token).ok()?;
+            crate::forge::get_json(&format!("{API}/user/installations?per_page=100"), token)
+                .ok()?;
         let installs = value.get("installations").and_then(Value::as_array)?;
-        Some(diagnose_empty(installs, self.grant_more_url(cfg).as_deref()))
+        Some(diagnose_empty(
+            installs,
+            self.grant_more_url(cfg).as_deref(),
+        ))
     }
 }
 
@@ -176,7 +180,10 @@ fn installation_ids(token: &str) -> Result<Vec<u64>> {
         let Some(list) = value.get("installations").and_then(Value::as_array) else {
             bail!("GitHub did not list any installations for this account");
         };
-        ids.extend(list.iter().filter_map(|i| i.get("id").and_then(Value::as_u64)));
+        ids.extend(
+            list.iter()
+                .filter_map(|i| i.get("id").and_then(Value::as_u64)),
+        );
         match next {
             Some(n) => url = n,
             None => break,
@@ -232,7 +239,9 @@ mod tests {
         let src = include_str!("ghapi.rs");
         let ships = src.split("#[cfg(test)]").next().unwrap();
         assert!(
-            !ships.to_ascii_lowercase().contains(concat!("client", "_secret")),
+            !ships
+                .to_ascii_lowercase()
+                .contains(concat!("client", "_secret")),
             "no client secret belongs in an image that ships to other people"
         );
     }
@@ -298,7 +307,10 @@ mod tests {
             &[json!({"id": 1, "permissions": {"contents": "read", "metadata": "read"}})],
             Some("https://github.com/apps/x/installations/new"),
         );
-        assert!(unticked.contains("no repositories are ticked"), "{unticked}");
+        assert!(
+            unticked.contains("no repositories are ticked"),
+            "{unticked}"
+        );
     }
 
     #[test]
