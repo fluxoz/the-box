@@ -174,6 +174,16 @@ pub async fn index(
                 p.big { (platform_release().unwrap_or_else(|| "dev".into())) }
                 p.muted { a href="/system" { "updates & channel →" } }
             }
+            @let m = crate::meter::read(&state.paths, &config, config.electricity_rate_per_kwh);
+            div.card {
+                h3 { "The meter" }
+                p.big { "$" (format!("{:.2}", m.electricity_monthly_usd)) "/mo" }
+                p.muted {
+                    "est. electricity · cloud equivalent ~$"
+                    (format!("{:.0}", m.cloud_monthly_usd))
+                    "/mo — " a href="/system#meter" { "how it's counted →" }
+                }
+            }
         }
         section {
             div.section-head {
@@ -1770,6 +1780,39 @@ pub async fn system(
                 }
             }
         }
+        @let cfg_for_meter = crate::config::BoxConfig::load(&state.paths).unwrap_or_default();
+        @let m = crate::meter::read(&state.paths, &cfg_for_meter, cfg_for_meter.electricity_rate_per_kwh);
+        section id="meter" {
+            div.section-head { h2 { "The meter" } }
+            p.muted { (m.note) }
+            table {
+                tbody {
+                    tr {
+                        td { "Electricity, per month" }
+                        td { b { "$" (format!("{:.2}", m.electricity_monthly_usd)) } }
+                        td { span.muted { (m.power.watts) " W — " (m.power.basis) ", at $" (format!("{:.2}", m.rate_per_kwh)) "/kWh" } }
+                    }
+                    @for line in &m.cloud_lines {
+                        tr {
+                            td { "Cloud: " (line.what) }
+                            td { "$" (format!("{:.0}", line.monthly_usd)) }
+                            td { span.muted { (line.anchor) } }
+                        }
+                    }
+                    tr {
+                        td { b { "Cloud equivalent, per month" } }
+                        td { b { "$" (format!("{:.0}", m.cloud_monthly_usd)) } }
+                        td {}
+                    }
+                }
+            }
+            form method="post" action="/system/meter-rate" style="margin-top:.6rem" {
+                label { "Your electricity rate ($/kWh): " }
+                input type="text" name="rate" placeholder=(format!("{:.2}", m.rate_per_kwh)) style="width:6rem";
+                " "
+                button.btn type="submit" { "Save" }
+            }
+        }
         section {
             p.muted {
                 "Every change is atomic and reversible. Roll back manually any time from the "
@@ -2714,6 +2757,40 @@ pub async fn journal_page(
         }
     };
     layout("Journal", &flash, body)
+}
+
+/// Set the owner's electricity rate for the meter.
+#[derive(Deserialize)]
+pub struct MeterRateForm {
+    rate: String,
+}
+
+pub async fn set_meter_rate(
+    State(state): State<SharedState>,
+    Form(f): Form<MeterRateForm>,
+) -> Redirect {
+    let parsed = f
+        .rate
+        .trim()
+        .parse::<f64>()
+        .ok()
+        .filter(|r| *r > 0.0 && *r < 5.0);
+    let result = (|| -> anyhow::Result<()> {
+        let mut config = crate::config::BoxConfig::load(&state.paths)?;
+        config.electricity_rate_per_kwh = parsed;
+        config.save(&state.paths)?;
+        Ok(())
+    })();
+    match (result, parsed) {
+        (Ok(()), Some(_)) => Redirect::to("/system?ok=Electricity+rate+saved"),
+        (Ok(()), None) => {
+            Redirect::to("/system?ok=Rate+cleared+%E2%80%94+using+the+US-average+default")
+        }
+        (Err(e), _) => Redirect::to(&format!(
+            "/system?err={}",
+            urlencoding::encode(&format!("{e:#}"))
+        )),
+    }
 }
 
 pub async fn revoke_device(State(state): State<SharedState>, Path(id): Path<String>) -> Redirect {

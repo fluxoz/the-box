@@ -23,6 +23,10 @@ pub struct BoxConfig {
     /// How this Box is reachable from the internet, if at all. Absent = not.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ingress: Option<IngressConfig>,
+    /// The owner's electricity rate (USD per kWh) for the meter card; the
+    /// stated US-average default applies when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub electricity_rate_per_kwh: Option<f64>,
     /// Where this Box pulls code from. Empty = nowhere yet.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub forges: Vec<ForgeConfig>,
