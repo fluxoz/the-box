@@ -1,0 +1,170 @@
+#!/bin/sh
+# The Box — connect your coding agent to your Box in one line:
+#
+#   curl -fsSL https://thebox.build/connect | sh
+#
+# What this does, in order:
+#   1. finds your Box on the local network,
+#   2. pairs with it (claims a brand-new Box, or asks you for the pairing
+#      code from an already-claimed one),
+#   3. writes the MCP config into Claude Code / Cursor / Windsurf,
+#   4. tells you the first thing to say to your agent.
+#
+# It never talks to any server except your own Box. Overrides for scripts
+# and agents: THEBOX_ADDR=host:port, THEBOX_CODE=pairing-code, THEBOX_YES=1
+# (skip prompts), THEBOX_LABEL=name-for-this-session.
+set -eu
+
+say() { printf '%s\n' "$*"; }
+die() { printf 'connect: %s\n' "$*" >&2; exit 1; }
+
+# stdin is the curl pipe; humans answer on the terminal.
+ask() {
+  prompt="$1"
+  if [ "${THEBOX_YES:-}" = "1" ]; then answer=y; return 0; fi
+  [ -r /dev/tty ] || die "no terminal to ask on — set THEBOX_YES=1 (and THEBOX_ADDR/THEBOX_CODE) to run non-interactively"
+  printf '%s ' "$prompt" >/dev/tty
+  read -r answer </dev/tty
+}
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+health() { curl -fsS -m 4 "http://$1/api/v1/health" 2>/dev/null; }
+
+# ---- 1. find the Box ------------------------------------------------------
+
+ADDR="${THEBOX_ADDR:-}"
+if [ -z "$ADDR" ]; then
+  for candidate in box.local:2693 box:2693; do
+    if health "$candidate" >/dev/null; then ADDR="$candidate"; break; fi
+  done
+fi
+if [ -z "$ADDR" ] && have dns-sd; then
+  # macOS: ask Bonjour for _thebox._tcp instances (best effort, 3s).
+  name=$(dns-sd -t 3 -B _thebox._tcp local 2>/dev/null | awk '/_thebox._tcp/ {print $NF; exit}') || true
+  if [ -n "${name:-}" ] && health "$name.local:2693" >/dev/null; then ADDR="$name.local:2693"; fi
+fi
+if [ -z "$ADDR" ] && have avahi-browse; then
+  host=$(avahi-browse -rpt _thebox._tcp 2>/dev/null | awk -F';' '/^=/ {print $7; exit}') || true
+  if [ -n "${host:-}" ] && health "$host:2693" >/dev/null; then ADDR="$host:2693"; fi
+fi
+if [ -z "$ADDR" ]; then
+  say "Could not find a Box on this network automatically."
+  ask "Enter your Box's address (like 192.168.1.58:2693):"
+  ADDR="$answer"
+fi
+
+H=$(health "$ADDR") || die "no Box answered at $ADDR — is it on this network?"
+NAME=$(printf '%s' "$H" | sed -n 's/.*"name":"\([^"]*\)".*/\1/p')
+VERSION=$(printf '%s' "$H" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')
+say "Found your Box: ${NAME:-box} (v${VERSION:-?}) at $ADDR"
+
+# ---- 2. pair --------------------------------------------------------------
+
+LABEL="${THEBOX_LABEL:-coding-agent}"
+TOKEN=""
+
+# A brand-new Box can be claimed from its own network — that IS the consent
+# model for first contact. But claiming is taking ownership, so we look
+# first (GET /pair says whether a claim is on offer) and ask before acting.
+claimable=false
+if curl -fsS -m 6 "http://$ADDR/pair" 2>/dev/null | grep -q "Claim this Box"; then
+  claimable=true
+fi
+if $claimable; then
+  ask "This Box is unclaimed. Claim it as yours? [Y/n]"
+  case "${answer:-y}" in
+    [Nn]*) die "not claimed — nothing was changed" ;;
+  esac
+  probe=$(curl -fsS -m 6 -X POST -H 'Accept: application/json' "http://$ADDR/pair/claim" 2>/dev/null) || true
+else
+  probe=""
+fi
+case "$probe" in
+  *'"token"'*)
+    TOKEN=$(printf '%s' "$probe" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+    say "Claimed — this Box is yours now."
+    ;;
+  *)
+    if [ -n "${THEBOX_CODE:-}" ]; then
+      code="$THEBOX_CODE"
+    else
+      say "This Box is already claimed. On a device that is paired, open:"
+      say "    http://$ADDR/devices  →  Add device"
+      ask "and type the pairing code here:"
+      code="$answer"
+    fi
+    resp=$(curl -fsS -m 6 -X POST -H 'Accept: application/json' -H 'Content-Type: application/json' \
+      -d "{\"code\":\"$code\",\"label\":\"$LABEL\"}" "http://$ADDR/pair/redeem") \
+      || die "that code was not accepted (they expire after 15 minutes and work once — mint a fresh one and retry)"
+    TOKEN=$(printf '%s' "$resp" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+    ;;
+esac
+[ -n "$TOKEN" ] || die "pairing did not produce a session token"
+
+MCP_URL="http://$ADDR/mcp"
+
+# ---- 3. wire up the agents ------------------------------------------------
+
+wired=""
+
+mcp_json() {
+  printf '{"type":"http","url":"%s","headers":{"Authorization":"Bearer %s"}}' "$MCP_URL" "$TOKEN"
+}
+
+# Claude Code: its own CLI owns its config; add-json is unambiguous.
+if have claude && [ "${THEBOX_SKIP_CLAUDE_CLI:-}" != "1" ]; then
+  if claude mcp add-json the-box "$(mcp_json)" >/dev/null 2>&1; then
+    wired="$wired Claude-Code"
+  fi
+fi
+
+# Cursor and Windsurf: merge into their JSON config files. python3 because
+# it is everywhere a coding agent is; if it is missing we print the snippet.
+merge_json() {
+  file="$1"
+  mkdir -p "$(dirname "$file")"
+  python3 - "$file" "$MCP_URL" "$TOKEN" <<'PY'
+import json, os, sys
+path, url, token = sys.argv[1], sys.argv[2], sys.argv[3]
+cfg = {}
+if os.path.exists(path):
+    try:
+        with open(path) as f:
+            cfg = json.load(f)
+    except Exception:
+        sys.exit(3)  # do not clobber a file we cannot parse
+cfg.setdefault("mcpServers", {})["the-box"] = {
+    "url": url,
+    "headers": {"Authorization": "Bearer " + token},
+}
+with open(path, "w") as f:
+    json.dump(cfg, f, indent=2)
+PY
+}
+
+if [ -d "$HOME/.cursor" ] && have python3; then
+  if merge_json "$HOME/.cursor/mcp.json"; then wired="$wired Cursor"; fi
+fi
+if [ -d "$HOME/.codeium/windsurf" ] && have python3; then
+  if merge_json "$HOME/.codeium/windsurf/mcp_config.json"; then wired="$wired Windsurf"; fi
+fi
+
+# ---- 4. hand over ---------------------------------------------------------
+
+say ""
+if [ -n "$wired" ]; then
+  say "Connected:$wired"
+else
+  say "No agent config was written automatically. Add this MCP server yourself:"
+  say ""
+  say "  name: the-box"
+  say "  $(mcp_json)"
+fi
+say ""
+say "Console:  http://$ADDR/"
+say ""
+say "Now tell your agent:"
+say '    "Check my Box and show me what it can do."'
+say ""
+say "Its session is labeled '$LABEL' — see or revoke it any time at http://$ADDR/devices"

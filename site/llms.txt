@@ -9,6 +9,18 @@ This file is written for AI agents. If you are an agent asked to "set up The Box
 on a machine, everything you need is here. Complete machine reference (orders
 schema + every MCP tool): https://thebox.build/llms-full.txt
 
+## Connect this agent to an existing Box (fastest path)
+
+If a Box is already running on the person's network, one line on their laptop
+pairs it and writes the MCP config for Claude Code / Cursor / Windsurf:
+
+    curl -fsSL https://thebox.build/connect | sh
+
+Non-interactive (for agents): set THEBOX_ADDR=host:2693, THEBOX_YES=1, and — if
+the Box is already claimed — THEBOX_CODE=<pairing code the person reads from
+http://<box>:2693/devices → "Add device">. The person must supply that code;
+that is the consent step, by design.
+
 ## Provision a spare machine into a Box
 
 Requirements: SSH access to the target (as root, or a sudo user), plus `ssh` and
