@@ -297,10 +297,22 @@ pub fn update_and_switch(
     }
 
     match health() {
-        Ok(()) => Ok(toplevel),
+        Ok(()) => {
+            crate::journal::record(
+                paths,
+                "update",
+                "took a platform update and passed the health check",
+            );
+            Ok(toplevel)
+        }
         Err(e) => {
             ostier::rollback(ostier::SYSTEM_PROFILE)?;
             restore_pin();
+            crate::journal::record(
+                paths,
+                "update",
+                format!("REFUSED a platform update: health check failed, rolled back ({e:#})"),
+            );
             bail!("platform update health check failed — rolled back (pin restored): {e:#}");
         }
     }

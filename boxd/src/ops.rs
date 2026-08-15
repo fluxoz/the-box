@@ -538,6 +538,11 @@ pub fn deploy(
             }
         }
     }
+    crate::journal::record(
+        paths,
+        "deploy",
+        format!("deployed {} as generation #{}", req.name, info.number),
+    );
     Ok(info)
 }
 
@@ -654,6 +659,14 @@ pub fn delete_service(paths: &Paths, builder: &dyn Builder, name: &str) -> Resul
             );
         }
     }
+    crate::journal::record(
+        paths,
+        "service",
+        format!(
+            "removed the service {name}; generation #{} is live without it",
+            info.number
+        ),
+    );
     Ok(info)
 }
 
@@ -802,6 +815,11 @@ pub fn rollback(paths: &Paths, number: u64) -> Result<GenerationInfo> {
     history::commit_soft(
         paths,
         &format!("generation #{}: rollback (restored)", current.number),
+    );
+    crate::journal::record(
+        paths,
+        "rollback",
+        format!("rolled back to generation #{}", current.number),
     );
     Ok(current)
 }

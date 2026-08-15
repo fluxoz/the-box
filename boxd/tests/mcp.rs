@@ -402,6 +402,14 @@ async fn mcp_repo_linked_service_follows_the_repository() {
     let loc = resp.headers()["location"].to_str().unwrap().to_string();
     assert!(loc.contains("ok="), "sync-now reports its outcome: {loc}");
 
+    // The journal narrates what just happened, for owner and agent alike.
+    let story = call_tool(&app, &token, "journal", json!({})).await;
+    assert!(
+        text(&story).contains("deployed blog"),
+        "the journal must tell the deploy story: {}",
+        text(&story)
+    );
+
     // And the end-to-end checker tells the truth about an unpublished service.
     let verify = call_tool(&app, &token, "verify_service", json!({ "name": "blog" })).await;
     assert_eq!(verify["result"]["isError"], false, "{verify}");
@@ -932,6 +940,10 @@ async fn destructive_ops_wait_for_the_human_tap() {
         "autonomous runs immediately: {}",
         text(&del)
     );
+    // The decisions made along the way are part of the Box's story.
+    let story = call_tool(&app, &token, "journal", json!({})).await;
+    assert!(text(&story).contains("you approved"), "{}", text(&story));
+    assert!(text(&story).contains("you denied"), "{}", text(&story));
     let services = call_tool(&app, &token, "list_services", json!({})).await;
     assert!(!text(&services).contains("diary"), "{}", text(&services));
 }

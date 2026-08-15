@@ -381,6 +381,17 @@ fn tool_definitions() -> Value {
             },
         },
         {
+            "name": "journal",
+            "description": "The Box's own story, newest first: what it deployed, updated, backed up, rolled back, and what the person approved or denied. Read this to catch up on what happened while you were away, or to answer 'what changed?' -- it is the same page the owner reads.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "limit": { "type": "integer", "description": "How many recent entries (default 50, max 200)" }
+                },
+                "additionalProperties": false,
+            },
+        },
+        {
             "name": "job_status",
             "description": "Follow a background job (a platform update, a long deploy) by the id a tool handed back: current phase, recent log lines, and whether it finished or failed. Poll every few seconds while narrating progress to the person; 'failed' comes with the reason.",
             "inputSchema": {
@@ -576,6 +587,18 @@ pub(crate) async fn execute(
 
     match tool {
         "get_status" => Ok(status(&state)),
+        "journal" => {
+            let limit = args
+                .get("limit")
+                .and_then(Value::as_u64)
+                .unwrap_or(50)
+                .min(200) as usize;
+            Ok(Ok(serde_json::to_value(crate::journal::recent(
+                &state.paths,
+                limit,
+            ))
+            .unwrap_or_default()))
+        }
         "approval_status" => {
             let Some(id) = str_arg("id") else {
                 return Err((-32602, "missing required argument: id".into()));

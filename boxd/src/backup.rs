@@ -286,6 +286,15 @@ pub fn run(paths: &Paths, config: &BoxConfig, bc: &BackupConfig) -> Result<()> {
     let marker = last_backup_marker(paths);
     let _ = std::fs::write(&marker, chrono::Utc::now().to_rfc3339());
     crate::util::chown_like(&paths.data_dir, &marker);
+    crate::journal::record(
+        paths,
+        "backup",
+        format!(
+            "backed up {} paths to the {} repository",
+            targets.len(),
+            bc.backend.kind
+        ),
+    );
     prune(paths, bc)
 }
 

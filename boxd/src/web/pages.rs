@@ -95,6 +95,7 @@ fn layout(title: &str, flash: &Flash, body: Markup) -> Html<String> {
                     a.active[title == "Networking"] href="/network" { "Networking" }
                     a.active[title == "Devices"] href="/devices" { "Devices" }
                     a.active[title == "Approvals"] href="/approvals" { "Approvals" }
+                    a.active[title == "Journal"] href="/journal" { "Journal" }
                     a.btn.active[title == "Deploy"] href="/services/new" { "+ Deploy" }
                 }
                 main {
@@ -2675,6 +2676,46 @@ pub async fn service_sync_now(
     }
 }
 
+/// The Box's own story, in sentences: deploys, updates, backups, rollbacks,
+/// approvals, previews. People trust a machine that explains itself, and
+/// this is where it does.
+pub async fn journal_page(
+    State(state): State<SharedState>,
+    Query(flash): Query<Flash>,
+) -> Html<String> {
+    let entries = crate::journal::recent(&state.paths, 200);
+    let when = |unix: u64| {
+        chrono::DateTime::from_timestamp(unix as i64, 0)
+            .map(|t| t.format("%Y-%m-%d %H:%M UTC").to_string())
+            .unwrap_or_else(|| "\u{2014}".into())
+    };
+    let body = html! {
+        h2 { "Journal" }
+        p.muted {
+            "What this Box has been doing, in its own words. Deploys, updates, backups, "
+            "rollbacks, and the decisions you made \u{2014} newest first, kept for ninety days."
+        }
+        @if entries.is_empty() {
+            div.empty { p { "Nothing yet. The first deploy starts the story." } }
+        } @else {
+            section data-poll="8" {
+                table {
+                    thead { tr { th { "When" } th { "What" } } }
+                    tbody {
+                        @for e in &entries {
+                            tr {
+                                td { span.muted { (when(e.at_unix)) } }
+                                td { span.badge { (e.kind) } " " (e.what) }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+    layout("Journal", &flash, body)
+}
+
 pub async fn revoke_device(State(state): State<SharedState>, Path(id): Path<String>) -> Redirect {
     match crate::auth::revoke(&state.paths, &id) {
         Ok(true) => Redirect::to("/devices?ok=Device+revoked"),
@@ -2809,6 +2850,14 @@ pub async fn approve_action(State(state): State<SharedState>, Path(id): Path<Str
         Err((_, e)) => format!("failed: {e}"),
     };
     let failed = result.starts_with("failed:");
+    crate::journal::record(
+        &state.paths,
+        "approval",
+        format!(
+            "you approved: {} (asked by {})",
+            action.summary, action.requested_by
+        ),
+    );
     if let Err(e) = crate::approvals::resolve(
         &state.paths,
         &id,
@@ -2828,6 +2877,13 @@ pub async fn approve_action(State(state): State<SharedState>, Path(id): Path<Str
 }
 
 pub async fn deny_action(State(state): State<SharedState>, Path(id): Path<String>) -> Redirect {
+    if let Some(a) = crate::approvals::get(&state.paths, &id) {
+        crate::journal::record(
+            &state.paths,
+            "approval",
+            format!("you denied: {} (asked by {})", a.summary, a.requested_by),
+        );
+    }
     match crate::approvals::resolve(&state.paths, &id, crate::approvals::State::Denied, None) {
         Ok(()) => Redirect::to("/approvals?ok=Denied+%E2%80%94+the+agent+is+told+no"),
         Err(e) => Redirect::to(&format!(

@@ -146,6 +146,7 @@ pub fn router(state: SharedState) -> Router {
         .route("/devices/{id}/revoke", post(pages::revoke_device))
         .route("/devices/{id}/autonomy", post(pages::set_device_autonomy))
         .route("/approvals", get(pages::approvals))
+        .route("/journal", get(pages::journal_page))
         .route("/approvals/{id}/approve", post(pages::approve_action))
         .route("/approvals/{id}/deny", post(pages::deny_action))
         .route("/devices/keys/start", post(pages::key_register_start))
@@ -415,6 +416,11 @@ pub fn preview_open(
                 .is_ok()
             })
             .unwrap_or(false);
+        crate::journal::record(
+            &state.paths,
+            "preview",
+            format!("pull request #{number} on {repo} got its preview at {url}"),
+        );
         previews.push(serde_json::json!({
             "service": name,
             "url": url,
@@ -451,6 +457,11 @@ pub fn preview_close(
     for name in doomed {
         let _ = crate::pull::unlink(&state.paths, &name);
         crate::ops::delete_service(&state.paths, state.builder.as_ref(), &name)?;
+        crate::journal::record(
+            &state.paths,
+            "preview",
+            format!("pull request #{number} on {repo} closed; its preview {name} is gone"),
+        );
         removed.push(name);
     }
     Ok(serde_json::json!({ "removed": removed }))
