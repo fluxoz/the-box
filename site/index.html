@@ -216,6 +216,29 @@
 
   <p class="stepnote">~15 minutes end to end · one spare machine · nothing to hand-configure</p>
 
+  <div id="receipts" class="agent" style="display:none">
+    <b>The receipts.</b> <span id="receipt-line"></span>
+    <p class="note" style="margin:.55rem 0 0">Every night a blank virtual machine runs the exact
+    commands above against this live site and times each stage. This line is written by last
+    night's run, not by us.</p>
+  </div>
+  <script>
+  fetch('https://raw.githubusercontent.com/fluxoz/the-box/receipts/receipts/latest.json')
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(rc){
+      if (!rc || !rc.ok) return;
+      var when = new Date(rc.verified_at * 1000);
+      var hours = Math.round((Date.now() - when.getTime()) / 3600000);
+      var ago = hours < 1 ? 'under an hour ago' : hours + 'h ago';
+      var m = Math.floor(rc.total_seconds / 60), s = rc.total_seconds % 60;
+      document.getElementById('receipt-line').textContent =
+        'Last verified ' + ago + ': a blank machine became a serving Box (v' + rc.release +
+        ') in ' + m + 'm ' + s + 's, install to first deploy included.';
+      document.getElementById('receipts').style.display = '';
+    })
+    .catch(function(){});
+  </script>
+
   <!-- why, deeper: the proof -->
   <p class="eyebrow">Why a Box</p>
   <h2>The hard part isn't running a server. It's making it safe to change.</h2>
