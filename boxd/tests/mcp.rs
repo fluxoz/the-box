@@ -948,11 +948,31 @@ async fn destructive_ops_wait_for_the_human_tap() {
     assert!(!text(&services).contains("diary"), "{}", text(&services));
 }
 
+/// The proxy and the resident both reach their upstreams through curl. The
+/// nix package build runs tests in a sandbox without it; the devshell and
+/// CI's cargo-test job have it, so the real coverage happens there and the
+/// package build skips honestly (the connect_script.rs precedent).
+fn curl_present() -> bool {
+    let ok = std::process::Command::new("curl")
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok();
+    if !ok {
+        eprintln!("skipping: this test needs curl, absent in this build environment");
+    }
+    ok
+}
+
 /// The OpenAI-compatible endpoint: minted keys gate it, requests route to
 /// the Box's model server, and the errors name their fixes. The upstream is
 /// a stub speaking just enough of the wire format to prove the plumbing.
 #[tokio::test]
 async fn ai_endpoint_speaks_openai_with_minted_keys() {
+    if !curl_present() {
+        return;
+    }
     let (_tmp, app, token) = app();
     let paths = boxd::paths::Paths::new(_tmp.path().to_path_buf());
     let text = |v: &Value| {
@@ -1081,6 +1101,9 @@ async fn ai_endpoint_speaks_openai_with_minted_keys() {
 /// destructive suggestion QUEUED for the human — never run.
 #[tokio::test]
 async fn resident_reports_and_suggestions_wait_for_the_human() {
+    if !curl_present() {
+        return;
+    }
     let (_tmp, app, token) = app();
     let paths = boxd::paths::Paths::new(_tmp.path().to_path_buf());
     let text = |v: &Value| {
