@@ -37,25 +37,47 @@ impl Drop for Server {
     }
 }
 
+/// The tools the script itself needs. The nix package build runs tests in a
+/// sandbox without them; the devshell (and CI's cargo-test job) has both, so
+/// the real coverage happens there and the package build skips honestly.
+fn script_deps_present() -> bool {
+    let have = |c: &str| {
+        Command::new(c)
+            .arg("--version")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok()
+    };
+    let ok = have("curl") && have("python3");
+    if !ok {
+        eprintln!("skipping: site/connect needs curl + python3, absent in this build environment");
+    }
+    ok
+}
+
 fn serve() -> Server {
     let data = TempDir::new().unwrap();
     let port = free_port();
     let addr = format!("127.0.0.1:{port}");
+    let data_path = data.path().to_path_buf();
     let child = Command::new(env!("CARGO_BIN_EXE_boxd"))
         .args(["--data-dir", data.path().to_str().unwrap(), "serve", "--listen", &addr])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
         .expect("spawning boxd serve");
+    // Into the struct immediately: every exit from here on — including the
+    // panic below — goes through Drop, which kills and reaps the child.
+    let server = Server { child, addr, _data: data, data_path };
     for _ in 0..100 {
-        let (ok, _) = curl(&["-fsS", "-m", "2", &format!("http://{addr}/api/v1/health")]);
+        let (ok, _) = curl(&["-fsS", "-m", "2", &format!("http://{}/api/v1/health", server.addr)]);
         if ok {
-            let data_path = data.path().to_path_buf();
-            return Server { child, addr, _data: data, data_path };
+            return server;
         }
         std::thread::sleep(Duration::from_millis(100));
     }
-    panic!("boxd serve never became healthy on {addr}");
+    panic!("boxd serve never became healthy on {}", server.addr);
 }
 
 fn run_connect(server: &Server, home: &TempDir, extra_env: &[(&str, &str)]) -> (bool, String) {
@@ -104,6 +126,9 @@ fn mcp_tools_list(addr: &str, token: &str) -> bool {
 
 #[test]
 fn the_one_liner_claims_a_fresh_box_and_wires_the_agent() {
+    if !script_deps_present() {
+        return;
+    }
     let server = serve();
     let home = TempDir::new().unwrap();
     // The editors the script should notice.
@@ -160,6 +185,9 @@ fn the_one_liner_claims_a_fresh_box_and_wires_the_agent() {
 
 #[test]
 fn a_wrong_code_fails_with_the_retry_story() {
+    if !script_deps_present() {
+        return;
+    }
     let server = serve();
     // Claim it first so the code door is the one being tested.
     let (ok, _) = curl(&[
