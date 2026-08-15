@@ -76,6 +76,11 @@ pkgs.testers.runNixOSTest {
     box.succeed("curl -sf -H 'Host: zulu' http://localhost/ | grep 'zulu answers'")
     box.succeed("curl -sf -H 'Host: demo.lan' http://localhost/ | grep -i 'hello from the box app'")
 
+    # Static sites carry Cache-Control, so the tunnel's edge can act as a CDN:
+    # pages revalidate fast, hashed assets are immutable. Apps set their own.
+    box.succeed("curl -sfI http://localhost/ | grep -i 'cache-control: public, max-age=60'")
+    box.fail("curl -sfI -H 'Host: demo.lan' http://localhost/ | grep -i 'max-age=60'")
+
     # The apps bind loopback only, never the LAN interface.
     box.succeed("ss -ltn | grep 127.0.0.1:8000")
     box.fail("ss -ltn | grep -E '0.0.0.0:8000|\\*:8000'")
