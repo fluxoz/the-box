@@ -376,6 +376,32 @@ async fn mcp_repo_linked_service_follows_the_repository() {
         .unwrap();
     assert_eq!(blog["last_sync"]["ok"], true, "{blog}");
 
+    // The console's service page tells the same story: source, sync state,
+    // and a live (data-poll) logs section — the "why is it not working" page.
+    let (status, page) = get(&app, "/service/blog", "127.0.0.1", Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(page.contains("local/blog"), "source shown");
+    assert!(
+        page.contains("in step"),
+        "sync state shown: missing from page"
+    );
+    assert!(page.contains("data-poll"), "logs refresh live");
+    // And its Sync-now button runs the real sync.
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::post("/service/blog/sync")
+                .header("authorization", format!("Bearer {token}"))
+                .extension(local())
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::SEE_OTHER);
+    let loc = resp.headers()["location"].to_str().unwrap().to_string();
+    assert!(loc.contains("ok="), "sync-now reports its outcome: {loc}");
+
     // And the end-to-end checker tells the truth about an unpublished service.
     let verify = call_tool(&app, &token, "verify_service", json!({ "name": "blog" })).await;
     assert_eq!(verify["result"]["isError"], false, "{verify}");
