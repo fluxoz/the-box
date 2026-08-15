@@ -172,3 +172,56 @@ fn make_writable(path: &Path) -> Result<()> {
     }
     Ok(())
 }
+
+/// HMAC-SHA256, by the book (RFC 2104), over the sha2 we already carry — for
+/// verifying webhook signatures without another dependency.
+pub fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
+    use sha2::{Digest, Sha256};
+    const BLOCK: usize = 64;
+    let mut k = [0u8; BLOCK];
+    if key.len() > BLOCK {
+        k[..32].copy_from_slice(&Sha256::digest(key));
+    } else {
+        k[..key.len()].copy_from_slice(key);
+    }
+    let ipad: Vec<u8> = k.iter().map(|b| b ^ 0x36).collect();
+    let opad: Vec<u8> = k.iter().map(|b| b ^ 0x5c).collect();
+    let inner = Sha256::digest([ipad.as_slice(), message].concat());
+    let outer = Sha256::digest([opad.as_slice(), inner.as_slice()].concat());
+    outer.into()
+}
+
+/// Compare a received hex signature against an expected MAC without letting
+/// the comparison's timing say how close the guess was.
+pub fn constant_time_eq_hex(expected: &[u8; 32], received_hex: &str) -> bool {
+    let expected_hex: String = expected.iter().map(|b| format!("{b:02x}")).collect();
+    let a = expected_hex.as_bytes();
+    let b = received_hex.as_bytes();
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
+#[cfg(test)]
+mod hmac_tests {
+    use super::*;
+
+    #[test]
+    fn rfc_4231_test_case_2() {
+        // Key "Jefe", data "what do ya want for nothing?".
+        let mac = hmac_sha256(b"Jefe", b"what do ya want for nothing?");
+        let hex: String = mac.iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(
+            hex,
+            "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
+        );
+        assert!(constant_time_eq_hex(&mac, &hex));
+        assert!(!constant_time_eq_hex(&mac, &hex.replace('5', "6")));
+        assert!(!constant_time_eq_hex(&mac, "short"));
+    }
+}

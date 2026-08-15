@@ -509,6 +509,151 @@ async fn mcp_repo_with_build_step_builds_then_deploys() {
     assert_eq!(site["last_sync"]["ok"], false, "{site}");
 }
 
+/// The webhook receiver: its authentication is the HMAC signature. A push
+/// with the right signature syncs the linked service immediately; a wrong
+/// signature is refused; a Box with webhooks unset reveals nothing.
+#[tokio::test]
+async fn webhook_push_syncs_the_linked_service() {
+    let (_tmp, app, token) = app();
+    let paths = boxd::paths::Paths::new(_tmp.path().to_path_buf());
+    let text = |v: &Value| {
+        v["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+
+    let hook = |body: String, sig: Option<String>| {
+        let app = app.clone();
+        async move {
+            let mut req = Request::post("/hooks/github")
+                .header("content-type", "application/json")
+                .extension(remote_hook());
+            if let Some(s) = sig {
+                req = req.header("x-hub-signature-256", s);
+            }
+            let resp = app
+                .oneshot(req.body(Body::from(body)).unwrap())
+                .await
+                .unwrap();
+            let status = resp.status();
+            let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+            (status, String::from_utf8_lossy(&bytes).to_string())
+        }
+    };
+
+    // Unset: the route plays dead.
+    let (status, _) = hook("{}".into(), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // A linked local repo, like the poller tests use.
+    let upstream = TempDir::new().unwrap();
+    let git = |args: &[&str]| {
+        let out = std::process::Command::new("git")
+            .args(args)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}");
+    };
+    let up = upstream.path().to_str().unwrap().to_string();
+    git(&["init", "-q", "-b", "main", &up]);
+    std::fs::write(upstream.path().join("index.html"), "hooked v1").unwrap();
+    git(&["-C", &up, "add", "."]);
+    git(&["-C", &up, "commit", "-qm", "v1"]);
+
+    let deploy = call_tool(
+        &app,
+        &token,
+        "deploy_static_site",
+        json!({ "name": "blog", "index_html": "placeholder" }),
+    )
+    .await;
+    assert_eq!(deploy["result"]["isError"], false, "{deploy}");
+    {
+        let mut config = boxd::config::BoxConfig::load(&paths).unwrap();
+        config.services[0].repo = Some(boxd::config::RepoLink {
+            forge: "github".into(),
+            repo: "owner/blog".into(),
+            clone_url: format!("file://{up}"),
+            branch: "main".into(),
+            subdir: None,
+            build: None,
+        });
+        config.save(&paths).unwrap();
+    }
+    boxd::secrets::set(&paths, "webhook-secret", "s3cret").unwrap();
+
+    let payload = json!({
+        "ref": "refs/heads/main",
+        "repository": { "full_name": "owner/blog" },
+    })
+    .to_string();
+    let sign = |body: &str| {
+        let mac = boxd::util::hmac_sha256(b"s3cret", body.as_bytes());
+        format!(
+            "sha256={}",
+            mac.iter().map(|b| format!("{b:02x}")).collect::<String>()
+        )
+    };
+
+    // Wrong signature: refused, nothing deployed.
+    let (status, _) = hook(payload.clone(), Some("sha256=deadbeef".into())).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (_, body) = get(&app, "/sites/blog/", "127.0.0.1", Some(&token)).await;
+    assert!(
+        body.contains("placeholder"),
+        "unsigned pushes must not deploy: {body}"
+    );
+
+    // Right signature: the push IS the deploy.
+    let (status, resp) = hook(payload.clone(), Some(sign(&payload))).await;
+    assert_eq!(status, StatusCode::OK, "{resp}");
+    assert!(resp.contains("blog"), "{resp}");
+    let (_, body) = get(&app, "/sites/blog/", "127.0.0.1", Some(&token)).await;
+    assert!(body.contains("hooked v1"), "{body}");
+
+    // GitHub's registration ping gets a pong.
+    let ping = json!({ "zen": "Design for failure." }).to_string();
+    let (status, resp) = hook(ping.clone(), Some(sign(&ping))).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(resp.contains("pong"), "{resp}");
+
+    // A push to an unlinked branch syncs nothing and says so.
+    let other = json!({
+        "ref": "refs/heads/feature",
+        "repository": { "full_name": "owner/blog" },
+    })
+    .to_string();
+    let (status, resp) = hook(other.clone(), Some(sign(&other))).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        serde_json::from_str::<Value>(&resp).unwrap()["synced"],
+        json!([]),
+        "{resp}"
+    );
+
+    // The last_sync the operator sees reflects the webhook's work.
+    let services = call_tool(&app, &token, "list_services", json!({})).await;
+    let parsed: Value = serde_json::from_str(&text(&services)).unwrap();
+    let blog = parsed
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["name"] == "blog")
+        .unwrap();
+    assert_eq!(blog["last_sync"]["ok"], true, "{blog}");
+}
+
+/// Webhooks arrive from the internet through the tunnel; they present like
+/// any proxied request.
+fn remote_hook() -> ConnectInfo<SocketAddr> {
+    ConnectInfo(SocketAddr::from(([203, 0, 113, 9], 443)))
+}
+
 /// The trust ceremony, end to end: a destructive call from a normal session
 /// queues instead of running; the console tap runs the exact call; a denial
 /// is recorded and nothing happens; an autonomous session skips the queue.

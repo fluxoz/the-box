@@ -4,6 +4,10 @@
 //! switchable generations (built with Nix when available), and serves the
 //! local dashboard, JSON API and deployed static sites.
 
+// The MCP tool catalog is one large `json!` literal; its nesting outgrew the
+// default macro recursion limit when the toolbox did.
+#![recursion_limit = "256"]
+
 pub mod agecrypt;
 pub mod approvals;
 pub mod auth;
