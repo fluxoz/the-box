@@ -297,6 +297,15 @@ in
             default = [ ];
             description = ''Volume mounts, "host:container" (host side backed up when absolute).'';
           };
+          gpu = lib.mkOption {
+            type = lib.types.bool;
+            default = false;
+            description = ''
+              Hand this container every GPU the Box has, via CDI. Needs the
+              Box's gpu axis set (channel gpu = "nvidia"), which installs the
+              driver and the container toolkit; without it this is ignored.
+            '';
+          };
         };
       });
     };
@@ -651,6 +660,9 @@ in
         virtualisation.oci-containers.backend = "podman";
         virtualisation.oci-containers.containers = lib.mapAttrs (name: c: {
           inherit (c) image environment volumes cmd;
+          # CDI device names pass straight through podman's --device; the
+          # nvidia container toolkit (enabled by the gpu axis) generates them.
+          devices = lib.optional c.gpu "nvidia.com/gpu=all";
           imageFile = lib.mkIf (c.imageFile != null) c.imageFile;
           # Secret env comes from the agenix-decrypted file, never box.toml.
           environmentFiles =

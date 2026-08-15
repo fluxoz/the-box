@@ -1,0 +1,16 @@
+id = "n8n"
+title = "n8n workflow automation"
+description = "Connect your apps and AI into automated workflows — the glue for agent pipelines, webhooks and schedules, running on your own machine instead of someone's metered cloud."
+category = "AI"
+base = "container"
+icon = "flow"
+
+[params]
+image = "n8nio/n8n"
+container_port = 5678
+expose = "proxied"
+volumes = ["/var/lib/box/n8n:/home/node/.n8n"]
+
+[params.env]
+# n8n refuses to run behind a proxy without this.
+N8N_PROXY_HOPS = "1"

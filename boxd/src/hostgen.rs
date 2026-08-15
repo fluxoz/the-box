@@ -33,6 +33,10 @@ pub struct HostSpec {
     /// firmware and boot method — a Pi rebuilt without its board would not
     /// boot. See [`crate::board`].
     pub board: Option<String>,
+    /// GPU layer ("nvidia") on the generic appliance; `None` elsewhere. A
+    /// rebuild without it silently drops the driver and CDI, so like the
+    /// board it rides every regeneration.
+    pub gpu: Option<String>,
     /// Whether this box picks up new platform releases on a timer. Rendered
     /// into the host module as `services.the-box.autoUpdate.enable`, which is
     /// what actually creates the timer — without this the console's
@@ -51,12 +55,18 @@ impl HostSpec {
             platform_ref: platform_ref.into(),
             system: system.into(),
             board: None,
+            gpu: None,
             auto_update: false,
         }
     }
 
     pub fn with_board(mut self, board: Option<String>) -> Self {
         self.board = board;
+        self
+    }
+
+    pub fn with_gpu(mut self, gpu: Option<String>) -> Self {
+        self.gpu = gpu;
         self
     }
 
@@ -78,6 +88,10 @@ fn render_flake(spec: &HostSpec) -> String {
         Some(b) => format!("\"{b}\""),
         None => "null".to_string(),
     };
+    let gpu = match &spec.gpu {
+        Some(g) => format!("\"{g}\""),
+        None => "null".to_string(),
+    };
     format!(
         r#"{{
   description = "The Box — configuration for {id} (managed by boxd; do not edit by hand)";
@@ -97,6 +111,7 @@ fn render_flake(spec: &HostSpec) -> String {
       nixosConfigurations."{id}" = the-box.lib.boxSystem {{
         system = "{system}";
         board = {board};
+        gpu = {gpu};
         modules = [ ./nodes/hosts/{id} ];
       }};
     }};
@@ -106,6 +121,7 @@ fn render_flake(spec: &HostSpec) -> String {
         platform_ref = spec.platform_ref,
         system = spec.system,
         board = board,
+        gpu = gpu,
     )
 }
 
@@ -297,6 +313,18 @@ mod tests {
         assert!(flake.contains("the-box.lib.boxSystem"));
         assert!(flake.contains(r#"board = "pi5";"#));
         assert!(flake.contains(r#"system = "aarch64-linux";"#));
+        // No gpu on a board box: boards bring their own GPU story.
+        assert!(flake.contains("gpu = null;"));
+
+        // The generic appliance with the nvidia layer: the axis must survive
+        // every regeneration or a channel update silently drops the driver.
+        let spec = HostSpec::new("rig", "github:fluxoz/the-box", "x86_64-linux")
+            .with_gpu(Some("nvidia".into()));
+        let out2 = tmp.path().join("repo2");
+        write_host_repo(&paths, &BoxConfig::default(), &spec, &out2).unwrap();
+        let flake = std::fs::read_to_string(out2.join("flake.nix")).unwrap();
+        assert!(flake.contains(r#"gpu = "nvidia";"#));
+        assert!(flake.contains("board = null;"));
     }
 
     /// The OS tier is the one that actually runs a container, so its module

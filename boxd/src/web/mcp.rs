@@ -1445,6 +1445,10 @@ fn status(state: &SharedState) -> anyhow::Result<Value> {
         "current_generation": current.map(|g| g.number),
         "services": config.services.len(),
         "tunnel": state.tunnel.status(),
+        // Whether this machine has an NVIDIA card — what tells an agent the
+        // ollama preset can take `gpu: true` (after the channel's gpu axis is
+        // set) instead of guessing from the model's speed.
+        "gpu_hardware": if crate::board::nvidia_present() { json!("nvidia") } else { json!(null) },
     }))
 }
 

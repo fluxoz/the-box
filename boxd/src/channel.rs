@@ -50,6 +50,12 @@ pub struct ChannelConfig {
     /// absent on generic hardware. TOML can't encode `None`, so it's skipped.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub board: Option<String>,
+    /// GPU layer ("nvidia") for the generic appliance — the spare-RTX-PC
+    /// inference Box. Like `board`, it must ride the channel binding: a
+    /// channel update that rebuilt without the GPU layer would boot a machine
+    /// whose GPU has vanished.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gpu: Option<String>,
     #[serde(default)]
     pub auto_update: bool,
 }
@@ -61,6 +67,7 @@ impl ChannelConfig {
             platform_ref: default_platform_ref(),
             system: default_system(),
             board: None,
+            gpu: None,
             auto_update: false,
         }
     }
@@ -96,6 +103,7 @@ impl ChannelConfig {
             self.system.clone(),
         )
         .with_board(self.board.clone())
+        .with_gpu(self.gpu.clone())
         .with_auto_update(self.auto_update)
     }
 }

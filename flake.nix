@@ -112,14 +112,22 @@
       # firmware-partition boot method) comes back from its next reboot a brick.
       #   board = null              → generic appliance (x86/aarch64)
       #   board = "pi3"|"pi4"|"pi5" → nixos-raspberrypi vendor base + Pi disk layout
-      boxSystem = { system, board ? null, modules ? [ ] }:
+      #   gpu   = "nvidia"          → + driver, CUDA userspace and container CDI
+      #                               (the spare-RTX-PC inference Box; generic
+      #                               appliance only — Jetson arrives as a board)
+      boxSystem = { system, board ? null, gpu ? null, modules ? [ ] }:
+        assert nixpkgs.lib.assertMsg (gpu == null || gpu == "nvidia")
+          "boxSystem: unsupported gpu ${toString gpu} (nvidia)";
+        assert nixpkgs.lib.assertMsg (gpu == null || board == null)
+          "boxSystem: gpu is the generic-appliance axis; a board brings its own GPU story";
         if board == null then
           nixpkgs.lib.nixosSystem {
             inherit system;
             modules = [
               self.nixosModules.platform
               self.nixosModules.hardwareAppliance
-            ] ++ modules;
+            ] ++ nixpkgs.lib.optional (gpu == "nvidia") ./nix/gpu-nvidia.nix
+            ++ modules;
           }
         else
           assert nixpkgs.lib.assertMsg (system == "aarch64-linux")
@@ -466,6 +474,30 @@
         inherit self nixpkgs;
         system = "x86_64-linux";
       };
+
+      # Eval-level proof the BYO-GPU layer composes: a gpu = "nvidia" appliance
+      # instantiates to a system derivation — driver wired, CDI toolkit on,
+      # unfree allowed for exactly the driver. CI has no GPU, so evaluation is
+      # the check; the first spare-RTX machine is the live verification.
+      checks.x86_64-linux.gpu-eval =
+        let
+          sys = boxSystem {
+            system = "x86_64-linux";
+            gpu = "nvidia";
+            modules = [{ networking.hostName = "gpubox"; }];
+          };
+          # unsafeDiscardStringContext: instantiating the toplevel proves the
+          # whole system EVALUATES (drivers, CDI, unfree gate); keeping the
+          # context would make this check BUILD the driver stack, which CI has
+          # no business doing.
+          ok =
+            assert nixpkgs.lib.assertMsg
+              sys.config.hardware.nvidia-container-toolkit.enable
+              "gpu-eval: the container toolkit (CDI) must be on for a gpu box";
+            builtins.unsafeDiscardStringContext sys.config.system.build.toplevel.drvPath;
+        in
+        nixpkgs.legacyPackages.x86_64-linux.runCommand "gpu-eval-ok"
+          { inherit ok; } "echo $ok > $out";
 
       # Eval-level proof that a channel-update rebuild produces the SAME bootable
       # Pi system as the flashed image: identical vendor kernel derivation, boot

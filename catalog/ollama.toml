@@ -1,0 +1,12 @@
+id = "ollama"
+title = "Ollama (local AI models)"
+description = "Run AI models on your own hardware — nothing you say to them leaves your Box. Honest sizing: on a CPU-only Box expect small models (3-8B quantized, embeddings, whisper) at a few words per second; a Box with an NVIDIA card runs much larger models at real speed. After deploying, pull a model with: ollama pull llama3.2 (via the service's terminal or API)."
+category = "AI"
+base = "container"
+icon = "spark"
+
+[params]
+image = "ollama/ollama"
+container_port = 11434
+expose = "proxied"
+volumes = ["/var/lib/box/ollama:/root/.ollama"]

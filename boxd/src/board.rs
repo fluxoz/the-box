@@ -83,6 +83,27 @@ pub fn assert_compatible(bound: Option<&str>) -> Result<()> {
     }
 }
 
+/// Is an NVIDIA GPU present on this machine? Judged by the kernel's own
+/// evidence (either the driver is loaded or the PCI vendor id is on the bus),
+/// so it works before any driver is installed.
+pub fn nvidia_present() -> bool {
+    if std::path::Path::new("/proc/driver/nvidia").exists() {
+        return true;
+    }
+    let Ok(entries) = std::fs::read_dir("/sys/bus/pci/devices") else {
+        return false;
+    };
+    for e in entries.flatten() {
+        if let Ok(vendor) = std::fs::read_to_string(e.path().join("vendor")) {
+            // 0x10de is NVIDIA's PCI vendor id.
+            if vendor.trim() == "0x10de" {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

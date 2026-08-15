@@ -1,0 +1,17 @@
+id = "open-webui"
+title = "Open WebUI (chat with your models)"
+description = "A polished chat interface for the models your Box runs. Deploy Ollama first, then set OLLAMA_BASE_URL here to its address (the Ollama service's URL on this Box) and every conversation stays on hardware you own."
+category = "AI"
+base = "container"
+icon = "chat"
+
+[params]
+image = "ghcr.io/open-webui/open-webui:main"
+container_port = 8080
+expose = "proxied"
+volumes = ["/var/lib/box/open-webui:/app/backend/data"]
+
+[params.env]
+# Point at your Ollama service after deploy; host.containers.internal reaches
+# the Box itself from inside a container.
+OLLAMA_BASE_URL = "http://host.containers.internal:11434"

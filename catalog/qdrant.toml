@@ -1,0 +1,12 @@
+id = "qdrant"
+title = "Qdrant vector database"
+description = "Memory for AI apps: stores embeddings so your agents and RAG apps can search by meaning. Nothing outside your Box can reach it."
+category = "AI"
+base = "container"
+icon = "compass"
+
+[params]
+image = "qdrant/qdrant"
+container_port = 6333
+expose = "internal"
+volumes = ["/var/lib/box/qdrant:/qdrant/storage"]
