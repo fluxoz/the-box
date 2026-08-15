@@ -24,8 +24,10 @@ that is the consent step, by design.
 ## Provision a spare machine into a Box
 
 Requirements: SSH access to the target (as root, or a sudo user), plus `ssh` and
-`curl` locally. The takeover **wipes the target disk**, so only run it on a machine
-you intend to convert.
+`curl` locally. The target must boot via **UEFI** — on legacy BIOS the installer
+refuses safely ("NOTHING HAS BEEN CHANGED") and says so; enable UEFI in the
+firmware settings, or use the USB image on older hardware. The takeover **wipes
+the target disk**, so only run it on a machine you intend to convert.
 
 If `boxd` is installed locally, one command runs the whole flow and prints
 `{address, token, mcp_url, dashboard}`, then skip to "Manage a Box":
