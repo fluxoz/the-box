@@ -28,6 +28,7 @@ pub mod history;
 pub mod hostgen;
 pub mod ingress;
 pub mod jobs;
+pub mod journal;
 pub mod logs;
 pub mod manifest;
 pub mod nixgen;
