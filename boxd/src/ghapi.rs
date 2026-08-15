@@ -209,6 +209,50 @@ pub fn parse_repo(v: &Value) -> Option<Repo> {
     })
 }
 
+/// Register a push webhook on a repository, pointing at this Box's receiver.
+/// GitHub speaks its own dialect (no Cloudflare-style envelope; errors in a
+/// `message` field; 201 on creation), so this sends for itself. The App must
+/// hold "Repository webhooks: Read & write" — when it does not, GitHub's own
+/// error comes back and the tool names the owner-only fix.
+pub fn register_hook(token: &str, repo: &str, url: &str, secret: &str) -> Result<Value> {
+    let body = serde_json::json!({
+        "config": { "url": url, "content_type": "json", "secret": secret },
+        "events": ["push"],
+        "active": true,
+    });
+    let out = std::process::Command::new("curl")
+        .args(["-sS", "-m", "30", "-X", "POST"])
+        .args(["-H", &format!("Authorization: Bearer {token}")])
+        .args(["-H", "Accept: application/vnd.github+json"])
+        .args(["-H", "Content-Type: application/json"])
+        .args(["-d", &body.to_string()])
+        .args(["-w", "\n%{http_code}"])
+        .arg(format!("{API}/repos/{repo}/hooks"))
+        .output()
+        .context("running curl against the GitHub API")?;
+    if !out.status.success() {
+        bail!(
+            "could not reach GitHub: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let (payload, status) = text.rsplit_once('\n').unwrap_or((text.as_ref(), ""));
+    let value: Value = serde_json::from_str(payload.trim())
+        .context("GitHub returned something that is not JSON")?;
+    if status.trim() != "201" {
+        bail!(
+            "GitHub refused the webhook (HTTP {}): {}",
+            status.trim(),
+            value
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or("no detail")
+        );
+    }
+    Ok(value)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -91,6 +91,17 @@ pub fn put_ingress(account_id: &str, tunnel_id: &str, zone: &str, port: u16) -> 
         body: Some(json!({
             "config": {
                 "ingress": [
+                    // Webhooks: ONLY /hooks/* on the hooks hostname reaches
+                    // boxd itself (which answers with signature verification
+                    // or 404). Everything else on that hostname falls through
+                    // to the catch-all — the tunnel still never fronts the
+                    // console. Rule order is the security boundary; the test
+                    // below pins it.
+                    {
+                        "hostname": format!("hooks.{zone}"),
+                        "path": "^/hooks/.*",
+                        "service": "http://127.0.0.1:2693",
+                    },
                     { "hostname": format!("*.{zone}"), "service": format!("http://127.0.0.1:{port}") },
                     { "hostname": zone, "service": format!("http://127.0.0.1:{port}") },
                     { "service": "http_status:404" },
@@ -377,11 +388,19 @@ mod tests {
         let rules = r.body.unwrap()["config"]["ingress"].clone();
         let rules = rules.as_array().unwrap().clone();
 
+        // The webhook receiver: ONLY /hooks/* on the hooks hostname reaches
+        // boxd. It must come before the wildcard (rule order is the security
+        // boundary) and carry a path — a bare hooks rule would put the whole
+        // console on the internet.
+        assert_eq!(rules[0]["hostname"], "hooks.example.com");
+        assert_eq!(rules[0]["path"], "^/hooks/.*");
+        assert_eq!(rules[0]["service"], "http://127.0.0.1:2693");
+
         // Everything under the domain, and the bare domain, reach the Box's
         // PUBLIC listener — never the console's port.
-        assert_eq!(rules[0]["hostname"], "*.example.com");
-        assert_eq!(rules[0]["service"], "http://127.0.0.1:2694");
-        assert_eq!(rules[1]["hostname"], "example.com");
+        assert_eq!(rules[1]["hostname"], "*.example.com");
+        assert_eq!(rules[1]["service"], "http://127.0.0.1:2694");
+        assert_eq!(rules[2]["hostname"], "example.com");
 
         // Cloudflare rejects a rule set whose last entry names a hostname.
         let last = rules.last().unwrap();

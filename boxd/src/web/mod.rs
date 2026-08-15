@@ -1,4 +1,5 @@
 pub mod api;
+pub mod hooks;
 pub mod mcp;
 pub mod pages;
 pub mod sites;
@@ -69,6 +70,43 @@ impl AppState {
 
 pub type SharedState = Arc<AppState>;
 
+/// Sync every service linked to `repo` on `branch`, under the apply lock, off
+/// the async runtime. Shared by the webhook receiver; the poller does the
+/// same dance on its own thread.
+pub async fn blocking_sync(
+    state: SharedState,
+    repo: String,
+    branch: String,
+) -> anyhow::Result<Vec<String>> {
+    tokio::task::spawn_blocking(move || {
+        let config = crate::config::BoxConfig::load(&state.paths)?;
+        let matching: Vec<String> = config
+            .services
+            .iter()
+            .filter(|s| {
+                s.repo
+                    .as_ref()
+                    .is_some_and(|l| l.repo.eq_ignore_ascii_case(&repo) && l.branch == branch)
+            })
+            .map(|s| s.name.clone())
+            .collect();
+        let mut synced = Vec::new();
+        for name in matching {
+            let _guard = state.apply_lock.lock().unwrap();
+            crate::pull::sync_recorded(
+                &state.paths,
+                state.builder.as_ref(),
+                &state.build_exec,
+                &name,
+                false,
+            )?;
+            synced.push(name);
+        }
+        Ok(synced)
+    })
+    .await?
+}
+
 /// Who is making this request, resolved by the auth middleware from the
 /// session the token belongs to. The destructive-op gate reads `autonomous`;
 /// approval records read `label` so the human sees who asked.
@@ -98,6 +136,7 @@ pub fn router(state: SharedState) -> Router {
         .route("/fleet", get(pages::fleet))
         .route("/pair", get(pages::pair))
         .route("/pair/redeem", post(pages::pair_redeem))
+        .route("/hooks/github", post(hooks::github))
         .route("/pair/claim", post(pages::pair_claim))
         .route("/devices", get(pages::devices))
         .route("/devices/add", post(pages::add_device))

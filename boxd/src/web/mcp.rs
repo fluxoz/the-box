@@ -204,6 +204,18 @@ fn tool_definitions() -> Value {
             },
         },
         {
+            "name": "webhook_setup",
+            "description": "Upgrade a repo-linked service from ~1-minute polling to push-to-deploy in seconds: registers a webhook on the repository (GitHub) pointing at this Box's receiver at https://hooks.<zone>/hooks/github. Needs BYO-domain ingress configured (the hooks route rides the tunnel; ingress_setup adds it) and the GitHub App must hold 'Repository webhooks: Read & write' — if it does not, the error names that owner-only fix. Polling continues as the fallback either way, so a lost webhook only ever costs latency.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "A repo-linked service" }
+                },
+                "required": ["name"],
+                "additionalProperties": false,
+            },
+        },
+        {
             "name": "forge_options",
             "description": "List the places this Box can deploy code from (GitHub, GitLab), what each one needs before it will work, and whether an account is already connected. Call this first when the person wants to deploy from their existing repository. Read 'shares_only_chosen_repos' out loud when it is false — on that forge the Box will be able to read every project they can see, which is the forge's model and not something the Box chooses.",
             "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false },
@@ -1109,6 +1121,77 @@ pub(crate) async fn execute(
                 Ok(json!({
                     "unlinked": name,
                     "message": "Automatic deploys are off. The service and its current content are untouched.",
+                }))
+            })
+            .await)
+        }
+        "webhook_setup" => {
+            let Some(name) = str_arg("name") else {
+                return Err((-32602, "missing required argument: name".into()));
+            };
+            let state = state.clone();
+            Ok(blocking(move || {
+                use anyhow::Context as _;
+                let config = crate::config::BoxConfig::load(&state.paths)?;
+                let svc = config
+                    .find(&name)
+                    .with_context(|| format!("no service named {name:?}"))?;
+                let link = svc.repo.clone().with_context(|| {
+                    format!("service {name:?} has no linked repository — link_repo first")
+                })?;
+                if link.forge != "github" {
+                    anyhow::bail!(
+                        "webhooks are wired for GitHub so far; {} stays on the ~1-minute poll",
+                        link.forge
+                    );
+                }
+                let zone = config
+                    .ingress
+                    .as_ref()
+                    .and_then(|i| i.zone.clone())
+                    .context(
+                        "webhooks need your own domain (the receiver lives at hooks.<domain>) — \
+                         run ingress_setup with a zone first; polling keeps working meanwhile",
+                    )?;
+                let secret =
+                    match crate::secrets::get(&state.paths, crate::web::hooks::WEBHOOK_SECRET)? {
+                        Some(s) => s,
+                        None => {
+                            let s = crate::auth::random_hex(16)?;
+                            crate::secrets::set(
+                                &state.paths,
+                                crate::web::hooks::WEBHOOK_SECRET,
+                                &s,
+                            )?;
+                            s
+                        }
+                    };
+                let url = format!("https://hooks.{zone}/hooks/github");
+                let token = crate::forge::token(&state.paths, "github")?;
+                let created = crate::ghapi::register_hook(&token, &link.repo, &url, &secret)
+                    .map_err(|e| {
+                        let text = format!("{e:#}");
+                        if text.contains("Resource not accessible") || text.contains("Not Found") {
+                            anyhow::anyhow!(
+                                "{text}. This usually means the App registration lacks \
+                                 'Repository webhooks: Read & write' — only the App's OWNER can \
+                                 add that (Permissions & events), and existing installations must \
+                                 approve the change. Polling continues meanwhile."
+                            )
+                        } else {
+                            anyhow::anyhow!("{text}")
+                        }
+                    })?;
+                let hook_id = created.get("id").and_then(Value::as_u64);
+                Ok(json!({
+                    "registered": true,
+                    "repo": link.repo,
+                    "receiver": url,
+                    "hook_id": hook_id,
+                    "note": "Pushes now deploy in seconds. GitHub sends a ping first — if the \
+                             tunnel route was created before this Box's current release, re-run \
+                             ingress_setup once so hooks.<zone> routes to the receiver. Polling \
+                             stays on as the fallback.",
                 }))
             })
             .await)

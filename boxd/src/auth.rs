@@ -319,6 +319,9 @@ pub fn is_public_path(path: &str) -> bool {
         || path == "/sites"
         || path.starts_with("/sites/")
         || path.starts_with("/pair")
+        // Webhooks authenticate with their HMAC signature, not a session —
+        // the forge cannot hold one. The handler 404s until a secret exists.
+        || path == "/hooks/github"
         || path == "/favicon.ico"
 }
 
