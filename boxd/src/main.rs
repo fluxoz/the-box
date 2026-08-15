@@ -342,6 +342,10 @@ enum ChannelCmd {
         /// appliance), or pi3|pi4|pi5. A Pi rebuilt without its board won't boot.
         #[arg(long, default_value = "auto")]
         board: String,
+        /// GPU layer: auto (detect an NVIDIA card), none, or nvidia. Installs
+        /// the driver + container CDI so containers can take the GPU.
+        #[arg(long, default_value = "auto")]
+        gpu: String,
         #[arg(long)]
         auto_update: bool,
     },
@@ -775,6 +779,7 @@ fn run_channel(paths: &Paths, action: ChannelCmd) -> Result<()> {
             platform,
             system,
             board,
+            gpu,
             auto_update,
         } => {
             let board = boxd::board::resolve_arg(&board)?;
@@ -786,11 +791,26 @@ fn run_channel(paths: &Paths, action: ChannelCmd) -> Result<()> {
             } else {
                 system
             };
+            let gpu = match gpu.as_str() {
+                "auto" => {
+                    // A board brings its own GPU story; only the generic
+                    // appliance takes the nvidia layer.
+                    if board.is_none() && boxd::board::nvidia_present() {
+                        Some("nvidia".to_string())
+                    } else {
+                        None
+                    }
+                }
+                "none" => None,
+                "nvidia" => Some("nvidia".to_string()),
+                other => anyhow::bail!("unknown gpu {other:?} (auto | none | nvidia)"),
+            };
             let cfg = ChannelConfig {
                 host_id,
                 platform_ref: platform,
                 system,
                 board,
+                gpu,
                 auto_update,
             };
             cfg.save(paths)?;
