@@ -493,24 +493,42 @@ against a real zone; the wildcard record needed hand-holding — the exact pain
 the self-minting design retires). Backups are LIVE on R2 (first snapshot).
 The build step is LIVE (real npm install, offline vite build, on the Pi).
 
-1. **Housekeeping before 2026-08-21:** the Box currently runs tunnel ops on a
-   token that expires then — replace with one three-scope token (or land
-   self-minting first and let it fix itself).
-2. **The one-liner agent hookup CLI** — DONE (v0.3.16, 2026-08-15):
-   `curl -fsSL https://thebox.build/connect | sh` — live on the site,
-   integration-tested against a real boxd through both pairing doors, proven
-   against the real Pi, agent-usable via env overrides (documented in
-   llms.txt).
-3. **Cloudflare self-minting tokens** (+ probes as fallback diagnosis) — NEXT.
-4. **Console flagship pass** on the highest-traffic surfaces: first-run,
-   deploy-with-live-progress, service page with streaming logs.
-5. **Previews + webhook + Cache-Control** (the loop's comforts).
-6. **Trust ceremony** (pending approvals + per-agent autonomy).
+Status 2026-08-15, after the marathon build-out (v0.3.16 → v0.3.17):
+
+1. ~~Token housekeeping~~ — superseded by self-minting; the Pi still runs the
+   expiring token until a parent token is connected (John: one tap on the
+   parent link, the Box does the rest forever).
+2. **One-liner agent hookup** — DONE (v0.3.16): `curl -fsSL
+   https://thebox.build/connect | sh`, live, tested through both pairing
+   doors, proven against the real Pi.
+3. **Cloudflare self-minting tokens** — BUILT (policy shapes unit-tested,
+   remint-on-auth-failure wired). Awaiting one live run with a real parent
+   token.
+4. **Console flagship pass** — SHIPPED where operators look: per-service page
+   (state / reach / source / deploys / live logs / danger), generalized
+   data-poll live refresh, screenshot-verified in both themes by a real
+   browser. More polish is a standing invitation, not a blocker.
+5. **Previews + webhook + Cache-Control** — DONE: previews are taught by
+   link_repo itself; webhook receiver (HMAC, tunnel-routed /hooks/* only,
+   polling as fallback) + webhook_setup registration; Cache-Control makes the
+   tunnel edge a CDN (VM-asserted). Live webhook registration awaits the App's
+   webhook permission (owner-only).
+6. **Trust ceremony** — DONE: destructive ops queue for a console tap
+   (Approvals page), per-session autonomy toggle in the device list, tested
+   end to end.
 7. **Fresh-install rehearsals** from thebox.build on wiped hardware; write
-   the per-agent quickstarts from what actually happened.
+   the per-agent quickstarts from what actually happened. ← THE REMAINING
+   ENGINEERING ITEM before recruiting.
 8. **Then recruit the ten** — vibe-coder communities and direct outreach,
    fixing whatever they hit, until strangers finish without help. The
    engineering is not the risk; the market is.
+
+Act 2 status: the AI catalog shelf is stocked (Ollama honest about CPU,
+Qdrant, n8n, Open WebUI); the gpu axis is built end to end (channel
+--gpu auto detected a real card live; per-box flake renders it; boxSystem
+composes driver + CDI; containers take gpu = true; CI proves the system
+evaluates). The first spare-RTX machine to take a channel update is the live
+verification. The Jetson appliance stays LAST, hardware-gated, per the plan.
 
 ---
 
