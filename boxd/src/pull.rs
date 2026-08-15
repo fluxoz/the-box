@@ -71,6 +71,14 @@ pub fn validate_subdir(subdir: &str) -> Result<()> {
     Ok(())
 }
 
+/// [`validate_subdir`] for optional values, so callers stay one-liners.
+pub fn validate_subdir_opt(subdir: Option<&str>) -> Result<()> {
+    match subdir {
+        Some(s) => validate_subdir(s),
+        None => Ok(()),
+    }
+}
+
 /// The environment that authenticates one git invocation, built pure so the
 /// tests can hold it up to the light. Empty when no auth applies.
 pub fn auth_env(auth: Option<&GitAuth>) -> Vec<(String, String)> {
@@ -289,18 +297,15 @@ pub fn suggest_subdir(tree: &std::path::Path) -> Option<String> {
 }
 
 /// Where the deployable content is, once a commit is checked out.
-fn source_for(link: &RepoLink, tree: &std::path::Path) -> Result<PathBuf> {
-    match &link.subdir {
+fn source_for(subdir: Option<&str>, tree: &std::path::Path) -> Result<PathBuf> {
+    match subdir {
         None => Ok(tree.to_path_buf()),
         Some(sub) => {
             validate_subdir(sub)?;
             let dir = crate::web::sites::resolve_safe(tree, sub)
                 .with_context(|| format!("subdir {sub:?} escapes the repository"))?;
             if !dir.is_dir() {
-                bail!(
-                    "subdir {sub:?} does not exist in {} at the fetched commit",
-                    link.repo
-                );
+                bail!("subdir {sub:?} does not exist in the repository at the fetched commit");
             }
             Ok(dir)
         }
@@ -335,9 +340,15 @@ pub fn sync(
     }
 
     let tree = checkout(paths, name, &commit)?;
-    let source = match &link.build {
-        Some(spec) => crate::build::run(paths, exec, name, &tree, link.subdir.as_deref(), spec)?,
-        None => source_for(&link, &tree)?,
+    // The repo may carry its own deploy config (a Boxfile); the operator's
+    // explicit link settings win, the file fills the gaps — re-read on every
+    // sync so a commit that changes it changes the next deploy.
+    let boxfile = crate::boxfile::read(&tree)?;
+    let (build, subdir) =
+        crate::boxfile::effective(link.build.clone(), link.subdir.clone(), boxfile.as_ref());
+    let source = match &build {
+        Some(spec) => crate::build::run(paths, exec, name, &tree, subdir.as_deref(), spec)?,
+        None => source_for(subdir.as_deref(), &tree)?,
     };
 
     let mut params = svc.params.clone();
@@ -430,9 +441,12 @@ pub fn link(
     // leave behind a service that never worked.
     let commit = fetch(paths, service, &link)?;
     let tree = checkout(paths, service, &commit)?;
-    let source = match &link.build {
-        Some(spec) => crate::build::run(paths, exec, service, &tree, link.subdir.as_deref(), spec)?,
-        None => source_for(&link, &tree)?,
+    let boxfile = crate::boxfile::read(&tree)?;
+    let (eff_build, eff_subdir) =
+        crate::boxfile::effective(link.build.clone(), link.subdir.clone(), boxfile.as_ref());
+    let source = match &eff_build {
+        Some(spec) => crate::build::run(paths, exec, service, &tree, eff_subdir.as_deref(), spec)?,
+        None => source_for(eff_subdir.as_deref(), &tree)?,
     };
 
     // Not an error — plenty of repos serve fine without an index — but the
@@ -440,7 +454,7 @@ pub fn link(
     // turns a silent 404 into a one-word fix.
     let warning = if source.join("index.html").is_file() {
         None
-    } else if link.build.is_some() {
+    } else if eff_build.is_some() {
         Some(
             "the build succeeded, but its output has no index.html — visitors \
              to the root will see a 404. If the site lands somewhere else, \
