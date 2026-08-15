@@ -153,7 +153,7 @@ fn tool_definitions() -> Value {
         },
         {
             "name": "ingress_connect_account",
-            "description": "Connect the person's Cloudflare account to this Box, so the Box can set publishing up for them instead of them doing it in Cloudflare's dashboard. Call with no arguments FIRST to get a link that pre-selects the exact permissions needed — send them that link, have them create the token and give it to you, then call again with it. The token is stored encrypted on the Box; you will not be able to read it back, which is deliberate: it can rewrite DNS for every domain on their account.",
+            "description": "Connect the person's Cloudflare account to this Box, so the Box can set publishing up for them instead of them doing it in Cloudflare's dashboard. Call with no arguments FIRST to get the token-creation links and instructions. The best path is the PARENT token (one permission: API Tokens Edit): the Box then mints its own exactly-scoped working token and remints it automatically if it ever breaks — no human ever debugs Cloudflare permissions again. A directly-scoped token works too. Tokens are stored encrypted on the Box; you cannot read them back, which is deliberate: they can rewrite DNS for every domain on the account.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -711,23 +711,49 @@ async fn execute(
                 let Some(token) = token else {
                     return Ok(json!({
                         "connected": crate::secrets::exists(&state.paths, crate::cfapi::API_TOKEN_SECRET),
-                        "create_token_url": crate::cfapi::TOKEN_TEMPLATE_URL,
-                        "instructions": "Send them that link — it pre-selects the permissions needed \
-                                         (Cloudflare Tunnel: Edit, DNS: Edit, Zone: Read). They click \
-                                         Create, copy the token, and give it to you. Then call this \
-                                         again with api_token set.",
+                        "create_token_url": crate::cfapi::PARENT_TOKEN_URL,
+                        "fallback_token_url": crate::cfapi::TOKEN_TEMPLATE_URL,
+                        "instructions": "Best path: send them create_token_url — ONE permission \
+                                         (API Tokens: Edit), and the Box mints and maintains its own \
+                                         exactly-scoped working token from it, forever. Fallback: \
+                                         fallback_token_url pre-selects the three direct permissions \
+                                         (Cloudflare Tunnel: Edit, DNS: Edit, Zone: Read) if they \
+                                         prefer to hand over only those. Either way: they click \
+                                         Create, copy the token, and give it to you; call this again \
+                                         with api_token set.",
                     }));
                 };
-                // Prove it works before storing it, so a typo fails here rather
-                // than halfway through changing their account.
+                // A parent token (one that can create tokens) is the good path:
+                // the Box mints its own scoped child and keeps the parent for
+                // reminting, so no human ever assembles the working token by
+                // hand — the failure class the first live run spent a night in.
+                if let Some(child) = crate::ingress::try_self_mint(&token) {
+                    crate::secrets::set(&state.paths, crate::cfapi::PARENT_TOKEN_SECRET, &token)?;
+                    crate::secrets::set(&state.paths, crate::cfapi::API_TOKEN_SECRET, &child)?;
+                    return Ok(json!({
+                        "connected": true,
+                        "minted": true,
+                        "message": "Parent token accepted. The Box minted its own exactly-scoped \
+                                    working token (tunnel + DNS + zone read, no expiry) and will \
+                                    remint it itself if it ever stops working. Call ingress_setup \
+                                    with their domain and the Box does the rest.",
+                    }));
+                }
+                // Not a parent — prove it works as a direct credential before
+                // storing it, so a typo fails here rather than halfway through
+                // changing their account.
                 use anyhow::Context as _;
                 crate::cfapi::call(&token, &crate::cfapi::verify_token())
                     .context("that token was refused by Cloudflare")?;
                 crate::secrets::set(&state.paths, crate::cfapi::API_TOKEN_SECRET, &token)?;
                 Ok(json!({
                     "connected": true,
-                    "message": "Cloudflare account connected. Call ingress_setup with their domain \
-                                and the Box will do the rest.",
+                    "minted": false,
+                    "message": "Cloudflare account connected with the token as-is (it cannot mint \
+                                tokens, so the Box will use it directly — if it lacks a permission \
+                                or expires, that surfaces as an Authentication error later; the \
+                                parent-token path avoids that class). Call ingress_setup with their \
+                                domain and the Box will do the rest.",
                 }))
             })
             .await)

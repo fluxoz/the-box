@@ -125,14 +125,53 @@ pub fn parse_avahi(output: &str) -> Vec<(String, String, u16)> {
     out
 }
 
+/// Run a discovery helper with a hard deadline. Discovery happens INSIDE the
+/// /fleet request, so a helper that hangs hangs the endpoint — and one of them
+/// did: `tailscale status` can block indefinitely against a tailscaled that is
+/// up but logged out with no way out (every Box runs exactly that until it
+/// enrolls in a mesh), which held /fleet past the CI harness's 90 s and kept
+/// the Tests workflow red for days. A plane that cannot answer in a few
+/// seconds is treated as having no peers, which is what it behaves like.
+fn run_with_deadline(cmd: &str, args: &[&str], secs: u64) -> Option<std::process::Output> {
+    let mut child = Command::new(cmd)
+        .args(args)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .ok()?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(secs);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let mut stdout = Vec::new();
+                if let Some(mut out) = child.stdout.take() {
+                    use std::io::Read;
+                    let _ = out.read_to_end(&mut stdout);
+                }
+                return Some(std::process::Output { status, stdout, stderr: Vec::new() });
+            }
+            Ok(None) => {
+                if std::time::Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return None;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+        }
+    }
+}
+
 /// Browse the LAN for peers. `-l` ignores services published locally, so this
 /// returns other Boxes, never ourselves. Returns empty when avahi isn't present
 /// (e.g. a dev host), so callers degrade to "just this Box".
 fn browse() -> Option<String> {
-    let out = Command::new("avahi-browse")
-        .args(["-r", "-p", "-t", "-l", SERVICE_TYPE])
-        .output()
-        .ok()?;
+    let out = run_with_deadline("avahi-browse", &["-r", "-p", "-t", "-l", SERVICE_TYPE], 10)?;
     if !out.status.success() {
         return None;
     }
@@ -209,10 +248,7 @@ pub fn parse_tailscale_peers(status: &Value, tag: &str) -> Vec<(String, String)>
 /// Peer Boxes on the mesh, via the tailnet. Empty when tailscale isn't present
 /// or this Box hasn't joined a mesh — callers degrade to the LAN plane.
 fn discover_tailnet() -> Vec<Peer> {
-    let out = Command::new("tailscale")
-        .args(["status", "--json"])
-        .output()
-        .ok();
+    let out = run_with_deadline("tailscale", &["status", "--json"], 5);
     let Some(out) = out.filter(|o| o.status.success()) else {
         return Vec::new();
     };

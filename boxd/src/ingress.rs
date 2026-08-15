@@ -476,6 +476,41 @@ pub struct SetupOutcome {
     pub still_needed: Vec<String>,
 }
 
+/// Try to use `token` as a PARENT: a token that can create tokens. On
+/// success the Box holds a self-minted child scoped to exactly what it needs
+/// (tunnel write, DNS write, zone read; no expiry) and the parent for
+/// reminting. Any failure returns None and the caller treats the token as a
+/// direct credential — the person may genuinely have handed over a scoped one.
+pub fn try_self_mint(token: &str) -> Option<String> {
+    use crate::cfapi;
+    let groups = cfapi::call(token, &cfapi::list_permission_groups()).ok()?;
+    let (tunnel, dns, zone) = cfapi::needed_group_ids(&groups).ok()?;
+    let name = format!("The Box ({})", crate::fleet::hostname());
+    let created = cfapi::call(token, &cfapi::create_child_token(&name, &tunnel, &dns, &zone)).ok()?;
+    let child = created
+        .get("result")
+        .and_then(|r| r.get("value"))
+        .and_then(serde_json::Value::as_str)?
+        .to_string();
+    // Prove the child before anyone depends on it.
+    cfapi::call(&child, &cfapi::verify_token()).ok()?;
+    Some(child)
+}
+
+/// Remint the child from the stored parent, when there is one. The recovery
+/// path for a revoked/expired working token: nothing to re-type, the Box just
+/// makes itself another key.
+pub fn remint_from_parent(paths: &Paths) -> Result<Option<String>> {
+    let Some(parent) = crate::secrets::get(paths, crate::cfapi::PARENT_TOKEN_SECRET)? else {
+        return Ok(None);
+    };
+    let Some(child) = try_self_mint(&parent) else {
+        return Ok(None);
+    };
+    crate::secrets::set(paths, crate::cfapi::API_TOKEN_SECRET, &child)?;
+    Ok(Some(child))
+}
+
 /// Set a way in up from nothing, using an account the operator connected.
 ///
 /// This is the point of connecting an account: the six steps in someone else's
@@ -483,6 +518,26 @@ pub struct SetupOutcome {
 /// an agent asks for the outcome and never sees the token, which matters
 /// because a Cloudflare token can rewrite DNS for every domain on the account.
 pub fn setup_cloudflare(paths: &Paths, zone: &str, hostname_label: Option<&str>) -> Result<SetupOutcome> {
+    match setup_cloudflare_inner(paths, zone, hostname_label) {
+        Err(e) if format!("{e:#}").contains("Authentication error") => {
+            // The working token went bad (revoked, expired, under-scoped). If
+            // a parent is on file the Box makes itself a fresh child and
+            // retries once — the self-minting promise is that nobody ever
+            // fixes a token by hand again.
+            if remint_from_parent(paths)?.is_some() {
+                return setup_cloudflare_inner(paths, zone, hostname_label);
+            }
+            Err(e)
+        }
+        other => other,
+    }
+}
+
+fn setup_cloudflare_inner(
+    paths: &Paths,
+    zone: &str,
+    hostname_label: Option<&str>,
+) -> Result<SetupOutcome> {
     use crate::cfapi;
 
     let token = crate::secrets::get(paths, cfapi::API_TOKEN_SECRET)?.with_context(|| {
