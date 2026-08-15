@@ -2056,6 +2056,35 @@ pub async fn system_update(State(_state): State<SharedState>) -> Redirect {
     }
 }
 
+/// The Box's identity mark: a deterministic 5x5 emblem drawn from this
+/// machine's name and machine-id, in the console's own brass. The same Box
+/// always draws the same mark; two Boxes on one desk never match. Pure, so
+/// the tests can pin determinism and symmetry.
+pub fn identity_mark_svg(seed: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let h = Sha256::digest(seed.as_bytes());
+    let mut cells = String::new();
+    // Mirror the left three columns onto the right, identicon-style: symmetric
+    // marks read as emblems, not noise.
+    for row in 0..5 {
+        for col in 0..3 {
+            let byte = h[row * 3 + col];
+            if byte % 2 == 0 {
+                for c in [col, 4 - col] {
+                    cells.push_str(&format!(
+                        "<rect x=\"{}\" y=\"{}\" width=\"1\" height=\"1\"/>",
+                        c + 1,
+                        row + 1
+                    ));
+                }
+            }
+        }
+    }
+    format!(
+        "<svg viewBox=\"0 0 7 7\" xmlns=\"http://www.w3.org/2000/svg\" role=\"img\" aria-label=\"This Box's identity mark\" style=\"width:6.5rem;height:6.5rem\"><rect x=\"0\" y=\"0\" width=\"7\" height=\"7\" fill=\"var(--panel-2)\" stroke=\"var(--line-strong)\" stroke-width=\".25\"/><g fill=\"var(--brass)\">{cells}</g></svg>"
+    )
+}
+
 pub async fn pair(
     State(state): State<SharedState>,
     headers: HeaderMap,
@@ -2087,15 +2116,31 @@ pub async fn pair(
                     @if let Some(msg) = &flash.ok { div.flash.ok { (msg) } }
                     section style="max-width:34rem;margin:2.5rem auto" {
                         @if claimable {
-                            h2 { "Claim this Box" }
+                            @let name = crate::fleet::hostname();
+                            @let machine_id = std::fs::read_to_string("/etc/machine-id").unwrap_or_default();
+                            div style="text-align:center;margin-bottom:1.4rem" {
+                                (PreEscaped(identity_mark_svg(&format!("{name}:{}", machine_id.trim()))))
+                            }
+                            h2 style="text-align:center" { "A Box is born." }
+                            p style="text-align:center;font-size:1.25rem;margin:.2rem 0 .1rem" {
+                                b { (name) }
+                            }
+                            p.muted style="text-align:center;margin-top:0" {
+                                "Box OS " (platform_release().unwrap_or_else(|| env!("CARGO_PKG_VERSION").into()))
+                                " · the mark above is this machine's own — no two Boxes draw the same one"
+                            }
                             p.muted {
-                                "No one has set up this Box yet. Claim it to become its operator. "
-                                "After that, any other device needs a one-time code to pair, so do "
-                                "this now, from your own network."
+                                "It wiped its old life and is ready for its new one. Claim it to "
+                                "become its operator — after that, every other device needs a "
+                                "one-time code from you. Do this now, from your own network."
                             }
                             form.stack method="post" action="/pair/claim" {
                                 button.btn type="submit" { "Claim this Box" }
                             }
+                            p.muted style="margin-top:1.2rem" {
+                                "Then, on your laptop — this wires your coding agent to it:"
+                            }
+                            pre.copyable { code { "curl -fsSL https://thebox.build/connect | sh" } }
                             details style="margin-top:1.5rem" {
                                 summary.muted { "Have a pairing code instead?" }
                                 form.stack method="post" action="/pair/redeem" style="margin-top:.8rem" {
@@ -3232,5 +3277,19 @@ pub async fn key_signin_finish(
             }
         }
         Err(e) => json_err(format!("{e:#}")),
+    }
+}
+
+#[cfg(test)]
+mod identity_tests {
+    #[test]
+    fn the_mark_is_deterministic_symmetric_and_unique_per_seed() {
+        let a1 = super::identity_mark_svg("box-a:1234");
+        let a2 = super::identity_mark_svg("box-a:1234");
+        let b = super::identity_mark_svg("box-b:5678");
+        assert_eq!(a1, a2, "same Box, same mark, forever");
+        assert_ne!(a1, b, "different Boxes draw differently");
+        // Symmetry: any cell in column 1 has its mirror in column 5.
+        assert_eq!(a1.matches("x=\"1\"").count(), a1.matches("x=\"5\"").count());
     }
 }
