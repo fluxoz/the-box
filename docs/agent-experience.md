@@ -85,6 +85,13 @@ obvious within an hour on real hardware.
 |---|---|
 | Any paired agent could wipe a machine, delete a service, or restore over live data on its own say-so — "your LAN, your trust" was the whole model, which reads badly the moment a stranger's agent is the operator | **fixed** — `provision_machine`, `delete_service` and `backup_restore` now QUEUE for a human tap on the console's Approvals page unless the session was explicitly granted autonomy in the device list. The agent gets a `pending_approval` id, follows it with `approval_status`, and an approval runs the exact call it made. Agents: never re-submit to nag — the queue is the ask; talk to the person instead |
 
+## The AI surface
+
+| What | Status |
+|---|---|
+| The Box answers `POST /v1/chat/completions` + `GET /v1/models` in the standard wire format, fronting its Ollama service, gated by minted `boxai_` keys (`ai_key_create` / `ai_keys` / `ai_key_revoke`, or the Devices page). Apps run against the Box by changing `base_url` and pasting a key. Refusals name their fix (mint a key / deploy the ollama preset) | **built**, stub-tested end to end; first live model run awaits a pulled model |
+| The resident: a scheduled on-Box caretaker (`resident_configure`, `resident_report_now`) that gathers the Box's state daily, writes a plain-sentence report into the journal, names concerns, and QUEUES destructive suggestions on the Approvals page — the same leash agents wear. Brain = any OpenAI-compatible endpoint, including the Box's own /v1 | **built**, stub-tested: report journaled, concern named, suggestion queued and never run |
+
 ## Flows an agent should know (the recipes)
 
 0. **Bootstrap** — the only two steps that are not MCP, both by nature:

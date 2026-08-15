@@ -924,6 +924,7 @@ fn run_server(paths: Paths, builder: Box<dyn Builder>, listen: SocketAddr) -> Re
     // Repo-linked services: fetch, compare, deploy — push-to-deploy without
     // anything pushing at us.
     boxd::pull::spawn(state.clone());
+    boxd::resident::spawn(state.clone());
     let runtime = tokio::runtime::Runtime::new()?;
     runtime.block_on(async move {
         let app = web::router(state);

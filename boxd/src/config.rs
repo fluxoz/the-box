@@ -27,6 +27,9 @@ pub struct BoxConfig {
     /// stated US-average default applies when unset.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub electricity_rate_per_kwh: Option<f64>,
+    /// The resident caretaker agent's configuration. Absent = no resident.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resident: Option<crate::resident::ResidentConfig>,
     /// Where this Box pulls code from. Empty = nowhere yet.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub forges: Vec<ForgeConfig>,
