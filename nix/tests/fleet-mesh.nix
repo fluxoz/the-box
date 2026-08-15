@@ -104,8 +104,12 @@ pkgs.testers.runNixOSTest {
     boxA.wait_until_succeeds(f"curl -sf http://{ip_b}:2693/api/v1/health | grep -i box-b", timeout=120)
 
     # And boxd's tailnet discovery plane finds the tag:box peer over the mesh.
+    # (/fleet is an operator surface — authenticate like one; a bare curl gets
+    # the 401 signpost, which is correct and not a discovery failure.)
+    token_a = boxA.succeed("boxd auth mint --label test 2>/dev/null | tail -1").strip()
     boxA.wait_until_succeeds(
-        "curl -sf http://localhost:2693/api/v1/fleet | grep -i box-b", timeout=120
+        f"curl -sf -H 'Authorization: Bearer {token_a}' http://localhost:2693/api/v1/fleet | grep -i box-b",
+        timeout=120,
     )
 
     print("Box Connect: WireGuard tunnel carries traffic across the mesh + tailnet fleet discovery")

@@ -70,7 +70,23 @@ let
     root =
       if site.root != null then site.root
       else "${cfg.dataDir}/profiles/box/services/${name}/www";
-    locations."/".index = "index.html";
+    # Cache-Control turns the tunnel's edge into a free CDN: Cloudflare (and
+    # any proxy) honors these, so repeat loads are served from the edge near
+    # the visitor instead of from a Pi's uplink. Pages revalidate quickly —
+    # a push must be visible promptly — while hashed build assets (Vite &
+    # friends write content hashes into /assets/ filenames) are immutable by
+    # construction and say so. Per-location on purpose: nginx's add_header
+    # inheritance DISCARDS parent headers in nested blocks, so each block
+    # carries its own.
+    locations."/" = {
+      index = "index.html";
+      extraConfig = ''
+        add_header Cache-Control "public, max-age=60, stale-while-revalidate=300";
+      '';
+    };
+    locations."/assets/".extraConfig = ''
+      add_header Cache-Control "public, max-age=31536000, immutable";
+    '';
     domain = site.domain;
   };
 

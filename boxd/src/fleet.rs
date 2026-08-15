@@ -181,7 +181,11 @@ fn browse() -> Option<String> {
 /// Read a peer's coarse health over HTTP. Best-effort with a short timeout;
 /// `None` means unreachable, which the fleet view renders as such.
 fn fetch_health(address: &str, port: u16) -> Option<CoarseHealth> {
-    let url = format!("http://{address}:{port}/api/v1/health");
+    // IPv6 literals need brackets in a URL — without them a v6-only peer
+    // (exactly what mDNS resolves first on some networks) reads as a garbage
+    // port and its health silently shows unreachable.
+    let host = if address.contains(':') { format!("[{address}]") } else { address.to_string() };
+    let url = format!("http://{host}:{port}/api/v1/health");
     let out = Command::new("curl")
         .args(["-s", "--max-time", "2", &url])
         .output()
