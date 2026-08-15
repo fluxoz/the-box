@@ -310,3 +310,148 @@ where
         .await
         .map_err(|e| anyhow::anyhow!("background task failed: {e}"))?
 }
+
+/// Create or refresh the preview for one PR: for every linked service whose
+/// repository matches, a sibling service named `<parent>-pr<N>` tracks the
+/// PR's head branch with the parent's own build recipe. Domains ride the
+/// wildcard the parent's zone already has, so a preview URL costs nothing.
+pub fn preview_open(
+    state: &SharedState,
+    repo: &str,
+    number: u64,
+    head_branch: &str,
+) -> anyhow::Result<serde_json::Value> {
+    use anyhow::Context as _;
+    if head_branch.is_empty() {
+        anyhow::bail!("pull request event carried no head branch");
+    }
+    let _guard = state.apply_lock.lock().unwrap();
+    let config = crate::config::BoxConfig::load(&state.paths)?;
+    let zone = config.ingress.as_ref().and_then(|i| i.zone.clone());
+    let parents: Vec<crate::config::ServiceConfig> = config
+        .services
+        .iter()
+        .filter(|s| {
+            s.repo.as_ref().is_some_and(|l| l.repo.eq_ignore_ascii_case(repo))
+                // A preview is never a parent: no previews of previews.
+                && !s.name.contains("-pr")
+        })
+        .cloned()
+        .collect();
+    if parents.is_empty() {
+        return Ok(serde_json::json!({ "ignored": format!("no linked service for {repo}") }));
+    }
+
+    let mut previews = Vec::new();
+    for parent in parents {
+        // Service names cap at 32 chars; leave room for the suffix.
+        let suffix = format!("-pr{number}");
+        let stem: String = parent.name.chars().take(32 - suffix.len()).collect();
+        let name = format!("{stem}{suffix}");
+        let domain = zone.as_ref().map(|z| format!("{stem}-pr-{number}.{z}"));
+
+        let mut config = crate::config::BoxConfig::load(&state.paths)?;
+        if config.find(&name).is_none() {
+            let mut params = parent.params.clone();
+            if let Some(obj) = params.as_object_mut() {
+                obj.remove("source_path");
+                obj.insert(
+                    "index_html".into(),
+                    serde_json::Value::String(format!(
+                        "preview of {repo} #{number} — first sync pending"
+                    )),
+                );
+            }
+            let link = parent.repo.clone().map(|mut l| {
+                l.branch = head_branch.to_string();
+                l
+            });
+            config.services.push(crate::config::ServiceConfig {
+                name: name.clone(),
+                template: parent.template.clone(),
+                params,
+                domain: domain.clone(),
+                public: parent.public,
+                port: None,
+                repo: link,
+                created_at: chrono::Utc::now(),
+            });
+            config.save(&state.paths)?;
+        } else if let Some(svc) = config.services.iter_mut().find(|s| s.name == name) {
+            // A reopened PR may have a new head branch; keep the link true.
+            if let Some(l) = svc.repo.as_mut() {
+                l.branch = head_branch.to_string();
+            }
+            config.save(&state.paths)?;
+        }
+
+        crate::pull::sync_recorded(
+            &state.paths,
+            state.builder.as_ref(),
+            &state.build_exec,
+            &name,
+            false,
+        )
+        .with_context(|| format!("syncing preview {name}"))?;
+
+        // The comment is the finishing touch, not the feature: without the
+        // App's PR-write permission it fails, and the preview still serves.
+        let url = domain
+            .as_ref()
+            .map(|d| format!("https://{d}/"))
+            .unwrap_or_else(|| format!("/sites/{name}/ (on the Box's own network)"));
+        let commented = crate::forge::token(&state.paths, "github")
+            .ok()
+            .map(|token| {
+                crate::ghapi::comment_on_issue(
+                    &token,
+                    repo,
+                    number,
+                    &format!(
+                        "The Box deployed a preview of this pull request: {url}\n\n\
+                         It rebuilds on every push here and disappears when the PR closes."
+                    ),
+                )
+                .is_ok()
+            })
+            .unwrap_or(false);
+        previews.push(serde_json::json!({
+            "service": name,
+            "url": url,
+            "commented": commented,
+        }));
+    }
+    Ok(serde_json::json!({ "previews": previews }))
+}
+
+/// A closed PR takes its preview down: unlink, delete, new generation. This
+/// is the Box's own lifecycle bookkeeping for a service it created itself —
+/// not an agent asking to destroy operator data — so it does not queue for
+/// approval.
+pub fn preview_close(
+    state: &SharedState,
+    repo: &str,
+    number: u64,
+) -> anyhow::Result<serde_json::Value> {
+    let _guard = state.apply_lock.lock().unwrap();
+    let config = crate::config::BoxConfig::load(&state.paths)?;
+    let suffix = format!("-pr{number}");
+    let doomed: Vec<String> = config
+        .services
+        .iter()
+        .filter(|s| {
+            s.name.ends_with(&suffix)
+                && s.repo
+                    .as_ref()
+                    .is_some_and(|l| l.repo.eq_ignore_ascii_case(repo))
+        })
+        .map(|s| s.name.clone())
+        .collect();
+    let mut removed = Vec::new();
+    for name in doomed {
+        let _ = crate::pull::unlink(&state.paths, &name);
+        crate::ops::delete_service(&state.paths, state.builder.as_ref(), &name)?;
+        removed.push(name);
+    }
+    Ok(serde_json::json!({ "removed": removed }))
+}

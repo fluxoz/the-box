@@ -205,7 +205,7 @@ fn tool_definitions() -> Value {
         },
         {
             "name": "webhook_setup",
-            "description": "Upgrade a repo-linked service from ~1-minute polling to push-to-deploy in seconds: registers a webhook on the repository (GitHub) pointing at this Box's receiver at https://hooks.<zone>/hooks/github. Needs BYO-domain ingress configured (the hooks route rides the tunnel; ingress_setup adds it) and the GitHub App must hold 'Repository webhooks: Read & write' — if it does not, the error names that owner-only fix. Polling continues as the fallback either way, so a lost webhook only ever costs latency.",
+            "description": "Upgrade a repo-linked service from ~1-minute polling to push-to-deploy in seconds, AND turn on pull-request previews: registers a webhook (push + pull_request events) pointing at this Box's receiver at https://hooks.<zone>/hooks/github. From then on every same-repo PR gets its own preview at <service>-pr-<N>.<zone> (built with the parent's recipe, commented on the PR when the App may, removed when the PR closes). Needs BYO-domain ingress configured (the hooks route rides the tunnel; ingress_setup adds it) and the GitHub App must hold 'Repository webhooks: Read & write' — if it does not, the error names that owner-only fix. Polling continues as the fallback either way, so a lost webhook only ever costs latency.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

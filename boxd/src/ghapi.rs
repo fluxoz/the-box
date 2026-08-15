@@ -217,7 +217,7 @@ pub fn parse_repo(v: &Value) -> Option<Repo> {
 pub fn register_hook(token: &str, repo: &str, url: &str, secret: &str) -> Result<Value> {
     let body = serde_json::json!({
         "config": { "url": url, "content_type": "json", "secret": secret },
-        "events": ["push"],
+        "events": ["push", "pull_request"],
         "active": true,
     });
     let out = std::process::Command::new("curl")
@@ -251,6 +251,36 @@ pub fn register_hook(token: &str, repo: &str, url: &str, secret: &str) -> Result
         );
     }
     Ok(value)
+}
+
+/// Leave a comment on an issue or pull request (they share the endpoint).
+/// Best-effort by design at the call sites: the App may lack the permission,
+/// and a preview that deploys without its comment still deployed.
+pub fn comment_on_issue(token: &str, repo: &str, number: u64, body: &str) -> Result<()> {
+    let payload = serde_json::json!({ "body": body });
+    let out = std::process::Command::new("curl")
+        .args(["-sS", "-m", "30", "-X", "POST"])
+        .args(["-H", &format!("Authorization: Bearer {token}")])
+        .args(["-H", "Accept: application/vnd.github+json"])
+        .args(["-H", "Content-Type: application/json"])
+        .args(["-d", &payload.to_string()])
+        .args(["-w", "\n%{http_code}"])
+        .arg(format!("{API}/repos/{repo}/issues/{number}/comments"))
+        .output()
+        .context("running curl against the GitHub API")?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let (payload, status) = text.rsplit_once('\n').unwrap_or((text.as_ref(), ""));
+    if status.trim() != "201" {
+        let detail = serde_json::from_str::<Value>(payload.trim())
+            .ok()
+            .and_then(|v| v.get("message").and_then(Value::as_str).map(str::to_string))
+            .unwrap_or_else(|| "no detail".into());
+        bail!(
+            "GitHub refused the comment (HTTP {}): {detail}",
+            status.trim()
+        );
+    }
+    Ok(())
 }
 
 #[cfg(test)]
