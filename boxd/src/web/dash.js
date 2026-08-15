@@ -78,6 +78,7 @@
     var h = main.querySelector("h2");
     if (h) { h.setAttribute("tabindex", "-1"); h.focus({ preventScroll: true }); }
     watchJob(); // the new view may itself be a running job
+    watchLive();
   }
 
   function go(url, opts, push, btn) {
@@ -179,8 +180,26 @@
     })();
   }
 
+  // Live sections: any element with data-poll="<seconds>" keeps its page
+  // fresh by re-fetching and swapping in place — logs advance, sync states
+  // settle, deploys appear, with no reload button and no work when the tab
+  // is hidden. The job watcher takes precedence (it polls faster and knows
+  // where to go when the job ends).
+  function watchLive() {
+    if (poll) return; // a job is already driving the refresh
+    var el = main.querySelector("[data-poll]");
+    if (!el) return;
+    var secs = parseInt(el.getAttribute("data-poll"), 10) || 4;
+    poll = setTimeout(function () {
+      poll = null;
+      if (document.hidden) { watchLive(); return; }
+      go(location.href, null, false);
+    }, secs * 1000);
+  }
+
   // Arm for the page we loaded on; swap() re-arms after every view change.
   watchJob();
+  watchLive();
 })();
 
 // ---- security keys (WebAuthn) ---------------------------------------------

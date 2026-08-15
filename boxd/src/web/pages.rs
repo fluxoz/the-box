@@ -206,7 +206,7 @@ pub async fn index(
                             @let status = ops::service_status(
                                 &state.paths, s, active.contains(&s.name));
                             tr {
-                                td { strong { (s.name) } }
+                                td { strong { a href={ "/service/" (s.name) } { (s.name) } } }
                                 td { (s.template) }
                                 td {
                                     @match status.state {
@@ -2468,6 +2468,210 @@ pub async fn add_device(State(state): State<SharedState>) -> Redirect {
             "/devices?err={}",
             urlencoding::encode(&format!("{err:#}"))
         )),
+    }
+}
+
+/// One service, in full: what it is, where it serves, where it came from,
+/// and what it is saying right now. The console's "why is it not working"
+/// page — logs refresh live (data-poll), so watching a deploy settle or an
+/// app crash-loop needs no reloading.
+pub async fn service_detail(
+    State(state): State<SharedState>,
+    Path(name): Path<String>,
+    Query(flash): Query<Flash>,
+) -> Result<Html<String>, AppError> {
+    let config = BoxConfig::load(&state.paths)?;
+    let Some(svc) = config.find(&name).cloned() else {
+        return Ok(layout(
+            "Service",
+            &flash,
+            html! {
+                h2 { "No service named " (name) }
+                p.muted { a href="/" { "← back to services" } }
+            },
+        ));
+    };
+    let current = store::current(&state.paths)?;
+    let active: HashSet<String> = current
+        .as_ref()
+        .and_then(|c| manifest::read_manifest(&c.store_path).ok())
+        .map(|m| m.services.into_iter().map(|s| s.name).collect())
+        .unwrap_or_default();
+    let status = ops::service_status(&state.paths, &svc, active.contains(&svc.name));
+    let tunnel_running = state.tunnel.status().state == "running";
+    let sync = crate::pull::read_sync_state(&state.paths, &name);
+    let logs = crate::logs::service_logs(&state.paths, &name, 80).ok();
+    let build_log = std::fs::read_to_string(state.paths.build_log(&name))
+        .ok()
+        .map(|t| {
+            let lines: Vec<&str> = t.lines().collect();
+            let start = lines.len().saturating_sub(40);
+            lines[start..].join("\n")
+        });
+    let when = |unix: u64| {
+        chrono::DateTime::from_timestamp(unix as i64, 0)
+            .map(|t| t.format("%Y-%m-%d %H:%M UTC").to_string())
+            .unwrap_or_else(|| "—".into())
+    };
+
+    let body = html! {
+        div.section-head {
+            h2 { (svc.name) }
+            span.muted { (svc.template) }
+        }
+        section.cards {
+            div.card {
+                h3 { "State" }
+                p.big {
+                    @match status.state {
+                        "active" => { span.badge.on { "active" } },
+                        "not-running" => { span.badge.warn { "not running" } },
+                        other => { span.badge { (other) } },
+                    }
+                }
+            }
+            div.card {
+                h3 { "Reach" }
+                p.big {
+                    @match &svc.domain {
+                        Some(d) => {
+                            @if tunnel_running { a href={ "https://" (d) } target="_blank" { (d) } }
+                            @else { span.muted { (d) } " " span.badge { "tunnel off" } }
+                        },
+                        None => { span.muted { "your network only" } },
+                    }
+                }
+                p.muted {
+                    @if let Some(url) = &status.url { a href=(url) { (url) } }
+                }
+            }
+            @if let Some(link) = &svc.repo {
+                div.card {
+                    h3 { "Source" }
+                    p.big { (link.repo) }
+                    p.muted {
+                        "branch " code { (link.branch) }
+                        @if link.build.is_some() { " · built on the Box" }
+                    }
+                }
+            }
+        }
+
+        @if svc.repo.is_some() {
+            section data-poll="4" {
+                div.section-head {
+                    h2 { "Deploys" }
+                    form method="post" action={ "/service/" (svc.name) "/sync" } {
+                        button.btn type="submit" { "Sync now" }
+                    }
+                }
+                @match &sync {
+                    Some(s) if s.ok => {
+                        p {
+                            span.badge.on { "in step" } " "
+                            @if let Some(c) = &s.commit { code { (c.chars().take(10).collect::<String>()) } " " }
+                            span.muted { "last checked " (when(s.at)) " — pushing deploys within a minute; Sync now skips the wait" }
+                        }
+                    }
+                    Some(s) => {
+                        p {
+                            span.badge.warn { "failing" } " "
+                            span.muted { "since " (when(s.at)) }
+                        }
+                        @if let Some(e) = &s.error { pre.logs { (e) } }
+                    }
+                    None => { p.muted { "No sync has run yet." } }
+                }
+                @if let Some(tail) = &build_log {
+                    h3 { "Last build" }
+                    pre.logs { (tail) }
+                }
+            }
+        }
+
+        section data-poll="4" {
+            div.section-head { h2 { "Logs" } }
+            @match &logs {
+                Some(l) => {
+                    @let lines = l.get("lines").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+                    @if lines.is_empty() && svc.template == "static-site" && status.state == "active" {
+                        // An active static site on the fast path has no unit of
+                        // its own — boxd serves the files. The journal note
+                        // ("declared but not running") would contradict the
+                        // ACTIVE badge two sections up, and the badge is right.
+                        p.muted {
+                            "Static content — served directly, no process to log. "
+                            "Once the OS tier's web server fronts it, its logs appear here."
+                        }
+                    } @else if lines.is_empty() {
+                        p.muted {
+                            @match l.get("note").and_then(|n| n.as_str()) {
+                                Some(n) => (n),
+                                None => "Nothing in the journal yet.",
+                            }
+                        }
+                    } @else {
+                        @if let Some(unit) = l.get("unit").and_then(|u| u.as_str()) {
+                            p.muted { "from " code { (unit) } " — refreshes live" }
+                        }
+                        pre.logs {
+                            @for line in &lines {
+                                (line.as_str().unwrap_or_default()) "\n"
+                            }
+                        }
+                    }
+                }
+                None => { p.muted { "Logs are not readable here (no journal on this machine)." } }
+            }
+        }
+
+        section {
+            div.section-head { h2 { "Danger" } }
+            form method="post" action={ "/services/" (svc.name) "/delete" }
+                 onsubmit="return confirm('Delete this service and stop serving it?')" {
+                button.danger type="submit" { "Delete service" }
+            }
+        }
+    };
+    Ok(layout(&svc.name.clone(), &flash, body))
+}
+
+/// The console's "Sync now": the same sync the poller and the webhook run,
+/// on demand, with the outcome in the flash.
+pub async fn service_sync_now(
+    State(state): State<SharedState>,
+    Path(name): Path<String>,
+) -> Redirect {
+    let n = name.clone();
+    let state2 = state.clone();
+    let outcome = tokio::task::spawn_blocking(move || {
+        let _guard = state2.apply_lock.lock().unwrap();
+        crate::pull::sync_recorded(
+            &state2.paths,
+            state2.builder.as_ref(),
+            &state2.build_exec,
+            &n,
+            false,
+        )
+    })
+    .await;
+    let dest = |kind: &str, msg: &str| {
+        Redirect::to(&format!(
+            "/service/{}?{}={}",
+            name,
+            kind,
+            urlencoding::encode(msg)
+        ))
+    };
+    match outcome {
+        Ok(Ok(crate::pull::SyncOutcome::Deployed { generation, .. })) => {
+            dest("ok", &format!("Deployed as generation #{generation}"))
+        }
+        Ok(Ok(crate::pull::SyncOutcome::UpToDate { .. })) => {
+            dest("ok", "Already in step with the repository")
+        }
+        Ok(Err(e)) => dest("err", &format!("{e:#}")),
+        Err(e) => dest("err", &format!("{e}")),
     }
 }
 

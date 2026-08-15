@@ -123,6 +123,8 @@ pub fn router(state: SharedState) -> Router {
         .route("/services/new/{template}", get(pages::new_service_form))
         .route("/services", post(pages::create_service))
         .route("/services/{name}/delete", post(pages::delete_service))
+        .route("/service/{name}", get(pages::service_detail))
+        .route("/service/{name}/sync", post(pages::service_sync_now))
         .route("/jobs/{id}", get(pages::job_view))
         .route("/generations", get(pages::generations))
         .route("/generations/{number}/rollback", post(pages::rollback))
