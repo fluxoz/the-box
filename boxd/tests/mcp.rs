@@ -948,6 +948,95 @@ async fn destructive_ops_wait_for_the_human_tap() {
     assert!(!text(&services).contains("diary"), "{}", text(&services));
 }
 
+/// The Boxfile: deploy config that lives in the repo. A linked repository
+/// with a box.toml builds by its own declaration; changing the file in a
+/// commit changes the next deploy; breaking it fails loudly, not silently.
+#[tokio::test]
+async fn boxfile_in_the_repo_declares_the_build() {
+    let (_tmp, app, token) = app_with_builds();
+    let paths = boxd::paths::Paths::new(_tmp.path().to_path_buf());
+    let text = |v: &Value| {
+        v["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+
+    let upstream = TempDir::new().unwrap();
+    let git = |args: &[&str]| {
+        let out = std::process::Command::new("git")
+            .args(args)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}");
+    };
+    let up = upstream.path().to_str().unwrap().to_string();
+    git(&["init", "-q", "-b", "main", &up]);
+    std::fs::write(upstream.path().join("page.src"), "declared in the repo").unwrap();
+    std::fs::write(
+        upstream.path().join("box.toml"),
+        "[build]\ncommand = \"mkdir -p dist && cp page.src dist/index.html\"\noutput_dir = \"dist\"\n",
+    )
+    .unwrap();
+    git(&["-C", &up, "add", "."]);
+    git(&["-C", &up, "commit", "-qm", "v1"]);
+
+    let deploy = call_tool(
+        &app,
+        &token,
+        "deploy_static_site",
+        json!({ "name": "site", "index_html": "placeholder" }),
+    )
+    .await;
+    assert_eq!(deploy["result"]["isError"], false, "{deploy}");
+    {
+        // Linked with NO build config at all: the repo speaks for itself.
+        let mut config = boxd::config::BoxConfig::load(&paths).unwrap();
+        config.services[0].repo = Some(boxd::config::RepoLink {
+            forge: "github".into(),
+            repo: "local/site".into(),
+            clone_url: format!("file://{up}"),
+            branch: "main".into(),
+            subdir: None,
+            build: None,
+        });
+        config.save(&paths).unwrap();
+    }
+
+    let sync = call_tool(&app, &token, "sync_repo", json!({ "name": "site" })).await;
+    assert_eq!(sync["result"]["isError"], false, "{sync}");
+    let (_, body) = get(&app, "/sites/site/", "127.0.0.1", Some(&token)).await;
+    assert!(body.contains("declared in the repo"), "{body}");
+
+    // Config as code: a commit that changes the Boxfile changes the deploy.
+    std::fs::write(
+        upstream.path().join("box.toml"),
+        "[build]\ncommand = \"mkdir -p out && printf 'reconfigured by a commit' > out/index.html\"\noutput_dir = \"out\"\n",
+    )
+    .unwrap();
+    git(&["-C", &up, "add", "."]);
+    git(&["-C", &up, "commit", "-qm", "v2 changes the build"]);
+    let sync = call_tool(&app, &token, "sync_repo", json!({ "name": "site" })).await;
+    assert_eq!(sync["result"]["isError"], false, "{sync}");
+    let (_, body) = get(&app, "/sites/site/", "127.0.0.1", Some(&token)).await;
+    assert!(body.contains("reconfigured by a commit"), "{body}");
+
+    // A malformed Boxfile fails the sync loudly, naming the file.
+    std::fs::write(upstream.path().join("box.toml"), "[build\nbroken").unwrap();
+    git(&["-C", &up, "add", "."]);
+    git(&["-C", &up, "commit", "-qm", "v3 breaks the file"]);
+    let sync = call_tool(&app, &token, "sync_repo", json!({ "name": "site" })).await;
+    assert_eq!(sync["result"]["isError"], true);
+    assert!(text(&sync).contains("box.toml"), "{}", text(&sync));
+    // The last good deploy keeps serving.
+    let (_, body) = get(&app, "/sites/site/", "127.0.0.1", Some(&token)).await;
+    assert!(body.contains("reconfigured by a commit"), "{body}");
+}
+
 /// A machine with no sandbox refuses a build-step sync with an explanation,
 /// not a broken deploy — and never runs repository code on the bare host.
 #[tokio::test]

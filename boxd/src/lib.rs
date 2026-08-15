@@ -13,6 +13,7 @@ pub mod approvals;
 pub mod auth;
 pub mod backup;
 pub mod board;
+pub mod boxfile;
 pub mod build;
 pub mod catalog;
 pub mod cfapi;

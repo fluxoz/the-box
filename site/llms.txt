@@ -9,6 +9,14 @@ This file is written for AI agents. If you are an agent asked to "set up The Box
 on a machine, everything you need is here. Complete machine reference (orders
 schema + every MCP tool): https://thebox.build/llms-full.txt
 
+## Deploy config as code (the Boxfile)
+
+A `box.toml` at the repository root declares how the project deploys, next to
+the code: `[build]` with `command`, optional `install`, `output_dir`, `subdir`.
+Explicit link_repo arguments win; the file fills the gaps; committing a change
+to it changes the next deploy. Write one into repos you set up so any Box can
+deploy them with a bare link_repo call.
+
 ## Connect this agent to an existing Box (fastest path)
 
 If a Box is already running on the person's network, one line on their laptop
