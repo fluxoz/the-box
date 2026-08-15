@@ -948,6 +948,134 @@ async fn destructive_ops_wait_for_the_human_tap() {
     assert!(!text(&services).contains("diary"), "{}", text(&services));
 }
 
+/// The OpenAI-compatible endpoint: minted keys gate it, requests route to
+/// the Box's model server, and the errors name their fixes. The upstream is
+/// a stub speaking just enough of the wire format to prove the plumbing.
+#[tokio::test]
+async fn ai_endpoint_speaks_openai_with_minted_keys() {
+    let (_tmp, app, token) = app();
+    let paths = boxd::paths::Paths::new(_tmp.path().to_path_buf());
+    let text = |v: &Value| {
+        v["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+
+    // A stub model server on a real port (the proxy reaches it via curl).
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let stub = axum::Router::new()
+        .route(
+            "/v1/chat/completions",
+            axum::routing::post(|| async {
+                axum::Json(json!({
+                    "id": "chatcmpl-stub",
+                    "choices": [{ "message": { "role": "assistant", "content": "hello from your own hardware" } }],
+                }))
+            }),
+        )
+        .route(
+            "/v1/models",
+            axum::routing::get(|| async {
+                axum::Json(json!({ "data": [{ "id": "llama3.2" }] }))
+            }),
+        );
+    tokio::spawn(async move { axum::serve(listener, stub).await.unwrap() });
+
+    // Before any key exists: refused, with the minting path named.
+    let post_v1 = |body: String, key: Option<String>| {
+        let app = app.clone();
+        async move {
+            let mut req = Request::post("/v1/chat/completions")
+                .header("content-type", "application/json")
+                .extension(remote_hook());
+            if let Some(k) = key {
+                req = req.header("authorization", format!("Bearer {k}"));
+            }
+            let resp = app
+                .oneshot(req.body(Body::from(body)).unwrap())
+                .await
+                .unwrap();
+            let status = resp.status();
+            let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+            (status, String::from_utf8_lossy(&bytes).to_string())
+        }
+    };
+    let (status, body) = post_v1("{}".into(), None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert!(body.contains("ai_key_create"), "{body}");
+
+    // Mint a key over MCP; the secret is shown once and is recognizable.
+    let minted = call_tool(
+        &app,
+        &token,
+        "ai_key_create",
+        json!({ "label": "notes-app" }),
+    )
+    .await;
+    assert_eq!(minted["result"]["isError"], false, "{minted}");
+    let key = serde_json::from_str::<Value>(&text(&minted)).unwrap()["key"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(key.starts_with("boxai_"));
+
+    // A key but no model server: the error names the ollama preset.
+    let (status, body) = post_v1("{}".into(), Some(key.clone())).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert!(body.contains("ollama"), "{body}");
+
+    // Declare the stub as this Box's ollama service (port is what routing
+    // reads; nothing needs to actually run through podman here).
+    {
+        let mut config = boxd::config::BoxConfig::load(&paths).unwrap();
+        config.services.push(boxd::config::ServiceConfig {
+            name: "ollama".into(),
+            template: "container".into(),
+            params: json!({ "image": "ollama/ollama", "container_port": 11434 }),
+            domain: None,
+            public: false,
+            port: Some(port),
+            repo: None,
+            created_at: chrono::Utc::now(),
+        });
+        config.save(&paths).unwrap();
+    }
+
+    // The full round trip, wearing the standard wire format.
+    let req = json!({ "model": "llama3.2", "messages": [{ "role": "user", "content": "hi" }] });
+    let (status, body) = post_v1(req.to_string(), Some(key.clone())).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body.contains("hello from your own hardware"), "{body}");
+
+    // Models enumerate; revoked keys stop cold.
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::get("/v1/models")
+                .header("authorization", format!("Bearer {key}"))
+                .extension(remote_hook())
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    assert!(String::from_utf8_lossy(&bytes).contains("llama3.2"));
+
+    let keys = call_tool(&app, &token, "ai_keys", json!({})).await;
+    let id = serde_json::from_str::<Value>(&text(&keys)).unwrap()[0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let revoked = call_tool(&app, &token, "ai_key_revoke", json!({ "id": id })).await;
+    assert_eq!(revoked["result"]["isError"], false, "{revoked}");
+    let (status, _) = post_v1(req.to_string(), Some(key)).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "revoked means revoked");
+}
+
 /// The Boxfile: deploy config that lives in the repo. A linked repository
 /// with a box.toml builds by its own declaration; changing the file in a
 /// commit changes the next deploy; breaking it fails loudly, not silently.

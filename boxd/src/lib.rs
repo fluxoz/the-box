@@ -9,6 +9,7 @@
 #![recursion_limit = "256"]
 
 pub mod agecrypt;
+pub mod aikeys;
 pub mod approvals;
 pub mod auth;
 pub mod backup;

@@ -322,6 +322,9 @@ pub fn is_public_path(path: &str) -> bool {
         // Webhooks authenticate with their HMAC signature, not a session —
         // the forge cannot hold one. The handler 404s until a secret exists.
         || path == "/hooks/github"
+        // The AI endpoint carries its own credential (a minted boxai_ key);
+        // apps holding one are not operators and hold no session.
+        || path.starts_with("/v1/")
         || path == "/favicon.ico"
 }
 

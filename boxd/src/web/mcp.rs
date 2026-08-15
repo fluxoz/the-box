@@ -381,6 +381,35 @@ fn tool_definitions() -> Value {
             },
         },
         {
+            "name": "ai_key_create",
+            "description": "Mint an API key for this Box's OpenAI-compatible endpoint (POST /v1/chat/completions, GET /v1/models on the Box's own port). Any app or SDK that takes a base_url runs against the Box's models by setting base_url to http://<box>:2693/v1 and pasting this key. Shown ONCE; store it now. Revocable per key, like devices.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "label": { "type": "string", "description": "What will hold this key, e.g. 'my-notes-app'" }
+                },
+                "required": ["label"],
+                "additionalProperties": false,
+            },
+        },
+        {
+            "name": "ai_keys",
+            "description": "List the minted AI keys (labels and ids, never secrets) for this Box's OpenAI-compatible endpoint.",
+            "inputSchema": no_args,
+        },
+        {
+            "name": "ai_key_revoke",
+            "description": "Revoke one AI key by id. The app holding it loses model access immediately; nothing else changes.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "A key id from ai_keys" }
+                },
+                "required": ["id"],
+                "additionalProperties": false,
+            },
+        },
+        {
             "name": "journal",
             "description": "The Box's own story, newest first: what it deployed, updated, backed up, rolled back, and what the person approved or denied. Read this to catch up on what happened while you were away, or to answer 'what changed?' -- it is the same page the owner reads.",
             "inputSchema": {
@@ -587,6 +616,36 @@ pub(crate) async fn execute(
 
     match tool {
         "get_status" => Ok(status(&state)),
+        "ai_key_create" => {
+            let Some(label) = str_arg("label") else {
+                return Err((-32602, "missing required argument: label".into()));
+            };
+            Ok((|| {
+                let key = crate::aikeys::mint(&state.paths, &label)?;
+                Ok(json!({
+                    "key": key,
+                    "label": label,
+                    "base_url": "http://<this-box>:2693/v1",
+                    "note": "Shown once. Point the app's base_url at this Box's /v1 and use the \
+                             key as its API key. Works once an Ollama service is deployed.",
+                }))
+            })())
+        }
+        "ai_keys" => Ok(Ok(
+            serde_json::to_value(crate::aikeys::list(&state.paths)).unwrap_or_default()
+        )),
+        "ai_key_revoke" => {
+            let Some(id) = str_arg("id") else {
+                return Err((-32602, "missing required argument: id".into()));
+            };
+            Ok((|| {
+                anyhow::ensure!(
+                    crate::aikeys::revoke(&state.paths, &id)?,
+                    "no AI key with id {id:?}"
+                );
+                Ok(json!({ "revoked": id }))
+            })())
+        }
         "journal" => {
             let limit = args
                 .get("limit")
