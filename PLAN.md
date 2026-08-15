@@ -255,7 +255,93 @@ later without redesign — into the user's own account, never ours.
 
 ---
 
-## Roadmap — in priority order
+## THE PHASE: become the default (set 2026-08-14, the day the loop finished proving itself)
+
+Everything above this line was about making the machine real, and it is: push →
+sandboxed build → live on your own domain, updates, backups — all verified on
+real hardware, all driveable by an agent. This phase is about the person who
+has never heard of us. **Goal: The Box becomes the default way a vibe coder
+gets sovereign hosting** — the thing people recommend to each other without
+qualifications.
+
+**Doctrine — hard lines, written down on purpose:**
+
+- **The software is 100% free, forever.** The Nabu Casa model, committed:
+  money comes only from services (Box Connect, managed backup, hardware
+  appliances), never from gating the software. Nothing in this phase builds
+  billing; that waits until the funnel is proven.
+- **The first funnel is tuned for exactly one person:** a vibe coder with a
+  coding agent who wants what they build running on hardware they own.
+  Everyone else still works; this person has to be *delighted*.
+- **Cloudflare is THE path.** One blessed integration done perfectly — domain,
+  tunnel, R2 backups, edge cache — rather than three passable ones. Other
+  rungs (quick-share, Tailscale) keep working but the product speaks
+  Cloudflare. No lock-in in substance (everything exportable, tunnel
+  replaceable in principle), full opinion in presentation.
+- **Agent-first, with a leash.** Agents drive everything through MCP. By
+  default, destructive operations (wipe a machine, delete a service, restore
+  over live data) become pending actions a human approves with a tap; a person
+  can explicitly promote a specific agent to full autonomy. "Agents run your
+  infrastructure, you hold the veto" is the security story, and it is true.
+
+**Win condition:** ten strangers — vibe-coder communities plus direct
+outreach; Show HN waits until the funnel is airtight — each get a Box serving
+their code on their own domain **without John helping**. Nothing else in this
+phase matters if that fails.
+
+### Act 1 — the frictionless funnel (first, and finished before Act 2 starts)
+
+1. **The one-liner agent hookup.** A single `npx`/`curl` command on the
+   laptop: finds the Box on the LAN (mDNS already ships), walks the pairing
+   ceremony, writes the MCP config into Claude Code / Cursor / Windsurf, and
+   hands the agent its first prompt. The distance from "Box boots" to "my
+   agent is deploying" collapses to one line.
+2. **Cloudflare in one ceremony.** The self-minting design: the person grants
+   ONE parent token (with permission to create tokens); the Box mints
+   exactly-scoped tokens itself and rotates them before expiry. The entire
+   class of failure from 2026-08-14 — wrong token kind, missing checkbox,
+   surprise expiry, R2-not-enabled — becomes either impossible or a named,
+   probed, one-line diagnosis. Capability probes (can it DNS? tunnel? R2?)
+   stay as the fallback path and the error language.
+3. **The console becomes the demo.** Brass Hands evolved to flagship quality:
+   motion, live deploy progress, streaming logs, a fleet view that feels like
+   a control room — still server-rendered, still instant, dynamism only where
+   it earns its keep. People should screenshot it unprompted.
+4. **Finish the loop's comforts:** previews (a branch-linked service is just a
+   second `link_repo` — machinery exists), webhook push-to-deploy now that a
+   stable domain exists to receive it, `Cache-Control` so the tunnel's edge
+   becomes a free CDN.
+5. **The trust ceremony.** The pending-approval surface for destructive ops +
+   the per-agent autonomy toggle. Small build, load-bearing for the story.
+6. **Fresh-install proof.** The full funnel rehearsed end to end from
+   thebox.build on wiped hardware, repeatedly, because nobody has installed
+   from scratch since the core fixes landed. Per-agent quickstarts written
+   from those rehearsals.
+
+### Act 2 — the money argument (self-hosted AI)
+
+The target user's cloud bill is mostly inference. A Box that serves models is
+the sharpest "why own hardware" that exists right now. Staged shallow-to-deep:
+
+1. **AI-adjacent services** (CPU-fine, useful to vibe coders immediately):
+   MCP servers, vector databases, workflow runners as catalog presets.
+2. **CPU-honest models:** one-call Ollama on any Box, honest about what fits
+   (small quantized models, embeddings, whisper) — works on the hardware
+   people already have.
+3. **BYO-GPU x86 — the centerpiece.** The spare gaming PC with an RTX card
+   becomes an inference Box: NVIDIA runtime + CDI through the existing
+   container path, models behind the existing proxy and domain. This is the
+   largest population of capable idle hardware on earth.
+4. **The Jetson Orin appliance** — the parked Track B plan (verified in
+   detail: jetpack-nixos, firmware-once + UEFI, CDI, Ollama demo) unparks
+   here as the dedicated AI Box and the first hardware-margin product.
+
+### Explicitly deferred this phase
+
+Billing/Stripe (doctrine above), non-Cloudflare ingress polish, Mac/Windows
+host expansion, functions/ISR/edge-middleware emulation (still never).
+
+## Prior roadmap (2026-08, largely delivered) — kept for the research it holds
 
 ### 1. The deploy loop (parity where it matters)
 
@@ -395,34 +481,32 @@ into a free global CDN; headers/redirects/rewrites as declarative nginx.
 
 ### 5. Parked deliberately
 
-Storage (add-a-disk, GPU) and the Jetson board. Both planned in detail, both
-shelved to fix the core product first.
+Storage (add-a-disk). The GPU/Jetson track UNPARKED 2026-08-14 into the new
+phase's Act 2 (see above) — the core product it was waiting on is now proven.
 
 ---
 
-## Exact next steps
+## Exact next steps (Act 1 order)
 
-1. **Attach a domain to a Cloudflare account, then connect that account to a Box
-   and call `ingress_setup`.** The Box creates the tunnel, points the whole
-   domain at its public entrance, stores the tunnel credential and makes the DNS
-   record — the six dashboard steps collapse into one call, and it writes a
-   wildcard route through the API, so the question of whether the dashboard form
-   accepts one stops mattering. Untested against a live zone: nobody has
-   attached a domain yet, and given how often a guessed API shape has been wrong
-   this week, treat it as unverified until it runs.
-2. **The sandboxed build step is DONE and live-verified** (deploy-loop
-   increment 2b, 2026-08-13): `link_repo` takes `build_command`, the build
-   runs in the trusted builder image with the two-phase network design above,
-   VM-tested and then proven on the real Pi — real npm install, offline vite
-   build, hashed bundle served. Next in this thread: previews — a
-   branch-linked service is just a second `link_repo` with a `branch`; the
-   machinery already exists.
-3. **Add `Cache-Control` headers.** Small, independent, and it answers the
-   latency objection without operating any infrastructure.
-4. **Then stop building and go find ten users.** The engineering is not the
-   risk; the market is. Expect them to stall at "own a machine" and at "delegate
-   your nameservers" — we hit the second one ourselves today, before ever
-   seeing a site work.
+Status 2026-08-14: BYO-domain is LIVE (zlorpo.com, first `ingress_setup` run
+against a real zone; the wildcard record needed hand-holding — the exact pain
+the self-minting design retires). Backups are LIVE on R2 (first snapshot).
+The build step is LIVE (real npm install, offline vite build, on the Pi).
+
+1. **Housekeeping before 2026-08-21:** the Box currently runs tunnel ops on a
+   token that expires then — replace with one three-scope token (or land
+   self-minting first and let it fix itself).
+2. **The one-liner agent hookup CLI** — the funnel's front door.
+3. **Cloudflare self-minting tokens** (+ probes as fallback diagnosis).
+4. **Console flagship pass** on the highest-traffic surfaces: first-run,
+   deploy-with-live-progress, service page with streaming logs.
+5. **Previews + webhook + Cache-Control** (the loop's comforts).
+6. **Trust ceremony** (pending approvals + per-agent autonomy).
+7. **Fresh-install rehearsals** from thebox.build on wiped hardware; write
+   the per-agent quickstarts from what actually happened.
+8. **Then recruit the ten** — vibe-coder communities and direct outreach,
+   fixing whatever they hit, until strangers finish without help. The
+   engineering is not the risk; the market is.
 
 ---
 
