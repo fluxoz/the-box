@@ -128,7 +128,9 @@
   machine into a <b>Box</b>, a private server you run from your browser. No account. No monthly rent.
   It updates itself like a phone, so you basically <b>can't brick it</b>.</p>
 
-  <!-- how: dead simple -->
+  <!-- how: one story, three steps, each labeled with where it runs -->
+  <p class="eyebrow">Step 1 · on the spare machine</p>
+  <h2 style="margin:.2rem 0 .6rem">Make it a Box.</h2>
   <div class="install">
     <div class="tabs" role="tablist" aria-label="Install method">
       <button class="tab" role="tab" aria-selected="true"  id="t-linux"   aria-controls="p-linux"   data-os="linux">Linux / VPS</button>
@@ -144,13 +146,7 @@
         <code id="cmd-linux">curl -fsSL https://thebox.build/install.sh | sudo sh</code>
         <button type="button" data-copy="cmd-linux">copy</button>
       </div>
-      <p>Run it on a spare Linux machine or a cheap VPS. No USB and no reboot menu. It takes over in place.</p>
-      <div class="cmd">
-        <span class="prompt">$</span>
-        <code id="cmd-connect">curl -fsSL https://thebox.build/connect | sh</code>
-        <button type="button" data-copy="cmd-connect">copy</button>
-      </div>
-      <p>Then, on your laptop: this finds your Box, pairs, and wires it into Claude&nbsp;Code, Cursor or Windsurf — from there your agent runs it.</p>
+      <p>Run this on the machine itself (or over SSH). It asks for consent, wipes the old OS, and installs Box&nbsp;OS in place. About ten minutes, then it comes back on your network as <code>box.local</code>.</p>
     </div>
 
     <div class="panel" id="p-windows" role="tabpanel" aria-labelledby="t-windows" hidden>
@@ -178,23 +174,45 @@
     </div>
   </div>
 
+  <p class="eyebrow" style="margin-top:1.6rem">Step 2 · on your laptop</p>
+  <h2 style="margin:.2rem 0 .6rem">Connect your coding agent.</h2>
+  <div class="install">
+    <div class="panel">
+      <div class="cmd">
+        <span class="prompt">$</span>
+        <code id="cmd-connect">curl -fsSL https://thebox.build/connect | sh</code>
+        <button type="button" data-copy="cmd-connect">copy</button>
+      </div>
+      <p>This finds the Box on your network, pairs with it, and wires it into Claude&nbsp;Code, Cursor, or Windsurf. Ten seconds.</p>
+      <p class="note">No agent? Open <code>box.local:2693</code> in a browser instead. The console does everything too.</p>
+    </div>
+  </div>
+
+  <p class="eyebrow" style="margin-top:1.6rem">Step 3 · in your editor</p>
+  <h2 style="margin:.2rem 0 .6rem">Tell your agent what you want.</h2>
+  <div class="install">
+    <div class="panel">
+      <div class="cmd">
+        <span class="prompt">&gt;</span>
+        <code id="cmd-ask">Put my repo on the internet.</code>
+        <button type="button" data-copy="cmd-ask">copy</button>
+      </div>
+      <p>The agent connects your GitHub, builds your project on the Box, and serves it. From then on,
+      pushing to the branch is deploying. Ask for a domain and it is yours forever; ask for backups
+      and they run nightly, encrypted, to storage you own.</p>
+    </div>
+  </div>
+
   <div class="agent">
-    <b>Rather not touch a terminal?</b> Paste this to your agent and it sets up and runs your Box:
+    <b>Already have an agent?</b> It can do all three steps for you. Paste this into it:
     <div class="cmd" style="margin-top:.6rem">
       <code id="cmd-agent">Fetch and execute the appropriate instructions from https://thebox.build/prompt.md</code>
       <button type="button" data-copy="cmd-agent">copy</button>
     </div>
-    <p class="note" style="margin:.55rem 0 0">Or point it straight at <a href="/llms.txt">/llms.txt</a> (the machine runbook). The Box is agent-first: its whole control plane is an <a href="/docs/agents.html">MCP server</a>.</p>
+    <p class="note" style="margin:.55rem 0 0">It reads <a href="/llms.txt">/llms.txt</a>, the machine runbook, and drives the whole thing. The Box is agent-first: its control plane is an <a href="/docs/agents.html">MCP server</a>, and destructive actions always wait for your tap.</p>
   </div>
 
-  <p class="eyebrow">What happens</p>
-  <h2>One command, then three minutes of watching.</h2>
-  <ol class="steps">
-    <li><span class="txt"><b>Run the command.</b> The machine erases its old OS and installs Box&nbsp;OS. Nothing is touched until you give explicit consent.</span></li>
-    <li><span class="txt"><b>It comes back as a Box.</b> It reboots and appears on your network as <code>box.local</code>, already running.</span></li>
-    <li><span class="txt"><b>Open it and pair once.</b> Go to <code>box.local:2693</code> in your browser, pair your device, and start deploying. That's it.</span></li>
-  </ol>
-  <p class="stepnote">~10 minutes · one machine · nothing to hand-configure</p>
+  <p class="stepnote">~15 minutes end to end · one spare machine · nothing to hand-configure</p>
 
   <!-- why, deeper: the proof -->
   <p class="eyebrow">Why a Box</p>
