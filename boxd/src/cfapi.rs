@@ -117,6 +117,93 @@ pub fn dns_record(zone_id: &str, name: &str, tunnel_id: &str) -> Request {
     }
 }
 
+/// The parent-token ceremony (the self-minting design): the person grants ONE
+/// token that can create tokens, and the Box mints the exactly-scoped child it
+/// actually uses. Every failure class from the first live run — wrong token
+/// kind, a missed checkbox, surprise expiry — becomes impossible, because no
+/// human ever assembles the working token again.
+pub const PARENT_TOKEN_SECRET: &str = "cloudflare-parent-token";
+
+/// Dashboard template for the parent: one permission, "API Tokens: Edit".
+pub const PARENT_TOKEN_URL: &str =
+    "https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=%5B%7B%22key%22%3A%22api_tokens%22%2C%22type%22%3A%22edit%22%7D%5D&name=The+Box+%28parent%29";
+
+/// The permission groups a Box needs, by the names Cloudflare lists them
+/// under. Tunnel has carried two names across their renames; match either.
+pub const NEEDED_GROUPS: [(&str, &[&str]); 3] = [
+    ("tunnel", &["Argo Tunnel Write", "Cloudflare Tunnel Write"]),
+    ("dns", &["DNS Write"]),
+    ("zone", &["Zone Read"]),
+];
+
+pub fn list_permission_groups() -> Request {
+    Request {
+        method: "GET",
+        url: format!("{API}/user/tokens/permission_groups"),
+        body: None,
+    }
+}
+
+/// Pick the ids this Box needs out of the permission-group listing. Returns
+/// (tunnel, dns, zone) or names what is missing — if Cloudflare renames a
+/// group, the error says exactly which one to add to NEEDED_GROUPS.
+pub fn needed_group_ids(groups: &Value) -> Result<(String, String, String)> {
+    let list = groups
+        .get("result")
+        .and_then(Value::as_array)
+        .context("permission-group listing had no result array")?;
+    let find = |names: &[&str]| {
+        list.iter().find_map(|g| {
+            let name = g.get("name").and_then(Value::as_str)?;
+            names
+                .iter()
+                .any(|n| n.eq_ignore_ascii_case(name))
+                .then(|| g.get("id").and_then(Value::as_str).map(str::to_string))?
+        })
+    };
+    let mut found = Vec::new();
+    for (key, names) in NEEDED_GROUPS {
+        match find(names) {
+            Some(id) => found.push(id),
+            None => bail!(
+                "Cloudflare's permission-group listing has nothing named {names:?} \
+                 (needed for {key}) — they may have renamed it"
+            ),
+        }
+    }
+    Ok((found[0].clone(), found[1].clone(), found[2].clone()))
+}
+
+/// Create the child token: tunnel writes on every account the parent can
+/// reach, DNS writes + zone reads on every zone. No expiry — the child lives
+/// until the parent's owner revokes it, and nothing silently dies on a date.
+pub fn create_child_token(
+    name: &str,
+    tunnel_group: &str,
+    dns_group: &str,
+    zone_group: &str,
+) -> Request {
+    Request {
+        method: "POST",
+        url: format!("{API}/user/tokens"),
+        body: Some(json!({
+            "name": name,
+            "policies": [
+                {
+                    "effect": "allow",
+                    "resources": { "com.cloudflare.api.account.*": "*" },
+                    "permission_groups": [ { "id": tunnel_group } ],
+                },
+                {
+                    "effect": "allow",
+                    "resources": { "com.cloudflare.api.account.zone.*": "*" },
+                    "permission_groups": [ { "id": dns_group }, { "id": zone_group } ],
+                },
+            ],
+        })),
+    }
+}
+
 /// Send it, and unwrap Cloudflare's envelope.
 ///
 /// Their errors are the useful part — "this token cannot edit DNS for that
@@ -213,6 +300,51 @@ pub fn lookup_zone(token: &str, zone: &str) -> Result<Zone> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_child_token_is_scoped_and_never_expires() {
+        let r = create_child_token("The Box (box)", "tid", "did", "zid");
+        assert_eq!(r.method, "POST");
+        assert!(r.url.ends_with("/user/tokens"));
+        let body = r.body.unwrap();
+        // No expiry: nothing may silently die on a date (the first live token
+        // did, eight days out, and nobody had chosen that).
+        assert!(body.get("expires_on").is_none());
+        let policies = body["policies"].as_array().unwrap();
+        assert_eq!(policies.len(), 2);
+        // Tunnel writes are account-scoped; DNS write + zone read are
+        // zone-scoped. Wrong resource kinds make Cloudflare refuse the mint.
+        assert!(policies[0]["resources"].get("com.cloudflare.api.account.*").is_some());
+        assert_eq!(policies[0]["permission_groups"][0]["id"], "tid");
+        assert!(policies[1]["resources"].get("com.cloudflare.api.account.zone.*").is_some());
+        let zone_groups = policies[1]["permission_groups"].as_array().unwrap();
+        assert_eq!(zone_groups.len(), 2);
+    }
+
+    #[test]
+    fn permission_groups_are_found_by_any_of_their_names() {
+        let listing = json!({ "result": [
+            { "id": "g1", "name": "Cloudflare Tunnel Write" },
+            { "id": "g2", "name": "DNS Write" },
+            { "id": "g3", "name": "Zone Read" },
+            { "id": "g4", "name": "Workers R2 Storage Write" },
+        ]});
+        let (t, d, z) = needed_group_ids(&listing).unwrap();
+        assert_eq!((t.as_str(), d.as_str(), z.as_str()), ("g1", "g2", "g3"));
+
+        // The tunnel group's older name still matches.
+        let listing = json!({ "result": [
+            { "id": "old", "name": "Argo Tunnel Write" },
+            { "id": "g2", "name": "DNS Write" },
+            { "id": "g3", "name": "Zone Read" },
+        ]});
+        assert_eq!(needed_group_ids(&listing).unwrap().0, "old");
+
+        // A missing group names itself rather than failing generically.
+        let listing = json!({ "result": [ { "id": "g2", "name": "DNS Write" } ]});
+        let err = format!("{:#}", needed_group_ids(&listing).unwrap_err());
+        assert!(err.contains("Tunnel"), "{err}");
+    }
 
     #[test]
     fn requests_target_the_documented_endpoints() {

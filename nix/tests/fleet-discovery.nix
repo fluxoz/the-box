@@ -35,6 +35,13 @@ pkgs.testers.runNixOSTest {
     boxA.wait_until_succeeds("avahi-browse -rptl _thebox._tcp | grep -i box-b", timeout=90)
     boxB.wait_until_succeeds("avahi-browse -rptl _thebox._tcp | grep -i box-a", timeout=90)
 
+    # Diagnostics first: what the browse looks like as root, as the boxd user,
+    # and what /fleet actually returns — so a failure here names the broken
+    # link instead of just timing out.
+    print("root browse:", boxA.succeed("avahi-browse -rptl _thebox._tcp | head -5 || true"))
+    print("boxd browse:", boxA.succeed("runuser -u boxd -- avahi-browse -rptl _thebox._tcp | head -5 || true"))
+    print("fleet raw:", boxA.succeed("curl -s http://localhost:2693/api/v1/fleet | head -c 600 || true"))
+
     # boxd's own fleet endpoint (loopback-trusted) discovers the peer and reads
     # its coarse health.
     boxA.wait_until_succeeds(
