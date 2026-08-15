@@ -211,10 +211,7 @@ pub fn spawn(state: crate::web::SharedState) {
                     .and_then(|m| m.modified())
                     .ok()
                     .and_then(|t| t.elapsed().ok());
-                match age {
-                    Some(a) if a.as_secs() < 23 * 3600 => false,
-                    _ => true,
-                }
+                !matches!(age, Some(a) if a.as_secs() < 23 * 3600)
             };
             let configured = BoxConfig::load(&state.paths)
                 .ok()
