@@ -198,6 +198,9 @@ fn the_one_liner_claims_a_fresh_box_and_wires_the_agent() {
 
     let home2 = TempDir::new().unwrap();
     std::fs::create_dir_all(home2.path().join(".cursor")).unwrap();
+    // A Grok Build install is a directory away; the script should hand over
+    // its per-project drop-in rather than staying silent.
+    std::fs::create_dir_all(home2.path().join(".grok")).unwrap();
     let (ok, out) = run_connect(
         &server,
         &home2,
@@ -207,6 +210,10 @@ fn the_one_liner_claims_a_fresh_box_and_wires_the_agent() {
         ],
     );
     assert!(ok, "connect (claimed box) failed:\n{out}");
+    assert!(
+        out.contains("Grok Build detected"),
+        "grok drop-in must be offered: {out}"
+    );
     let token2 = cursor_token(&home2);
     assert_ne!(token, token2, "each pairing is its own session");
     assert!(mcp_tools_list(&server.addr, &token2));

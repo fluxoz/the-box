@@ -150,11 +150,24 @@ if [ -d "$HOME/.codeium/windsurf" ] && have python3; then
   if merge_json "$HOME/.codeium/windsurf/mcp_config.json"; then wired="$wired Windsurf"; fi
 fi
 
+# Grok Build reads project-level .mcp.json (the same convention Claude Code
+# uses), so the honest move is handing over the exact drop-in rather than
+# guessing at a global file it may not read.
+grok_note=""
+if have grok || [ -d "$HOME/.grok" ]; then
+  grok_note=yes
+fi
+
 # ---- 4. hand over ---------------------------------------------------------
 
 say ""
 if [ -n "$wired" ]; then
   say "Connected:$wired"
+  if [ -n "$grok_note" ]; then
+    say ""
+    say "Grok Build detected: it reads .mcp.json per project. Add the Box to any project with:"
+    say "  { \"mcpServers\": { \"the-box\": $(mcp_json) } }"
+  fi
 else
   say "No agent config was written automatically. Add this MCP server yourself:"
   say ""
