@@ -17,6 +17,7 @@ obvious within an hour on real hardware.
 
 | Pain | Status |
 |---|---|
+| **The first deploy on a freshly installed Box died with a bare "Permission denied"** — firstboot runs `boxd` as root to seed the enrollment code, which created `profiles/` and `sources/` root-owned inside the boxd-owned data dir. Found in the first full-funnel rehearsal (live site → VM takeover → pair → deploy) | **fixed** — `paths.ensure()` now gives everything it creates the data dir's owner, the same cure as its two sibling root-droppings bugs. The rehearsal also validated the BIOS guard: a legacy-BIOS machine is refused with "NOTHING HAS BEEN CHANGED" and the exact fix named |
 | The 401 signpost says "POST /pair/redeem with JSON `{code}`" — and the endpoint parsed only browser form bodies, so the Box refused the very instructions it had handed out | **fixed** — the redeem endpoint reads `{code}` in either framing (JSON or form); the first request an agent ever authenticates with cannot fail over pedantry |
 | An x86 Box came up with **no update channel binding at all** — the first-boot binding lived only in the Pi image module, so `channel_check`/`channel_update` answered "no update channel configured" and nothing over MCP could write one | **fixed** — the binding now comes from the shared platform module; every Box can update itself from birth |
 
