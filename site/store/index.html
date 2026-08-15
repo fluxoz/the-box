@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>The Box Store: private AI hardware at cost, plus $499</title>
-<meta name="description" content="Inference machines that arrive already a Box: models preloaded, agent-ready, self-updating. Hardware passed through at cost with the invoice shown. The Box part is a flat $499.">
+<title>The Box Store: machines that arrive born</title>
+<meta name="description" content="Specific machines, preloaded and agent-ready: HP Z2 Mini G1a, GMKtec EVO-X2, Minisforum MS-S1 MAX. Hardware passed through at cost with the invoice shown, plus a flat $499.">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="The Box">
-<meta property="og:title" content="The Box Store: hardware at cost, plus $499">
-<meta property="og:description" content="Private AI machines that arrive born: models preloaded, agent-ready, can't be bricked. You pay what we pay for the hardware, invoice included.">
+<meta property="og:title" content="The Box Store: machines that arrive born">
+<meta property="og:description" content="Private AI machines, preloaded and agent-ready. You pay what we pay for the hardware, invoice included. The Box part is a flat $499.">
 <meta property="og:url" content="https://thebox.build/store/">
 <meta property="og:image" content="https://thebox.build/og.png">
 <style>
@@ -31,7 +31,7 @@
     background-size:44px 44px;opacity:.16;
     -webkit-mask-image:radial-gradient(ellipse 130% 80% at 50% 0%,#000 24%,transparent 76%);
     mask-image:radial-gradient(ellipse 130% 80% at 50% 0%,#000 24%,transparent 76%);}
-  main{position:relative;z-index:1;max-width:780px;margin:0 auto;padding:9vh 1.25rem 6rem;}
+  main{position:relative;z-index:1;max-width:1020px;margin:0 auto;padding:8vh 1.25rem 6rem;}
   .topbar{display:flex;align-items:baseline;gap:.6rem;}
   .brand{display:flex;align-items:center;gap:.5rem;font-weight:800;letter-spacing:.14em;font-size:1.05rem;}
   .brand .mk{width:1.35em;height:1.35em;flex:none;}
@@ -41,52 +41,62 @@
   a{color:var(--brass2);text-decoration:none;border-bottom:1px solid transparent;}
   a:hover{border-bottom-color:var(--brass);}
 
-  h1{font-size:clamp(2.1rem,6.4vw,3.2rem);line-height:1.06;margin:2.4rem 0 .7rem;text-wrap:balance;letter-spacing:-.015em;}
+  h1{font-size:clamp(2rem,5.6vw,3rem);line-height:1.06;margin:2.2rem 0 .7rem;text-wrap:balance;letter-spacing:-.015em;}
   h1 b{color:var(--brass2);}
-  .lede{color:var(--ink);font-size:1.15rem;max-width:58ch;margin:0 0 2rem;opacity:.9;}
+  .lede{color:var(--ink);font-size:1.12rem;max-width:62ch;margin:0 0 1.6rem;opacity:.9;}
   .lede b{color:var(--brass2);font-weight:600;}
 
-  .eyebrow{color:var(--brass);text-transform:uppercase;letter-spacing:.18em;font-size:.72rem;font-weight:700;margin:3.2rem 0 .2rem;}
-  h2{font-size:1.5rem;margin:.1rem 0 1.1rem;letter-spacing:-.01em;text-wrap:balance;}
+  .eyebrow{color:var(--brass);text-transform:uppercase;letter-spacing:.18em;font-size:.72rem;font-weight:700;margin:3rem 0 .2rem;}
+  h2{font-size:1.45rem;margin:.1rem 0 1rem;letter-spacing:-.01em;text-wrap:balance;}
+  .sectionnote{color:var(--dim);font-size:.95rem;max-width:70ch;margin:0 0 1.2rem;}
 
-  .steps{list-style:none;counter-reset:s;margin:0;padding:0;display:flex;flex-direction:column;gap:.85rem;}
-  .steps li{counter-increment:s;display:flex;gap:.85rem;align-items:flex-start;}
-  .steps li::before{content:counter(s);flex:none;font-family:var(--mono);font-weight:700;color:var(--brass2);
-    width:1.9rem;height:1.9rem;line-height:1.8rem;text-align:center;font-size:.92rem;
-    border:1px solid var(--line2);border-radius:6px;background:var(--panel);}
-  .steps .txt{color:var(--dim);padding-top:.12rem;}
-  .steps b{color:var(--ink);font-weight:600;}
+  /* the pricing rule, compact */
+  .rule{display:flex;gap:1rem;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line2);
+    border-radius:10px;padding:.9rem 1.1rem;box-shadow:inset 3px 0 0 var(--brass);}
+  .rule div{flex:1 1 240px;font-size:.9rem;color:var(--dim);}
+  .rule b{color:var(--ink);font-weight:600;display:block;font-size:.95rem;}
+  .rule .n{font-family:var(--mono);color:var(--brass2);font-weight:700;margin-right:.4rem;}
 
-  /* product cards */
-  .machines{display:flex;flex-direction:column;gap:1rem;margin:1rem 0 0;}
-  .machine{background:var(--panel);border:1px solid var(--line2);border-radius:10px;
-    padding:1.15rem 1.25rem;box-shadow:inset 3px 0 0 var(--brass);}
-  .machine.soon{box-shadow:inset 3px 0 0 var(--line2);}
-  .machine h3{margin:0;font-size:1.15rem;letter-spacing:-.01em;}
-  .machine h3 .tag{font-family:var(--mono);font-size:.7rem;letter-spacing:.14em;text-transform:uppercase;
-    color:var(--dim);border:1px solid var(--line2);border-radius:5px;padding:.12rem .45rem;margin-left:.55rem;vertical-align:.15em;}
-  .machine .spec{margin:.45rem 0 0;color:var(--dim);font-size:.95rem;}
-  .machine .spec b{color:var(--ink);font-weight:600;}
-  .machine .perf{margin:.55rem 0 0;color:var(--dim);font-size:.9rem;}
-  .priceline{display:flex;align-items:baseline;gap:.9rem;flex-wrap:wrap;margin:.9rem 0 0;
-    border-top:1px dashed var(--line);padding-top:.85rem;}
-  .priceline .math{font-family:var(--mono);font-size:.85rem;color:var(--dim);}
-  .priceline .from{font-weight:800;font-size:1.15rem;color:var(--brass2);margin-left:auto;}
-  .cta{margin:.9rem 0 0;display:flex;align-items:baseline;gap:.9rem;flex-wrap:wrap;}
-  .go{display:inline-block;background:var(--brass);color:#1a1408;border:none;border-radius:8px;
-    padding:.55rem 1.05rem;font-weight:700;letter-spacing:.01em;}
+  /* product grid */
+  .prodgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1.1rem;margin:1.1rem 0 0;}
+  .prod{background:var(--panel);border:1px solid var(--line2);border-radius:12px;padding:1rem 1.05rem 1.1rem;
+    display:flex;flex-direction:column;}
+  .prod.feature{outline:1px solid var(--brass);outline-offset:2px;}
+  .artwell{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:.5rem .5rem .2rem;margin-bottom:.8rem;position:relative;}
+  .artwell .badge{position:absolute;top:.55rem;left:.6rem;font-family:var(--mono);font-size:.64rem;letter-spacing:.14em;
+    text-transform:uppercase;color:#1a1408;background:var(--brass);border-radius:4px;padding:.1rem .45rem;font-weight:700;}
+  .art{display:block;width:100%;height:auto;}
+  .art .face{fill:var(--panel2);stroke:var(--brass2);stroke-width:1.5;stroke-linejoin:round;}
+  .art .top{fill:var(--panel);stroke:var(--brass2);stroke-width:1.5;stroke-linejoin:round;}
+  .art .sidef{fill:var(--bg);stroke:var(--brass2);stroke-width:1.5;stroke-linejoin:round;}
+  .art .detail{stroke:var(--line2);stroke-width:1;fill:none;}
+  .art .hot{stroke:var(--brass);stroke-width:1.2;fill:none;}
+  .art .ghost{fill:none;stroke:var(--faint);stroke-width:1.5;stroke-dasharray:5 4;stroke-linejoin:round;}
+  .art .diml{stroke:var(--faint);stroke-width:.8;}
+  .art text{font-family:var(--mono);font-size:9.5px;fill:var(--faint);letter-spacing:.08em;}
+  .art .bigno{font-size:26px;fill:var(--faint);font-weight:700;letter-spacing:.04em;}
+  .art .led{fill:var(--ok);stroke:none;}
+  .prod h3{margin:0;font-size:1.08rem;letter-spacing:-.01em;}
+  .prod h3 .tag{font-family:var(--mono);font-size:.68rem;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--dim);border:1px solid var(--line2);border-radius:5px;padding:.1rem .42rem;margin-left:.5rem;vertical-align:.15em;white-space:nowrap;}
+  .role{color:var(--brass2);font-size:.85rem;margin:.15rem 0 .5rem;font-weight:600;}
+  .prod ul{list-style:none;margin:0;padding:0;color:var(--dim);font-size:.88rem;}
+  .prod ul li{padding-left:1rem;position:relative;margin:.18rem 0;}
+  .prod ul li::before{content:"·";position:absolute;left:.2rem;color:var(--brass);font-weight:700;}
+  .prod ul b{color:var(--ink);font-weight:600;}
+  .avail{margin:.55rem 0 0;font-family:var(--mono);font-size:.74rem;color:var(--faint);letter-spacing:.04em;}
+  .pricebk{margin-top:auto;padding-top:.8rem;}
+  .pricebk .split{border-top:1px dashed var(--line);padding-top:.7rem;display:flex;align-items:baseline;gap:.6rem;flex-wrap:wrap;}
+  .pricebk .from{font-weight:800;font-size:1.45rem;color:var(--brass2);letter-spacing:-.01em;}
+  .pricebk .per{color:var(--dim);font-size:.9rem;}
+  .pricebk .math{font-family:var(--mono);font-size:.72rem;color:var(--faint);margin-top:.15rem;}
+  .go{display:block;text-align:center;background:var(--brass);color:#1a1408;border:none;border-radius:8px;
+    padding:.6rem 1rem;font-weight:700;letter-spacing:.01em;margin-top:.7rem;}
   .go:hover{border-bottom-color:transparent;background:var(--brass2);}
-  .go.ghost{background:transparent;color:var(--brass2);border:1px solid var(--line2);}
-  .go.ghost:hover{border-color:var(--brass);}
-  .cta .note{color:var(--faint);font-size:.82rem;}
+  .go.ghostbtn{background:transparent;color:var(--brass2);border:1px solid var(--line2);}
+  .go.ghostbtn:hover{border-color:var(--brass);}
 
-  .shelf{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:1rem 0 0;}
-  @media (max-width:600px){.shelf{grid-template-columns:1fr;}}
-  .shelf .machine{box-shadow:none;padding:1.05rem 1.15rem;}
-  .shelf h3{font-size:1.02rem;color:var(--brass2);}
-  .shelf .price{font-family:var(--mono);font-size:.9rem;color:var(--ink);margin-top:.4rem;}
-
-  .honest{margin-top:1rem;background:var(--panel);border:1px dashed var(--line2);border-radius:9px;
+  .honest{margin-top:1.1rem;background:var(--panel);border:1px dashed var(--line2);border-radius:9px;
     padding:1rem 1.15rem;font-size:.95rem;color:var(--dim);}
   .honest b{color:var(--brass2);font-weight:600;}
   .honest p{margin:.6rem 0 0;}
@@ -103,96 +113,275 @@
     <nav><a href="/">Home</a> <a href="/docs/">Docs</a> <a href="https://github.com/fluxoz/the-box">GitHub</a></nav>
   </div>
 
-  <h1>Hardware at cost.<br>The Box part is <b>$499</b>.</h1>
-  <p class="lede">Private AI runs best on a machine you own. The machines already exist, off the shelf.
-  What we sell is the part that matters: yours arrives <b>already a Box</b>. Open models preloaded and
-  serving, your coding agent connected in minutes, updates that can't brick it, and nothing destructive
-  without your tap. The hardware itself we pass through <b>at cost</b>, invoice included.</p>
+  <h1>Machines that arrive <b>born</b>.</h1>
+  <p class="lede">Real, specific hardware you could buy anywhere, and should compare anywhere.
+  Ours ships <b>already a Box</b>: open models preloaded and serving, your coding agent connected in
+  minutes, updates that can't brick it, nothing destructive without your tap. The hardware passes
+  through <b>at cost</b> with the invoice shown. The Box part is a flat <b>$499</b>, and it includes
+  a year of Box Cloud.</p>
 
-  <p class="eyebrow">How pricing works</p>
-  <h2>You pay what we pay, plus a flat fee. That's the whole trick.</h2>
-  <ol class="steps">
-    <li><div class="txt"><b>Reserve.</b> No payment, no card. It's a hello, not a contract.</div></li>
-    <li><div class="txt"><b>We quote the exact machine at that week's price</b> and show you the invoice.
-      Memory prices are wild right now, the whole industry is in a DRAM shortage, so quotes hold for
-      seven days instead of pretending a sticker price is stable.</div></li>
-    <li><div class="txt"><b>Pay when it ships.</b> The maker's warranty covers the hardware.
-      We cover the Box, and the software updates itself for as long as the project lives.</div></li>
-  </ol>
-
-  <p class="eyebrow">The machines</p>
-  <h2>Small, silent, and honest about what they run.</h2>
-  <div class="machines">
-
-    <div class="machine">
-      <h3>The Inference Box<span class="tag">128 GB</span></h3>
-      <p class="spec"><b>Ryzen AI Max+ 395</b> · 128 GB unified memory · 2 TB storage · desk-quiet, about the size of a thick book.</p>
-      <p class="perf">Runs <b>gpt-oss-120b</b> and the big open mixture-of-experts models at conversation
-      speed, 30 to 55 tokens a second, entirely on your desk. Those are
-      <a href="https://kyuz0.github.io/amd-strix-halo-toolboxes/">community benchmarks</a>, not our marketing.</p>
-      <div class="priceline">
-        <span class="math">hardware at cost, about $2,400 to $3,300 today&nbsp;&nbsp;+&nbsp;&nbsp;$499</span>
-        <span class="from">from ~$2,900</span>
-      </div>
-      <div class="cta">
-        <a class="go" href="https://github.com/fluxoz/the-box/issues/new?title=Reserve%3A%20Inference%20Box%20(128GB)&body=Ship%20to%20(country%2Fstate)%3A%0A%0AConfig%20notes%20(storage%2C%20warranty%2C%20anything%20else)%3A%0A">Reserve →</a>
-        <span class="note">reservations are GitHub issues, public like the rest of this project</span>
-      </div>
-    </div>
-
-    <div class="machine">
-      <h3>The Inference Box<span class="tag">64 GB</span></h3>
-      <p class="spec">Same silicon, half the memory. Runs <b>gpt-oss-20b</b> and the fast 30B-class
-      models with room left over for everything else a Box does.</p>
-      <div class="priceline">
-        <span class="math">hardware at cost, about $2,000 today&nbsp;&nbsp;+&nbsp;&nbsp;$499</span>
-        <span class="from">from ~$2,500</span>
-      </div>
-      <div class="cta">
-        <a class="go" href="https://github.com/fluxoz/the-box/issues/new?title=Reserve%3A%20Inference%20Box%20(64GB)&body=Ship%20to%20(country%2Fstate)%3A%0A%0AConfig%20notes%3A%0A">Reserve →</a>
-      </div>
-    </div>
-
-    <div class="machine soon">
-      <h3>The Inference Box Pro<span class="tag">192 GB · arriving</span></h3>
-      <p class="spec">The next memory tier, 192 GB unified, for the models that don't fit anywhere else.
-      The silicon is announced; machines land this fall. Price follows the same rule: cost plus $499.</p>
-      <div class="cta">
-        <a class="go ghost" href="https://github.com/fluxoz/the-box/issues/new?title=Waitlist%3A%20Inference%20Box%20Pro%20(192GB)&body=Ship%20to%20(country%2Fstate)%3A%0A">Join the waitlist →</a>
-      </div>
-    </div>
-
-    <div class="machine soon">
-      <h3>Or pay nothing.</h3>
-      <p class="spec">Every machine in this store runs the same free software you can install yourself,
-      today, on any spare computer with one command. The store exists for people who want the machine
-      to arrive born. It is never a gate.</p>
-      <div class="cta">
-        <a class="go ghost" href="/">Install it on your own hardware →</a>
-      </div>
-    </div>
+  <div class="rule">
+    <div><span class="n">1</span><b>Reserve. No payment, no card.</b> A reservation is a hello, not a contract.</div>
+    <div><span class="n">2</span><b>We quote the week's real price, invoice shown.</b> Memory prices are in a storm right now, so quotes hold seven days instead of pretending stickers are stable.</div>
+    <div><span class="n">3</span><b>Pay when it ships.</b> The maker's warranty covers the hardware. We cover the Box, forever.</div>
   </div>
 
-  <p class="eyebrow">The rest of the shelf</p>
-  <h2>For the hardware you already own.</h2>
-  <div class="shelf">
-    <div class="machine">
-      <h3>The Installer Kit</h3>
-      <p class="spec">A bootable USB stick that turns a machine of yours into a Box, plus a year of
-      Box Cloud. For the closet that already has the hardware in it.</p>
-      <p class="price">$99</p>
-      <div class="cta">
-        <a class="go ghost" href="https://github.com/fluxoz/the-box/issues/new?title=Reserve%3A%20Installer%20Kit&body=Ship%20to%20(country%2Fstate)%3A%0A">Reserve →</a>
+  <p class="eyebrow">The inference machines</p>
+  <h2>128 GB of unified memory, three personalities.</h2>
+  <p class="sectionnote">Same silicon in all three: AMD Ryzen&nbsp;AI&nbsp;Max+ 395 with 128&nbsp;GB
+  the GPU can use whole. That is what lets a desk-quiet machine run <b>gpt-oss-120b</b> and the big
+  open mixture-of-experts models at 30 to 55 tokens a second
+  (<a href="https://kyuz0.github.io/amd-strix-halo-toolboxes/">community benchmarks</a>, not our marketing).
+  Pick by personality.</p>
+
+  <div class="prodgrid">
+
+    <!-- HP Z2 Mini G1a -->
+    <div class="prod feature">
+      <div class="artwell"><span class="badge">best value today</span>
+        <svg class="art" viewBox="0 0 320 196" role="img" aria-label="Line drawing of the HP Z2 Mini G1a, a wide flat mini workstation">
+          <path class="top"   d="M52 106 L86 89 L276 89 L242 106 Z"/>
+          <path class="sidef" d="M242 106 L276 89 L276 133 L242 150 Z"/>
+          <path class="face"  d="M52 106 H242 V150 H52 Z"/>
+          <path class="detail" d="M212 108 L240 136 M204 112 L236 144 M212 122 L232 142 M220 118 L240 138"/>
+          <path class="hot" d="M242 106 L212 106 L242 136 Z" fill="none"/>
+          <rect class="detail" x="62" y="138" width="14" height="6"/>
+          <rect class="detail" x="80" y="138" width="14" height="6"/>
+          <rect class="detail" x="98" y="138" width="9" height="6"/>
+          <circle class="led" cx="59" cy="112" r="2"/>
+          <path class="detail" d="M60 152 h20 M214 152 h20"/>
+          <path class="diml" d="M52 168 H242 M52 164 v8 M242 164 v8"/>
+          <text x="120" y="182">21.7 cm wide</text>
+          <text x="252" y="72">vents on the corner,</text>
+          <text x="252" y="83">like a cut gem</text>
+        </svg>
+      </div>
+      <h3>HP Z2 Mini G1a<span class="tag">128 GB</span></h3>
+      <p class="role">The office one. Smallest, quietest, business-grade.</p>
+      <ul>
+        <li><b>Ryzen AI Max+ PRO 395</b> · 128 GB unified · 2 TB NVMe</li>
+        <li>2.7 liters. Sits under a monitor and you forget it</li>
+        <li>The only one in US business distribution, so <b>onsite warranty</b> is available</li>
+        <li>Arrives born: models preloaded, agent paired, journal running</li>
+      </ul>
+      <p class="avail">ships in days from US stock</p>
+      <div class="pricebk">
+        <div class="split"><span class="from">from $2,873</span><span class="per">all in</span></div>
+        <p class="math">= hardware at cost (last seen $2,374 to $3,343) + $499 flat</p>
+        <a class="go" href="https://github.com/fluxoz/the-box/issues/new?title=Reserve%3A%20HP%20Z2%20Mini%20G1a%20(128GB)&body=Ship%20to%20(country%2Fstate)%3A%0A%0AStorage%20%2F%20warranty%20notes%3A%0A">Reserve →</a>
       </div>
     </div>
-    <div class="machine">
-      <h3>Box Cloud</h3>
-      <p class="spec">The three things a Box can't do for itself: reach you privately from outside
-      your house, keep an offsite copy, and tell you it's down when it can't speak. A year comes
-      free with every machine above. Never required.</p>
-      <p class="price">$9 / month</p>
-      <div class="cta">
-        <a class="go ghost" href="https://github.com/fluxoz/the-box/issues/new?title=Waitlist%3A%20Box%20Cloud&body=How%20many%20Boxes%3A%0A">Join the waitlist →</a>
+
+    <!-- GMKtec EVO-X2 -->
+    <div class="prod">
+      <div class="artwell">
+        <svg class="art" viewBox="0 0 320 196" role="img" aria-label="Line drawing of the GMKtec EVO-X2, a compact cube mini PC">
+          <path class="top"   d="M100 70 L130 55 L250 55 L220 70 Z"/>
+          <path class="sidef" d="M220 70 L250 55 L250 141 L220 156 Z"/>
+          <path class="face"  d="M100 70 H220 V156 H100 Z"/>
+          <path class="detail" d="M116 62 L136 62 M142 62 L162 62 M168 62 L188 62 M194 62 L214 62 M124 58 L144 58 M150 58 L170 58 M176 58 L196 58 M202 58 L222 58"/>
+          <circle class="hot" cx="208" cy="82" r="4"/>
+          <path class="detail" d="M112 132 v14 M122 132 v14 M132 132 v14 M142 132 v14 M152 132 v14"/>
+          <rect class="detail" x="172" y="138" width="16" height="7"/>
+          <rect class="detail" x="194" y="138" width="10" height="7"/>
+          <circle class="led" cx="106" cy="76" r="2"/>
+          <path class="diml" d="M100 172 H220 M100 168 v8 M220 168 v8"/>
+          <text x="128" y="186">13 cm square</text>
+          <text x="24" y="70">top is one</text>
+          <text x="24" y="81">big intake</text>
+        </svg>
+      </div>
+      <h3>GMKtec EVO-X2<span class="tag">128 GB</span></h3>
+      <p class="role">The desk one. The category's price fighter.</p>
+      <ul>
+        <li><b>Ryzen AI Max+ 395</b> · 128 GB unified · 2 TB NVMe</li>
+        <li>A 13 cm cube. Carried by Micro Center and Amazon</li>
+        <li>Same speed as the HP on the same models</li>
+        <li>Arrives born: models preloaded, agent paired, journal running</li>
+      </ul>
+      <p class="avail">ships in 1 to 3 weeks from the maker or US retail</p>
+      <div class="pricebk">
+        <div class="split"><span class="from">from $3,798</span><span class="per">all in</span></div>
+        <p class="math">= hardware at cost (last seen $3,299 to $3,649) + $499 flat</p>
+        <a class="go" href="https://github.com/fluxoz/the-box/issues/new?title=Reserve%3A%20GMKtec%20EVO-X2%20(128GB)&body=Ship%20to%20(country%2Fstate)%3A%0A%0AStorage%20notes%3A%0A">Reserve →</a>
+      </div>
+    </div>
+
+    <!-- Minisforum MS-S1 MAX -->
+    <div class="prod">
+      <div class="artwell">
+        <svg class="art" viewBox="0 0 320 196" role="img" aria-label="Line drawing of the Minisforum MS-S1 MAX, a wide rackable chassis">
+          <path class="top"   d="M30 96 L60 81 L300 81 L270 96 Z"/>
+          <path class="sidef" d="M270 96 L300 81 L300 135 L270 150 Z"/>
+          <path class="face"  d="M30 96 H270 V150 H30 Z"/>
+          <rect class="detail" x="40" y="104" width="62" height="38"/>
+          <path class="detail" d="M44 108 L98 138 M54 106 L102 132 M42 116 L88 142 M42 128 L66 142"/>
+          <rect class="detail" x="110" y="104" width="62" height="38"/>
+          <path class="detail" d="M114 108 L168 138 M124 106 L172 132 M112 116 L158 142 M112 128 L136 142"/>
+          <rect class="hot" x="196" y="112" width="18" height="12"/>
+          <rect class="hot" x="220" y="112" width="18" height="12"/>
+          <text x="194" y="106">2 x 10G</text>
+          <rect class="detail" x="196" y="134" width="12" height="7"/>
+          <rect class="detail" x="212" y="134" width="12" height="7"/>
+          <rect class="detail" x="228" y="134" width="20" height="7"/>
+          <circle class="led" cx="258" cy="102" r="2"/>
+          <path class="diml" d="M30 166 H270 M30 162 v8 M270 162 v8"/>
+          <text x="108" y="180">rack ears optional · 2U</text>
+        </svg>
+      </div>
+      <h3>Minisforum MS-S1 MAX<span class="tag">128 GB</span></h3>
+      <p class="role">The rack one. For the closet that's becoming a datacenter.</p>
+      <ul>
+        <li><b>Ryzen AI Max+ 395</b> · 128 GB unified · 2 TB NVMe</li>
+        <li><b>10-gigabit networking</b> and USB4v2, rack-mountable</li>
+        <li>The pick if this Box will one day have siblings</li>
+        <li>Arrives born: models preloaded, agent paired, journal running</li>
+      </ul>
+      <p class="avail">ships in 2 to 4 weeks, batch preorders at the maker</p>
+      <div class="pricebk">
+        <div class="split"><span class="from">from $4,218</span><span class="per">all in</span></div>
+        <p class="math">= hardware at cost (last seen $3,719) + $499 flat</p>
+        <a class="go" href="https://github.com/fluxoz/the-box/issues/new?title=Reserve%3A%20Minisforum%20MS-S1%20MAX%20(128GB)&body=Ship%20to%20(country%2Fstate)%3A%0A%0ARack%20or%20desk%3A%0A">Reserve →</a>
+      </div>
+    </div>
+
+    <!-- EVO-X2 64GB -->
+    <div class="prod">
+      <div class="artwell">
+        <svg class="art" viewBox="0 0 320 196" role="img" aria-label="Line drawing of the GMKtec EVO-X2 64 gigabyte model">
+          <path class="top"   d="M110 78 L138 64 L246 64 L218 78 Z"/>
+          <path class="sidef" d="M218 78 L246 64 L246 142 L218 156 Z"/>
+          <path class="face"  d="M110 78 H218 V156 H110 Z"/>
+          <path class="detail" d="M124 71 L142 71 M148 71 L166 71 M172 71 L190 71 M196 71 L214 71"/>
+          <circle class="hot" cx="206" cy="90" r="4"/>
+          <path class="detail" d="M120 136 v12 M129 136 v12 M138 136 v12 M147 136 v12"/>
+          <rect class="detail" x="170" y="140" width="14" height="7"/>
+          <circle class="led" cx="116" cy="84" r="2"/>
+          <path class="diml" d="M110 172 H218 M110 168 v8 M218 168 v8"/>
+          <text x="130" y="186">same cube, half the memory</text>
+        </svg>
+      </div>
+      <h3>GMKtec EVO-X2<span class="tag">64 GB</span></h3>
+      <p class="role">The starter inference Box.</p>
+      <ul>
+        <li><b>Ryzen AI Max+ 395</b> · 64 GB unified · 1 TB NVMe</li>
+        <li>Runs <b>gpt-oss-20b</b> and the fast 30B-class models with room to spare</li>
+        <li>Everything else a Box does, with a smaller brain</li>
+        <li>Arrives born: models preloaded, agent paired, journal running</li>
+      </ul>
+      <p class="avail">ships in 1 to 3 weeks from the maker or US retail</p>
+      <div class="pricebk">
+        <div class="split"><span class="from">from $2,498</span><span class="per">all in</span></div>
+        <p class="math">= hardware at cost (last seen $1,999) + $499 flat</p>
+        <a class="go" href="https://github.com/fluxoz/the-box/issues/new?title=Reserve%3A%20GMKtec%20EVO-X2%20(64GB)&body=Ship%20to%20(country%2Fstate)%3A%0A">Reserve →</a>
+      </div>
+    </div>
+
+    <!-- Pro 192 (ghost) -->
+    <div class="prod">
+      <div class="artwell">
+        <svg class="art" viewBox="0 0 320 196" role="img" aria-label="Dashed outline of the coming 192 gigabyte machine">
+          <path class="ghost" d="M100 70 L130 55 L250 55 L220 70 Z"/>
+          <path class="ghost" d="M220 70 L250 55 L250 141 L220 156 Z"/>
+          <path class="ghost" d="M100 70 H220 V156 H100 Z"/>
+          <text class="bigno" x="128" y="124">192 GB</text>
+          <text x="112" y="146">silicon announced · lands this fall</text>
+        </svg>
+      </div>
+      <h3>The Pro tier<span class="tag">192 GB · arriving</span></h3>
+      <p class="role">For the models that don't fit anywhere else.</p>
+      <ul>
+        <li><b>Ryzen AI Max+ PRO 495</b> · 192 GB unified memory</li>
+        <li>First boards previewed; machines land this fall</li>
+        <li>Same rule when it arrives: cost + $499</li>
+      </ul>
+      <p class="avail">waitlist · we email when the first unit is real</p>
+      <div class="pricebk">
+        <div class="split"><span class="from">price follows the rule</span></div>
+        <a class="go ghostbtn" href="https://github.com/fluxoz/the-box/issues/new?title=Waitlist%3A%20Pro%20192GB&body=Ship%20to%20(country%2Fstate)%3A%0A">Join the waitlist →</a>
+      </div>
+    </div>
+
+    <!-- Installer Kit -->
+    <div class="prod">
+      <div class="artwell">
+        <svg class="art" viewBox="0 0 320 196" role="img" aria-label="Line drawing of the Installer Kit USB stick">
+          <rect class="face" x="96" y="82" width="128" height="42" rx="8"/>
+          <path class="face" d="M224 90 H262 V116 H224 Z"/>
+          <path class="detail" d="M230 96 h24 M230 104 h24"/>
+          <circle class="detail" cx="110" cy="103" r="6"/>
+          <path class="hot" d="M146 92 L158 86 V112 L146 118 L134 112 V86 Z" fill="none"/>
+          <path class="hot" d="M146 102 L134 96 M146 102 L158 96 M146 102 V118" fill="none"/>
+          <text x="170" y="107">BOX OS</text>
+          <path class="diml" d="M96 140 H262 M96 136 v8 M262 136 v8"/>
+          <text x="100" y="154">boots any UEFI machine you already own</text>
+          <path class="detail" d="M104 97 a10 10 0 0 0 -18 6" stroke-dasharray="3 3"/>
+        </svg>
+      </div>
+      <h3>The Installer Kit<span class="tag">USB</span></h3>
+      <p class="role">For the closet that already has the hardware in it.</p>
+      <ul>
+        <li>A bootable USB stick that turns <b>your</b> machine into a Box</li>
+        <li>Plug it in, boot once, walk away; the machine comes back born</li>
+        <li>Includes a year of <b>Box Cloud</b></li>
+      </ul>
+      <p class="avail">ships in an envelope, anywhere</p>
+      <div class="pricebk">
+        <div class="split"><span class="from">$99</span></div>
+        <a class="go ghostbtn" href="https://github.com/fluxoz/the-box/issues/new?title=Reserve%3A%20Installer%20Kit&body=Ship%20to%20(country%2Fstate)%3A%0A">Reserve →</a>
+      </div>
+    </div>
+
+    <!-- Box Cloud -->
+    <div class="prod">
+      <div class="artwell">
+        <svg class="art" viewBox="0 0 320 196" role="img" aria-label="Line drawing of a Box sending signals offsite">
+          <path class="top"   d="M56 112 L80 100 L156 100 L132 112 Z"/>
+          <path class="sidef" d="M132 112 L156 100 L156 148 L132 160 Z"/>
+          <path class="face"  d="M56 112 H132 V160 H56 Z"/>
+          <circle class="led" cx="63" cy="118" r="2"/>
+          <path class="hot" d="M162 96 a26 26 0 0 1 18 -10 M166 110 a40 40 0 0 1 28 -16 M170 124 a56 56 0 0 1 40 -22" stroke-dasharray="4 4"/>
+          <path class="ghost" d="M226 96 a16 16 0 0 1 30 6 a12 12 0 0 1 -2 24 h-44 a14 14 0 0 1 -2 -28 a18 18 0 0 1 18 -2 Z"/>
+          <text x="212" y="146">offsite, encrypted</text>
+          <text x="40" y="182">it phones out so you never have to phone in</text>
+        </svg>
+      </div>
+      <h3>Box Cloud<span class="tag">service</span></h3>
+      <p class="role">The three things a Box can't do for itself.</p>
+      <ul>
+        <li><b>Reach you privately</b> from outside your house</li>
+        <li><b>Keep an offsite copy</b>, encrypted before it leaves</li>
+        <li><b>Tell you it's down</b> when it can't speak for itself</li>
+        <li>A year comes free with every machine above. Never required</li>
+      </ul>
+      <p class="avail">waitlist · billing opens soon</p>
+      <div class="pricebk">
+        <div class="split"><span class="from">$9</span><span class="per">/ month</span></div>
+        <a class="go ghostbtn" href="https://github.com/fluxoz/the-box/issues/new?title=Waitlist%3A%20Box%20Cloud&body=How%20many%20Boxes%3A%0A">Join the waitlist →</a>
+      </div>
+    </div>
+
+    <!-- pay nothing -->
+    <div class="prod">
+      <div class="artwell">
+        <svg class="art" viewBox="0 0 320 196" role="img" aria-label="The Box mark with an orbit">
+          <path class="hot" d="M160 52 L204 74 V118 L160 140 L116 118 V74 Z" fill="none" stroke-width="2"/>
+          <path class="hot" d="M160 96 L116 74 M160 96 L204 74 M160 96 V140" fill="none" stroke-width="2"/>
+          <ellipse class="ghost" cx="160" cy="98" rx="96" ry="34"/>
+          <text x="106" y="176">free, forever, on your own hardware</text>
+        </svg>
+      </div>
+      <h3>Or pay nothing.</h3>
+      <p class="role">The software is the same. The store is optional.</p>
+      <ul>
+        <li>Every machine here runs the same <b>free, open-source</b> software</li>
+        <li>One command turns any spare computer into a Box, today</li>
+        <li>The store exists for people who want it to arrive born</li>
+      </ul>
+      <p class="avail">no waitlist for freedom</p>
+      <div class="pricebk">
+        <div class="split"><span class="from">$0</span></div>
+        <a class="go ghostbtn" href="/">Install it yourself →</a>
       </div>
     </div>
   </div>
@@ -206,9 +395,9 @@
     tokens per second.</p>
     <p><b>No subscription required.</b> A Box that never pays us another dollar keeps working, keeps
     updating, and keeps its models. The paid parts are conveniences, never a leash on your own machine.</p>
-    <p><b>The hardware warranty is the manufacturer's</b>, including onsite service on configurations
-    that offer it. The Box software is ours, it's <a href="https://github.com/fluxoz/the-box">open
-    source</a>, and every install is proven nightly by <a href="/#receipts">a machine, not a claim</a>.</p>
+    <p><b>The hardware warranty is the manufacturer's</b>, including onsite service where they offer it.
+    The Box software is ours, it's <a href="https://github.com/fluxoz/the-box">open source</a>, and every
+    install is proven nightly by <a href="/#receipts">a machine, not a claim</a>.</p>
   </div>
 
   <footer>
