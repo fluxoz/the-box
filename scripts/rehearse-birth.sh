@@ -57,7 +57,8 @@ done
 OVMF_VARS="${OVMF_CODE/CODE/VARS}"
 cp "$OVMF_VARS" vars.fd && chmod +w vars.fd
 
-ACCEL=""; [ -e /dev/kvm ] && ACCEL="-enable-kvm -cpu host"
+# KVM only when actually usable; TCG otherwise (slower, still true).
+ACCEL=""; [ -r /dev/kvm ] && [ -w /dev/kvm ] && ACCEL="-enable-kvm -cpu host"
 # shellcheck disable=SC2086
 qemu-system-x86_64 $ACCEL -m 4096 -smp 4 \
   -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
