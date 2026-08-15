@@ -381,6 +381,25 @@ fn tool_definitions() -> Value {
             },
         },
         {
+            "name": "resident_configure",
+            "description": "Give this Box its own resident caretaker: a scheduled agent that reads the Box's state daily, writes a plain-sentence report into the journal, names concerns, and queues any destructive suggestion for the human's approval (the same leash you are on). The brain is any OpenAI-compatible endpoint — a metered provider, or this Box's own /v1 once a model is pulled. Pass enabled:false to stand it down.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "base_url": { "type": "string", "description": "OpenAI-compatible base, e.g. https://api.x.ai/v1 or http://127.0.0.1:2693/v1" },
+                    "model": { "type": "string", "description": "Model name at that endpoint" },
+                    "api_key": { "type": "string", "description": "Key for that endpoint (stored encrypted; use a minted boxai_ key for the Box's own)" },
+                    "enabled": { "type": "boolean", "description": "Default true" }
+                },
+                "additionalProperties": false,
+            },
+        },
+        {
+            "name": "resident_report_now",
+            "description": "Run the resident's report immediately instead of waiting for the schedule. The summary lands in the journal; suggestions land on the Approvals page.",
+            "inputSchema": no_args,
+        },
+        {
             "name": "ai_key_create",
             "description": "Mint an API key for this Box's OpenAI-compatible endpoint (POST /v1/chat/completions, GET /v1/models on the Box's own port). Any app or SDK that takes a base_url runs against the Box's models by setting base_url to http://<box>:2693/v1 and pasting this key. Shown ONCE; store it now. Revocable per key, like devices.",
             "inputSchema": {
@@ -616,6 +635,55 @@ pub(crate) async fn execute(
 
     match tool {
         "get_status" => Ok(status(&state)),
+        "resident_configure" => {
+            let enabled = args.get("enabled").and_then(Value::as_bool).unwrap_or(true);
+            let base_url = str_arg("base_url");
+            let model = str_arg("model");
+            let api_key = str_arg("api_key");
+            let state = state.clone();
+            Ok(blocking(move || {
+                use anyhow::Context as _;
+                let mut config = crate::config::BoxConfig::load(&state.paths)?;
+                if !enabled {
+                    config.resident = None;
+                    config.save(&state.paths)?;
+                    return Ok(json!({ "resident": "stood down" }));
+                }
+                let base_url = base_url.context("base_url is required to enable the resident")?;
+                let model = model.context("model is required to enable the resident")?;
+                if let Some(k) = api_key {
+                    crate::secrets::set(&state.paths, crate::resident::API_KEY_SECRET, &k)?;
+                }
+                anyhow::ensure!(
+                    crate::secrets::exists(&state.paths, crate::resident::API_KEY_SECRET),
+                    "no api_key stored yet — pass one"
+                );
+                config.resident = Some(crate::resident::ResidentConfig {
+                    enabled: true,
+                    base_url,
+                    model,
+                    schedule: "daily".into(),
+                });
+                config.save(&state.paths)?;
+                Ok(json!({
+                    "resident": "on duty",
+                    "note": "A daily report will land in the journal; resident_report_now runs one immediately.",
+                }))
+            })
+            .await)
+        }
+        "resident_report_now" => {
+            let state = state.clone();
+            Ok(blocking(move || {
+                let report = crate::resident::run_report(&state.paths)?;
+                Ok(serde_json::json!({
+                    "summary": report.summary,
+                    "concerns": report.concerns,
+                    "suggestions_queued": report.suggested_actions.len(),
+                }))
+            })
+            .await)
+        }
         "ai_key_create" => {
             let Some(label) = str_arg("label") else {
                 return Err((-32602, "missing required argument: label".into()));

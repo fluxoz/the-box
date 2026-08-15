@@ -1076,6 +1076,91 @@ async fn ai_endpoint_speaks_openai_with_minted_keys() {
     assert_eq!(status, StatusCode::UNAUTHORIZED, "revoked means revoked");
 }
 
+/// The resident, end to end against a stub brain: configure it, run a
+/// report, and see the summary in the journal, the concern named, and the
+/// destructive suggestion QUEUED for the human — never run.
+#[tokio::test]
+async fn resident_reports_and_suggestions_wait_for_the_human() {
+    let (_tmp, app, token) = app();
+    let paths = boxd::paths::Paths::new(_tmp.path().to_path_buf());
+    let text = |v: &Value| {
+        v["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+
+    // A stub brain that always worries about the same thing.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let stub = axum::Router::new().route(
+        "/v1/chat/completions",
+        axum::routing::post(|| async {
+            let report = json!({
+                "summary": "Your Box is healthy, though one service worries me.",
+                "concerns": ["the service 'old' has been failing to sync"],
+                "suggested_actions": [{
+                    "tool": "delete_service",
+                    "arguments": { "name": "old" },
+                    "reason": "it has failed for a week and serves nothing",
+                }],
+            });
+            axum::Json(json!({
+                "choices": [{ "message": { "role": "assistant",
+                    "content": report.to_string() } }],
+            }))
+        }),
+    );
+    tokio::spawn(async move { axum::serve(listener, stub).await.unwrap() });
+
+    // A service for the suggestion to be about.
+    let deploy = call_tool(
+        &app,
+        &token,
+        "deploy_static_site",
+        json!({ "name": "old", "index_html": "relic" }),
+    )
+    .await;
+    assert_eq!(deploy["result"]["isError"], false, "{deploy}");
+
+    let configured = call_tool(
+        &app,
+        &token,
+        "resident_configure",
+        json!({
+            "base_url": format!("http://127.0.0.1:{port}/v1"),
+            "model": "stub-1",
+            "api_key": "test-key",
+        }),
+    )
+    .await;
+    assert_eq!(configured["result"]["isError"], false, "{configured}");
+
+    let report = call_tool(&app, &token, "resident_report_now", json!({})).await;
+    assert_eq!(report["result"]["isError"], false, "{report}");
+    let parsed: Value = serde_json::from_str(&text(&report)).unwrap();
+    assert!(parsed["summary"].as_str().unwrap().contains("healthy"));
+    assert_eq!(parsed["suggestions_queued"], 1);
+
+    // The journal carries the resident's words...
+    let story = call_tool(&app, &token, "journal", json!({})).await;
+    assert!(text(&story).contains("worries me"), "{}", text(&story));
+    assert!(text(&story).contains("concern:"), "{}", text(&story));
+
+    // ...the suggestion WAITS on the approvals ledger...
+    let pending = boxd::approvals::list(&paths);
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].requested_by, "resident");
+    assert!(pending[0].summary.contains("resident suggests"));
+
+    // ...and nothing ran: the service is untouched.
+    let (_, body) = get(&app, "/sites/old/", "127.0.0.1", Some(&token)).await;
+    assert!(
+        body.contains("relic"),
+        "suggestion must not execute: {body}"
+    );
+}
+
 /// The Boxfile: deploy config that lives in the repo. A linked repository
 /// with a box.toml builds by its own declaration; changing the file in a
 /// commit changes the next deploy; breaking it fails loudly, not silently.

@@ -41,6 +41,7 @@ pub mod paths;
 pub mod ports;
 pub mod provision;
 pub mod pull;
+pub mod resident;
 pub mod secrets;
 pub mod store;
 pub mod templates;
