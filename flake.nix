@@ -400,6 +400,7 @@
                 # The store: hardware at cost + flat fee, reservations via GitHub.
                 mkdir -p $out/store
                 cp ${./site/store/index.html}          $out/store/index.html
+                cp -r ${./site/store/img}              $out/store/img
 
                 ( cd $out && find . -type f ! -name SHA256SUMS -print0 \
                     | sort -z | xargs -0 sha256sum > SHA256SUMS )
