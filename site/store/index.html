@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Box Store: private AI hardware at cost, plus $499</title>
+<meta name="description" content="Inference machines that arrive already a Box: models preloaded, agent-ready, self-updating. Hardware passed through at cost with the invoice shown. The Box part is a flat $499.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="The Box">
+<meta property="og:title" content="The Box Store: hardware at cost, plus $499">
+<meta property="og:description" content="Private AI machines that arrive born: models preloaded, agent-ready, can't be bricked. You pay what we pay for the hardware, invoice included.">
+<meta property="og:url" content="https://thebox.build/store/">
+<meta property="og:image" content="https://thebox.build/og.png">
+<style>
+  :root{
+    --bg:#14110c; --panel:#1b170f; --panel2:#221d13; --line:#322b1f; --line2:#4a4030;
+    --ink:#ece5d5; --dim:#948a68; --faint:#6e654a;
+    --brass:#c99b4e; --brass2:#ddb15c; --brass-wash:rgba(201,155,78,.12);
+    --ok:#8fb56b;
+    --mono:ui-monospace,"SF Mono","Cascadia Code","JetBrains Mono",Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme:light){
+    :root{--bg:#e7e3d8;--panel:#f1ede2;--panel2:#e9e4d6;--line:#cbc4b3;--line2:#a89f8b;--ink:#1f1b14;--dim:#6c6455;--faint:#918872;--brass:#916d2f;--brass2:#a97f34;--brass-wash:rgba(169,127,52,.12);--ok:#4f7a34;}
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.6;-webkit-font-smoothing:antialiased;}
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);
+    background-size:44px 44px;opacity:.16;
+    -webkit-mask-image:radial-gradient(ellipse 130% 80% at 50% 0%,#000 24%,transparent 76%);
+    mask-image:radial-gradient(ellipse 130% 80% at 50% 0%,#000 24%,transparent 76%);}
+  main{position:relative;z-index:1;max-width:780px;margin:0 auto;padding:9vh 1.25rem 6rem;}
+  .topbar{display:flex;align-items:baseline;gap:.6rem;}
+  .brand{display:flex;align-items:center;gap:.5rem;font-weight:800;letter-spacing:.14em;font-size:1.05rem;}
+  .brand .mk{width:1.35em;height:1.35em;flex:none;}
+  .brand .mk path{stroke:var(--brass2);stroke-width:2.8;fill:none;stroke-linejoin:round;stroke-linecap:round;}
+  .brand .sub{font-weight:600;color:var(--dim);letter-spacing:.22em;text-transform:uppercase;font-size:.7rem;}
+  .topbar nav{margin-left:auto;display:flex;gap:1.1rem;font-size:.82rem;letter-spacing:.04em;}
+  a{color:var(--brass2);text-decoration:none;border-bottom:1px solid transparent;}
+  a:hover{border-bottom-color:var(--brass);}
+
+  h1{font-size:clamp(2.1rem,6.4vw,3.2rem);line-height:1.06;margin:2.4rem 0 .7rem;text-wrap:balance;letter-spacing:-.015em;}
+  h1 b{color:var(--brass2);}
+  .lede{color:var(--ink);font-size:1.15rem;max-width:58ch;margin:0 0 2rem;opacity:.9;}
+  .lede b{color:var(--brass2);font-weight:600;}
+
+  .eyebrow{color:var(--brass);text-transform:uppercase;letter-spacing:.18em;font-size:.72rem;font-weight:700;margin:3.2rem 0 .2rem;}
+  h2{font-size:1.5rem;margin:.1rem 0 1.1rem;letter-spacing:-.01em;text-wrap:balance;}
+
+  .steps{list-style:none;counter-reset:s;margin:0;padding:0;display:flex;flex-direction:column;gap:.85rem;}
+  .steps li{counter-increment:s;display:flex;gap:.85rem;align-items:flex-start;}
+  .steps li::before{content:counter(s);flex:none;font-family:var(--mono);font-weight:700;color:var(--brass2);
+    width:1.9rem;height:1.9rem;line-height:1.8rem;text-align:center;font-size:.92rem;
+    border:1px solid var(--line2);border-radius:6px;background:var(--panel);}
+  .steps .txt{color:var(--dim);padding-top:.12rem;}
+  .steps b{color:var(--ink);font-weight:600;}
+
+  /* product cards */
+  .machines{display:flex;flex-direction:column;gap:1rem;margin:1rem 0 0;}
+  .machine{background:var(--panel);border:1px solid var(--line2);border-radius:10px;
+    padding:1.15rem 1.25rem;box-shadow:inset 3px 0 0 var(--brass);}
+  .machine.soon{box-shadow:inset 3px 0 0 var(--line2);}
+  .machine h3{margin:0;font-size:1.15rem;letter-spacing:-.01em;}
+  .machine h3 .tag{font-family:var(--mono);font-size:.7rem;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--dim);border:1px solid var(--line2);border-radius:5px;padding:.12rem .45rem;margin-left:.55rem;vertical-align:.15em;}
+  .machine .spec{margin:.45rem 0 0;color:var(--dim);font-size:.95rem;}
+  .machine .spec b{color:var(--ink);font-weight:600;}
+  .machine .perf{margin:.55rem 0 0;color:var(--dim);font-size:.9rem;}
+  .priceline{display:flex;align-items:baseline;gap:.9rem;flex-wrap:wrap;margin:.9rem 0 0;
+    border-top:1px dashed var(--line);padding-top:.85rem;}
+  .priceline .math{font-family:var(--mono);font-size:.85rem;color:var(--dim);}
+  .priceline .from{font-weight:800;font-size:1.15rem;color:var(--brass2);margin-left:auto;}
+  .cta{margin:.9rem 0 0;display:flex;align-items:baseline;gap:.9rem;flex-wrap:wrap;}
+  .go{display:inline-block;background:var(--brass);color:#1a1408;border:none;border-radius:8px;
+    padding:.55rem 1.05rem;font-weight:700;letter-spacing:.01em;}
+  .go:hover{border-bottom-color:transparent;background:var(--brass2);}
+  .go.ghost{background:transparent;color:var(--brass2);border:1px solid var(--line2);}
+  .go.ghost:hover{border-color:var(--brass);}
+  .cta .note{color:var(--faint);font-size:.82rem;}
+
+  .shelf{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:1rem 0 0;}
+  @media (max-width:600px){.shelf{grid-template-columns:1fr;}}
+  .shelf .machine{box-shadow:none;padding:1.05rem 1.15rem;}
+  .shelf h3{font-size:1.02rem;color:var(--brass2);}
+  .shelf .price{font-family:var(--mono);font-size:.9rem;color:var(--ink);margin-top:.4rem;}
+
+  .honest{margin-top:1rem;background:var(--panel);border:1px dashed var(--line2);border-radius:9px;
+    padding:1rem 1.15rem;font-size:.95rem;color:var(--dim);}
+  .honest b{color:var(--brass2);font-weight:600;}
+  .honest p{margin:.6rem 0 0;}
+  .honest p:first-child{margin-top:0;}
+
+  footer{margin-top:4rem;padding-top:1.4rem;border-top:1px solid var(--line);color:var(--faint);
+    font-size:.78rem;letter-spacing:.05em;display:flex;gap:1.2rem;flex-wrap:wrap;}
+</style>
+</head>
+<body>
+<main>
+  <div class="topbar">
+    <div class="brand"><svg class="mk" viewBox="0 0 48 48" aria-hidden="true"><path d="M24 7 L39 15 V33 L24 41 L9 33 V15 Z"/><path d="M24 24 L9 15 M24 24 L39 15 M24 24 V41"/></svg>THE <b style="color:var(--brass2)">BOX</b> <span class="sub">store</span></div>
+    <nav><a href="/">Home</a> <a href="/docs/">Docs</a> <a href="https://github.com/fluxoz/the-box">GitHub</a></nav>
+  </div>
+
+  <h1>Hardware at cost.<br>The Box part is <b>$499</b>.</h1>
+  <p class="lede">Private AI runs best on a machine you own. The machines already exist, off the shelf.
+  What we sell is the part that matters: yours arrives <b>already a Box</b>. Open models preloaded and
+  serving, your coding agent connected in minutes, updates that can't brick it, and nothing destructive
+  without your tap. The hardware itself we pass through <b>at cost</b>, invoice included.</p>
+
+  <p class="eyebrow">How pricing works</p>
+  <h2>You pay what we pay, plus a flat fee. That's the whole trick.</h2>
+  <ol class="steps">
+    <li><div class="txt"><b>Reserve.</b> No payment, no card. It's a hello, not a contract.</div></li>
+    <li><div class="txt"><b>We quote the exact machine at that week's price</b> and show you the invoice.
+      Memory prices are wild right now, the whole industry is in a DRAM shortage, so quotes hold for
+      seven days instead of pretending a sticker price is stable.</div></li>
+    <li><div class="txt"><b>Pay when it ships.</b> The maker's warranty covers the hardware.
+      We cover the Box, and the software updates itself for as long as the project lives.</div></li>
+  </ol>
+
+  <p class="eyebrow">The machines</p>
+  <h2>Small, silent, and honest about what they run.</h2>
+  <div class="machines">
+
+    <div class="machine">
+      <h3>The Inference Box<span class="tag">128 GB</span></h3>
+      <p class="spec"><b>Ryzen AI Max+ 395</b> · 128 GB unified memory · 2 TB storage · desk-quiet, about the size of a thick book.</p>
+      <p class="perf">Runs <b>gpt-oss-120b</b> and the big open mixture-of-experts models at conversation
+      speed, 30 to 55 tokens a second, entirely on your desk. Those are
+      <a href="https://kyuz0.github.io/amd-strix-halo-toolboxes/">community benchmarks</a>, not our marketing.</p>
+      <div class="priceline">
+        <span class="math">hardware at cost, about $2,400 to $3,300 today&nbsp;&nbsp;+&nbsp;&nbsp;$499</span>
+        <span class="from">from ~$2,900</span>
+      </div>
+      <div class="cta">
+        <a class="go" href="https://github.com/fluxoz/the-box/issues/new?title=Reserve%3A%20Inference%20Box%20(128GB)&body=Ship%20to%20(country%2Fstate)%3A%0A%0AConfig%20notes%20(storage%2C%20warranty%2C%20anything%20else)%3A%0A">Reserve →</a>
+        <span class="note">reservations are GitHub issues, public like the rest of this project</span>
+      </div>
+    </div>
+
+    <div class="machine">
+      <h3>The Inference Box<span class="tag">64 GB</span></h3>
+      <p class="spec">Same silicon, half the memory. Runs <b>gpt-oss-20b</b> and the fast 30B-class
+      models with room left over for everything else a Box does.</p>
+      <div class="priceline">
+        <span class="math">hardware at cost, about $2,000 today&nbsp;&nbsp;+&nbsp;&nbsp;$499</span>
+        <span class="from">from ~$2,500</span>
+      </div>
+      <div class="cta">
+        <a class="go" href="https://github.com/fluxoz/the-box/issues/new?title=Reserve%3A%20Inference%20Box%20(64GB)&body=Ship%20to%20(country%2Fstate)%3A%0A%0AConfig%20notes%3A%0A">Reserve →</a>
+      </div>
+    </div>
+
+    <div class="machine soon">
+      <h3>The Inference Box Pro<span class="tag">192 GB · arriving</span></h3>
+      <p class="spec">The next memory tier, 192 GB unified, for the models that don't fit anywhere else.
+      The silicon is announced; machines land this fall. Price follows the same rule: cost plus $499.</p>
+      <div class="cta">
+        <a class="go ghost" href="https://github.com/fluxoz/the-box/issues/new?title=Waitlist%3A%20Inference%20Box%20Pro%20(192GB)&body=Ship%20to%20(country%2Fstate)%3A%0A">Join the waitlist →</a>
+      </div>
+    </div>
+
+    <div class="machine soon">
+      <h3>Or pay nothing.</h3>
+      <p class="spec">Every machine in this store runs the same free software you can install yourself,
+      today, on any spare computer with one command. The store exists for people who want the machine
+      to arrive born. It is never a gate.</p>
+      <div class="cta">
+        <a class="go ghost" href="/">Install it on your own hardware →</a>
+      </div>
+    </div>
+  </div>
+
+  <p class="eyebrow">The rest of the shelf</p>
+  <h2>For the hardware you already own.</h2>
+  <div class="shelf">
+    <div class="machine">
+      <h3>The Installer Kit</h3>
+      <p class="spec">A bootable USB stick that turns a machine of yours into a Box, plus a year of
+      Box Cloud. For the closet that already has the hardware in it.</p>
+      <p class="price">$99</p>
+      <div class="cta">
+        <a class="go ghost" href="https://github.com/fluxoz/the-box/issues/new?title=Reserve%3A%20Installer%20Kit&body=Ship%20to%20(country%2Fstate)%3A%0A">Reserve →</a>
+      </div>
+    </div>
+    <div class="machine">
+      <h3>Box Cloud</h3>
+      <p class="spec">The three things a Box can't do for itself: reach you privately from outside
+      your house, keep an offsite copy, and tell you it's down when it can't speak. A year comes
+      free with every machine above. Never required.</p>
+      <p class="price">$9 / month</p>
+      <div class="cta">
+        <a class="go ghost" href="https://github.com/fluxoz/the-box/issues/new?title=Waitlist%3A%20Box%20Cloud&body=How%20many%20Boxes%3A%0A">Join the waitlist →</a>
+      </div>
+    </div>
+  </div>
+
+  <p class="eyebrow">The honest part</p>
+  <h2>What these machines really do.</h2>
+  <div class="honest">
+    <p><b>They are mixture-of-experts machines.</b> The big open MoE models (gpt-oss-120b, the Qwen3
+    family) run at conversation speed. Dense 70B models do not run well on anything in this class,
+    whatever the listing says. If someone quotes you 70B numbers on unified memory, ask for the
+    tokens per second.</p>
+    <p><b>No subscription required.</b> A Box that never pays us another dollar keeps working, keeps
+    updating, and keeps its models. The paid parts are conveniences, never a leash on your own machine.</p>
+    <p><b>The hardware warranty is the manufacturer's</b>, including onsite service on configurations
+    that offer it. The Box software is ours, it's <a href="https://github.com/fluxoz/the-box">open
+    source</a>, and every install is proven nightly by <a href="/#receipts">a machine, not a claim</a>.</p>
+  </div>
+
+  <footer>
+    <span>Free &amp; open source.</span>
+    <span>No account, no phone-home.</span>
+    <span>Prices float with the memory market; the $499 doesn't.</span>
+  </footer>
+</main>
+</body>
+</html>
