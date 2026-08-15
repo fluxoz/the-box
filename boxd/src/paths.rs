@@ -128,6 +128,15 @@ impl Paths {
             self.profiles_dir(),
         ] {
             std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
+            // Whoever runs first must not lock the daemon out of its own
+            // house. On a fresh install, firstboot runs `boxd` as ROOT (to
+            // seed the enrollment code from the orders) before the daemon
+            // ever starts — and the very first real deploy then died with a
+            // bare "Permission denied" on root-owned profiles/ and sources/.
+            // Found live, in the first full-funnel rehearsal. Same cure as
+            // its two sibling bugs: everything created here takes the data
+            // dir's owner.
+            crate::util::chown_like(&self.data_dir, &dir);
         }
         Ok(())
     }
