@@ -496,8 +496,12 @@ The build step is LIVE (real npm install, offline vite build, on the Pi).
 1. **Housekeeping before 2026-08-21:** the Box currently runs tunnel ops on a
    token that expires then — replace with one three-scope token (or land
    self-minting first and let it fix itself).
-2. **The one-liner agent hookup CLI** — the funnel's front door.
-3. **Cloudflare self-minting tokens** (+ probes as fallback diagnosis).
+2. **The one-liner agent hookup CLI** — DONE (v0.3.16, 2026-08-15):
+   `curl -fsSL https://thebox.build/connect | sh` — live on the site,
+   integration-tested against a real boxd through both pairing doors, proven
+   against the real Pi, agent-usable via env overrides (documented in
+   llms.txt).
+3. **Cloudflare self-minting tokens** (+ probes as fallback diagnosis) — NEXT.
 4. **Console flagship pass** on the highest-traffic surfaces: first-run,
    deploy-with-live-progress, service page with streaming logs.
 5. **Previews + webhook + Cache-Control** (the loop's comforts).
