@@ -680,6 +680,153 @@ fn remote_hook() -> ConnectInfo<SocketAddr> {
     ConnectInfo(SocketAddr::from(([203, 0, 113, 9], 443)))
 }
 
+/// Pull requests get previews with the PR's own lifecycle: opened → a
+/// sibling service on the PR branch serves; synchronize → it follows; closed
+/// → it is gone. Fork PRs are refused by policy, not by accident.
+#[tokio::test]
+async fn pull_request_preview_lives_and_dies_with_the_pr() {
+    let (_tmp, app, token) = app();
+    let paths = boxd::paths::Paths::new(_tmp.path().to_path_buf());
+    let text = |v: &Value| {
+        v["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+
+    let hook = |body: String, sig: String| {
+        let app = app.clone();
+        async move {
+            let resp = app
+                .oneshot(
+                    Request::post("/hooks/github")
+                        .header("content-type", "application/json")
+                        .header("x-hub-signature-256", sig)
+                        .extension(remote_hook())
+                        .body(Body::from(body))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let status = resp.status();
+            let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+            (status, String::from_utf8_lossy(&bytes).to_string())
+        }
+    };
+    let sign = |body: &str| {
+        let mac = boxd::util::hmac_sha256(b"s3cret", body.as_bytes());
+        format!(
+            "sha256={}",
+            mac.iter().map(|b| format!("{b:02x}")).collect::<String>()
+        )
+    };
+
+    // Upstream with main + a PR branch that changes the page.
+    let upstream = TempDir::new().unwrap();
+    let git = |args: &[&str]| {
+        let out = std::process::Command::new("git")
+            .args(args)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}");
+    };
+    let up = upstream.path().to_str().unwrap().to_string();
+    git(&["init", "-q", "-b", "main", &up]);
+    std::fs::write(upstream.path().join("index.html"), "main content").unwrap();
+    git(&["-C", &up, "add", "."]);
+    git(&["-C", &up, "commit", "-qm", "main"]);
+    git(&["-C", &up, "checkout", "-qb", "feature"]);
+    std::fs::write(upstream.path().join("index.html"), "preview content v1").unwrap();
+    git(&["-C", &up, "add", "."]);
+    git(&["-C", &up, "commit", "-qm", "pr1"]);
+    git(&["-C", &up, "checkout", "-q", "main"]);
+
+    // The linked parent service.
+    let deploy = call_tool(
+        &app,
+        &token,
+        "deploy_static_site",
+        json!({ "name": "app", "index_html": "placeholder" }),
+    )
+    .await;
+    assert_eq!(deploy["result"]["isError"], false, "{deploy}");
+    {
+        let mut config = boxd::config::BoxConfig::load(&paths).unwrap();
+        config.services[0].repo = Some(boxd::config::RepoLink {
+            forge: "github".into(),
+            repo: "owner/app".into(),
+            clone_url: format!("file://{up}"),
+            branch: "main".into(),
+            subdir: None,
+            build: None,
+        });
+        config.save(&paths).unwrap();
+    }
+    boxd::secrets::set(&paths, "webhook-secret", "s3cret").unwrap();
+
+    let pr_payload = |action: &str| {
+        json!({
+            "action": action,
+            "repository": { "full_name": "owner/app" },
+            "pull_request": {
+                "number": 7,
+                "head": { "ref": "feature", "repo": { "full_name": "owner/app" } },
+            },
+        })
+        .to_string()
+    };
+
+    // Opened: the preview exists and serves the PR branch.
+    let (status, resp) = hook(pr_payload("opened"), sign(&pr_payload("opened"))).await;
+    assert_eq!(status, StatusCode::OK, "{resp}");
+    assert!(resp.contains("app-pr7"), "{resp}");
+    let (_, body) = get(&app, "/sites/app-pr7/", "127.0.0.1", Some(&token)).await;
+    assert!(body.contains("preview content v1"), "{body}");
+    // The parent is untouched.
+    let (_, body) = get(&app, "/sites/app/", "127.0.0.1", Some(&token)).await;
+    assert!(body.contains("placeholder"), "{body}");
+
+    // Synchronize after a push to the PR branch: the preview follows.
+    git(&["-C", &up, "checkout", "-q", "feature"]);
+    std::fs::write(upstream.path().join("index.html"), "preview content v2").unwrap();
+    git(&["-C", &up, "add", "."]);
+    git(&["-C", &up, "commit", "-qm", "pr1 update"]);
+    git(&["-C", &up, "checkout", "-q", "main"]);
+    let (status, _) = hook(pr_payload("synchronize"), sign(&pr_payload("synchronize"))).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, body) = get(&app, "/sites/app-pr7/", "127.0.0.1", Some(&token)).await;
+    assert!(body.contains("preview content v2"), "{body}");
+
+    // A fork PR is refused by policy.
+    let fork = json!({
+        "action": "opened",
+        "repository": { "full_name": "owner/app" },
+        "pull_request": {
+            "number": 8,
+            "head": { "ref": "evil", "repo": { "full_name": "stranger/app" } },
+        },
+    })
+    .to_string();
+    let (status, resp) = hook(fork.clone(), sign(&fork)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(resp.contains("fork"), "{resp}");
+    let services = call_tool(&app, &token, "list_services", json!({})).await;
+    assert!(!text(&services).contains("pr8"), "no preview for a fork PR");
+
+    // Closed: the preview is gone; the parent remains.
+    let (status, resp) = hook(pr_payload("closed"), sign(&pr_payload("closed"))).await;
+    assert_eq!(status, StatusCode::OK, "{resp}");
+    assert!(resp.contains("app-pr7"), "{resp}");
+    let services = call_tool(&app, &token, "list_services", json!({})).await;
+    assert!(!text(&services).contains("app-pr7"), "{}", text(&services));
+    let (_, body) = get(&app, "/sites/app/", "127.0.0.1", Some(&token)).await;
+    assert!(body.contains("placeholder"), "parent survives the PR close");
+}
+
 /// The trust ceremony, end to end: a destructive call from a normal session
 /// queues instead of running; the console tap runs the exact call; a denial
 /// is recorded and nothing happens; an autonomous session skips the queue.

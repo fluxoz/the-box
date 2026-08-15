@@ -61,6 +61,11 @@ pub async fn github(
     if payload.get("zen").is_some() {
         return axum::Json(json!({ "pong": true })).into_response();
     }
+    // Pull requests get previews: every PR its own service, its own URL,
+    // alive exactly as long as the PR is.
+    if payload.get("pull_request").is_some() {
+        return pull_request_event(state, &payload).await;
+    }
     let repo = payload
         .get("repository")
         .and_then(|r| r.get("full_name"))
@@ -83,6 +88,81 @@ pub async fn github(
     let outcome = crate::web::blocking_sync(state, repo.clone(), branch.clone()).await;
     match outcome {
         Ok(synced) => axum::Json(json!({ "synced": synced })).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            axum::Json(json!({ "error": format!("{e:#}") })),
+        )
+            .into_response(),
+    }
+}
+
+/// PR lifecycle → preview lifecycle. Opened/updated same-repo PRs against a
+/// linked repository get (or refresh) a preview service named
+/// `<parent>-pr<N>`; a closed PR takes its preview down. Fork PRs are
+/// deliberately ignored: the sandbox would contain the build, but the Box
+/// only auto-builds branches of repositories the operator linked, not
+/// whatever a stranger pointed at them.
+async fn pull_request_event(state: SharedState, payload: &Value) -> Response {
+    let action = payload
+        .get("action")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let repo = payload
+        .get("repository")
+        .and_then(|r| r.get("full_name"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let pr = payload.get("pull_request").cloned().unwrap_or_default();
+    let number = pr.get("number").and_then(Value::as_u64).unwrap_or_default();
+    let head_branch = pr
+        .get("head")
+        .and_then(|h| h.get("ref"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let head_repo = pr
+        .get("head")
+        .and_then(|h| h.get("repo"))
+        .and_then(|r| r.get("full_name"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    if repo.is_empty() || number == 0 {
+        return axum::Json(json!({ "ignored": "not a pull request event" })).into_response();
+    }
+    if !head_repo.is_empty() && !head_repo.eq_ignore_ascii_case(&repo) {
+        return axum::Json(json!({
+            "ignored": "fork pull request",
+            "note": "previews build only branches of the linked repository itself",
+        }))
+        .into_response();
+    }
+
+    let outcome = match action {
+        "opened" | "synchronize" | "reopened" | "ready_for_review" => {
+            let state = state.clone();
+            tokio::task::spawn_blocking(move || {
+                crate::web::preview_open(&state, &repo, number, &head_branch)
+            })
+            .await
+            .map_err(anyhow::Error::from)
+            .and_then(|r| r)
+        }
+        "closed" => {
+            let state = state.clone();
+            tokio::task::spawn_blocking(move || crate::web::preview_close(&state, &repo, number))
+                .await
+                .map_err(anyhow::Error::from)
+                .and_then(|r| r)
+        }
+        other => {
+            return axum::Json(json!({ "ignored": format!("pull request action {other}") }))
+                .into_response()
+        }
+    };
+    match outcome {
+        Ok(v) => axum::Json(v).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             axum::Json(json!({ "error": format!("{e:#}") })),
