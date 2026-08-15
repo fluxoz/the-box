@@ -1,3 +1,4 @@
+pub mod aiproxy;
 pub mod api;
 pub mod hooks;
 pub mod mcp;
@@ -140,10 +141,14 @@ pub fn router(state: SharedState) -> Router {
         .route("/pair", get(pages::pair))
         .route("/pair/redeem", post(pages::pair_redeem))
         .route("/hooks/github", post(hooks::github))
+        .route("/v1/chat/completions", post(aiproxy::chat_completions))
+        .route("/v1/models", get(aiproxy::models))
         .route("/pair/claim", post(pages::pair_claim))
         .route("/devices", get(pages::devices))
         .route("/devices/add", post(pages::add_device))
         .route("/devices/agent", post(pages::create_agent_connection))
+        .route("/devices/ai-key", post(pages::mint_ai_key))
+        .route("/devices/ai-key/{id}/revoke", post(pages::revoke_ai_key))
         .route("/devices/{id}/revoke", post(pages::revoke_device))
         .route("/devices/{id}/autonomy", post(pages::set_device_autonomy))
         .route("/approvals", get(pages::approvals))

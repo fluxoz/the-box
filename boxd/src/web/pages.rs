@@ -2352,6 +2352,16 @@ fn devices_page(
     flash: &Flash,
     agent_token: Option<String>,
 ) -> Html<String> {
+    devices_page_full(state, headers, flash, agent_token, None)
+}
+
+fn devices_page_full(
+    state: &SharedState,
+    headers: &HeaderMap,
+    flash: &Flash,
+    agent_token: Option<String>,
+    minted_ai_key: Option<String>,
+) -> Html<String> {
     let sessions = crate::auth::list(&state.paths);
     // Whether this browser could use a security key at all is a property of the
     // ADDRESS it reached us on, so it is computed per request.
@@ -2419,6 +2429,55 @@ fn devices_page(
                             }
                         }
                     }
+                }
+            }
+        }
+
+        section {
+            div.section-head {
+                h2 { "AI keys" }
+                form method="post" action="/devices/ai-key" {
+                    input type="text" name="label" placeholder="what will hold it, e.g. notes-app" required
+                        style="margin-right:.5rem";
+                    button.btn type="submit" { "+ Mint key" }
+                }
+            }
+            p.muted {
+                "Keys for this Box's OpenAI-compatible endpoint ("
+                code { "http://" (mcp_url_for(headers).trim_end_matches("/mcp").trim_start_matches("http://")) "/v1" }
+                "). Any app that takes a base_url and an API key can run against the models this "
+                "Box serves. Each key is shown once at minting and revocable here."
+            }
+            @let ai_keys = crate::aikeys::list(&state.paths);
+            @if ai_keys.is_empty() {
+                p.muted { "None yet." }
+            } @else {
+                table {
+                    thead { tr { th { "Id" } th { "Label" } th { "Created" } th {} } }
+                    tbody {
+                        @for k in &ai_keys {
+                            tr {
+                                td { code { (k.id) } }
+                                td { (k.label) }
+                                td {
+                                    @match chrono::DateTime::from_timestamp(k.created_at, 0) {
+                                        Some(t) => (t.format("%Y-%m-%d %H:%M UTC")),
+                                        None => "—",
+                                    }
+                                }
+                                td {
+                                    form method="post" action={ "/devices/ai-key/" (k.id) "/revoke" } {
+                                        button.danger type="submit" { "Revoke" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            @if let Some(k) = &minted_ai_key {
+                div.flash.ok {
+                    "Key minted — copy it now, it is shown once: " code { (k) }
                 }
             }
         }
@@ -2833,6 +2892,43 @@ pub async fn set_meter_rate(
         }
         (Err(e), _) => Redirect::to(&format!(
             "/system?err={}",
+            urlencoding::encode(&format!("{e:#}"))
+        )),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct AiKeyForm {
+    label: String,
+}
+
+pub async fn mint_ai_key(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Form(f): Form<AiKeyForm>,
+) -> Html<String> {
+    // Render, not redirect: the secret is shown once and must never ride a URL.
+    match crate::aikeys::mint(&state.paths, &f.label) {
+        Ok(key) => devices_page_full(&state, &headers, &Flash::default(), None, Some(key)),
+        Err(e) => devices_page_full(
+            &state,
+            &headers,
+            &Flash {
+                ok: None,
+                err: Some(format!("{e:#}")),
+            },
+            None,
+            None,
+        ),
+    }
+}
+
+pub async fn revoke_ai_key(State(state): State<SharedState>, Path(id): Path<String>) -> Redirect {
+    match crate::aikeys::revoke(&state.paths, &id) {
+        Ok(true) => Redirect::to("/devices?ok=AI+key+revoked"),
+        Ok(false) => Redirect::to("/devices?err=No+such+AI+key"),
+        Err(e) => Redirect::to(&format!(
+            "/devices?err={}",
             urlencoding::encode(&format!("{e:#}"))
         )),
     }
