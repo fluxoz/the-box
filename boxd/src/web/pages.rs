@@ -2131,9 +2131,14 @@ pub async fn pair_redeem(
     // 401 signpost tells agents to POST JSON, an agent did, and the form-only
     // parser refused the very instructions the Box itself had handed out.
     // Refusing over framing is pedantry a front door cannot afford.
-    let code = serde_json::from_str::<serde_json::Value>(&body)
-        .ok()
-        .and_then(|v| v.get("code").and_then(serde_json::Value::as_str).map(str::to_string))
+    let json_body = serde_json::from_str::<serde_json::Value>(&body).ok();
+    let json_str = |key: &str| {
+        json_body
+            .as_ref()
+            .and_then(|v| v.get(key).and_then(serde_json::Value::as_str))
+            .map(str::to_string)
+    };
+    let code = json_str("code")
         .or_else(|| {
             body.split('&').find_map(|pair| {
                 let (k, v) = pair.split_once('=')?;
@@ -2150,7 +2155,14 @@ pub async fn pair_redeem(
         .get(header::ACCEPT)
         .and_then(|v| v.to_str().ok())
         .is_some_and(|a| a.contains("application/json"));
-    let label = if wants_json { "agent" } else { "browser" };
+    // The label names the session in the operator's device list — "what is
+    // this thing that can drive my Box". Callers that know (the connect CLI
+    // says which editor it wired up) say so; the defaults are the old ones.
+    let label = json_str("label")
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| l.chars().take(64).collect::<String>())
+        .unwrap_or_else(|| if wants_json { "agent".into() } else { "browser".into() });
+    let label = label.as_str();
     match crate::auth::redeem_code(&state.paths, &code, label) {
         Ok(token) => {
             if wants_json {

@@ -377,6 +377,9 @@
                 cp ${./site/logo.svg}                  $out/logo.svg
                 cp ${./site/og.png}                    $out/og.png
                 cp -r ${./site/docs}                   $out/docs
+                # The one-liner that connects a coding agent to a Box:
+                #   curl -fsSL https://thebox.build/connect | sh
+                cp ${./site/connect}                   $out/connect
                 # Agent entry points: point an agent at thebox.build and it can
                 # provision + manage a Box from these alone (llms.txt convention).
                 cp ${./site/llms.txt}                  $out/llms.txt
@@ -547,6 +550,7 @@
             age
             git
             restic
+            curl # cfapi, and the connect one-liner the tests drive
           ];
           RUST_BACKTRACE = "1";
           # Selenium needs to find the pinned browser rather than a system one.
