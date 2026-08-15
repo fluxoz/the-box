@@ -397,6 +397,9 @@
                 # the install docs' references to it are real.
                 mkdir -p $out/configurator
                 cp ${./configurator/index.html}        $out/configurator/index.html
+                # The store: hardware at cost + flat fee, reservations via GitHub.
+                mkdir -p $out/store
+                cp ${./site/store/index.html}          $out/store/index.html
 
                 ( cd $out && find . -type f ! -name SHA256SUMS -print0 \
                     | sort -z | xargs -0 sha256sum > SHA256SUMS )
