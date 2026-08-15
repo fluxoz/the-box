@@ -364,7 +364,10 @@ mod tests {
         let listing = String::from_utf8_lossy(&out.stdout);
         assert!(listing.contains("box.toml"), "{listing}");
         assert!(listing.contains("secrets/db-env.age"), "{listing}");
-        assert!(!listing.contains("backup-pw"), "plaintext pushed: {listing}");
+        assert!(
+            !listing.contains("backup-pw"),
+            "plaintext pushed: {listing}"
+        );
     }
 
     // Alias so the test reads clearly next to set_remote.

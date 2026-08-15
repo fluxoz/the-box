@@ -218,7 +218,10 @@ mod tests {
     /// and can't drift onto a different nixpkgs than the closure already here.
     #[test]
     fn generation_pins_the_platform_nixpkgs() {
-        assert_eq!(nixpkgs_url_from(Some("/nix/store/abc-source")), "path:/nix/store/abc-source");
+        assert_eq!(
+            nixpkgs_url_from(Some("/nix/store/abc-source")),
+            "path:/nix/store/abc-source"
+        );
         assert_eq!(nixpkgs_url_from(Some("  ")), "flake:nixpkgs");
         assert_eq!(nixpkgs_url_from(None), "flake:nixpkgs");
     }
@@ -253,7 +256,8 @@ mod tests {
         // Materialize like a real deploy: only the static site writes a tree.
         for s in &config.services {
             let t = crate::templates::get(&s.template).unwrap();
-            t.materialize(&s.params, &paths.source_dir(&s.name)).unwrap();
+            t.materialize(&s.params, &paths.source_dir(&s.name))
+                .unwrap();
         }
 
         let gensrc = write_gensrc(&paths, &config).unwrap();

@@ -288,7 +288,9 @@ pub fn default_system_health() -> Result<()> {
         }
     }
     if !settled {
-        bail!("boxd.service did not stay active after the switch (crash-looping or failed to start)");
+        bail!(
+            "boxd.service did not stay active after the switch (crash-looping or failed to start)"
+        );
     }
 
     // boxd being up is necessary, not sufficient. nginx is how every service

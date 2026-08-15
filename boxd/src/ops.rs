@@ -13,12 +13,12 @@ use serde_json::{json, Value};
 use crate::agecrypt;
 use crate::catalog;
 use crate::config::{validate_domain, validate_service_name, BoxConfig, ServiceConfig};
-use crate::ports;
 use crate::history;
 use crate::manifest;
 use crate::nixgen;
 use crate::ostier;
 use crate::paths::Paths;
+use crate::ports;
 use crate::store::{self, Builder, GenerationInfo};
 use crate::templates;
 use crate::util;
@@ -191,8 +191,7 @@ pub fn upload_files(
         }
         bytes += file.bytes.len() as u64;
         count += 1;
-        fs::write(&target, &file.bytes)
-            .with_context(|| format!("writing {}", target.display()))?;
+        fs::write(&target, &file.bytes).with_context(|| format!("writing {}", target.display()))?;
     }
     Ok((count, bytes))
 }
@@ -247,9 +246,10 @@ pub fn service_status(
         return ServiceStatus {
             url,
             state: "not-running",
-            note: Some(ostier::pending_reason(paths).unwrap_or_else(|| {
-                "the system has not applied this change yet".into()
-            })),
+            note: Some(
+                ostier::pending_reason(paths)
+                    .unwrap_or_else(|| "the system has not applied this change yet".into()),
+            ),
         };
     }
     ServiceStatus {
@@ -307,12 +307,12 @@ pub fn apply_checked(
             // deletes the service by hand.
             if let Some(prev) = &previous {
                 if let Err(re) = rollback(paths, prev.number) {
-                    bail!("build failed ({e:#}) and restoring generation #{} also failed: {re:#}", prev.number);
+                    bail!(
+                        "build failed ({e:#}) and restoring generation #{} also failed: {re:#}",
+                        prev.number
+                    );
                 }
-                bail!(
-                    "build failed — restored generation #{}: {e:#}",
-                    prev.number
-                );
+                bail!("build failed — restored generation #{}: {e:#}", prev.number);
             }
             return Err(e);
         }
@@ -366,7 +366,11 @@ pub fn deploy(
     // generated one before it is encrypted. The operator never has to know the
     // service's credential conventions to run it safely.
     let mut generated: Vec<(String, String)> = Vec::new();
-    if let Some(obj) = req.params.get_mut("secret_env").and_then(Value::as_object_mut) {
+    if let Some(obj) = req
+        .params
+        .get_mut("secret_env")
+        .and_then(Value::as_object_mut)
+    {
         for (key, value) in obj.iter_mut() {
             let weak = value
                 .as_str()
@@ -389,7 +393,11 @@ pub fn deploy(
     // The copy lives in boxd's own encrypted store (see crate::secrets), so it
     // is readable by the console, which already has full authority anyway.
     for (key, value) in &generated {
-        let slot = format!("service-{}-{}", req.name, key.to_ascii_lowercase().replace('_', "-"));
+        let slot = format!(
+            "service-{}-{}",
+            req.name,
+            key.to_ascii_lowercase().replace('_', "-")
+        );
         if let Err(e) = crate::secrets::set(paths, &slot, value) {
             tracing::warn!("could not record generated credential {slot}: {e:#}");
         }
@@ -409,7 +417,11 @@ pub fn deploy(
         let recipients = agecrypt::recipients()?;
         let dir = paths.data_dir.join("secrets");
         fs::create_dir_all(&dir)?;
-        agecrypt::encrypt(&env_file, &recipients, &dir.join(format!("{}-env.age", req.name)))?;
+        agecrypt::encrypt(
+            &env_file,
+            &recipients,
+            &dir.join(format!("{}-env.age", req.name)),
+        )?;
     }
     if let Some(obj) = req.params.as_object_mut() {
         obj.remove("secret_env");
@@ -742,7 +754,11 @@ fn uniform_below(n: u32) -> Result<u32> {
 
 /// Re-key every `.age` directly in `dir` (non-recursive) to `recipients`,
 /// decrypting with `identity`. A missing dir is fine (no secrets of that kind).
-fn rekey_age_dir(dir: &std::path::Path, identity: &std::path::Path, recipients: &[String]) -> Result<()> {
+fn rekey_age_dir(
+    dir: &std::path::Path,
+    identity: &std::path::Path,
+    recipients: &[String],
+) -> Result<()> {
     if !dir.is_dir() {
         return Ok(());
     }
@@ -838,12 +854,16 @@ mod tests {
         let parts: Vec<&str> = a.split('-').collect();
         assert_eq!(parts.len(), 6, "got {a}");
         assert!(
-            parts[..5].iter().all(|w| w.chars().all(|c| c.is_ascii_lowercase())),
+            parts[..5]
+                .iter()
+                .all(|w| w.chars().all(|c| c.is_ascii_lowercase())),
             "got {a}"
         );
         assert!(parts[5].len() == 2 && parts[5].chars().all(|c| c.is_ascii_digit()));
         // Safe unquoted in an env file, a URL or a shell.
-        assert!(a.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'));
+        assert!(a
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'));
         assert!(a.len() >= 20, "too short to be a credential: {a}");
     }
 

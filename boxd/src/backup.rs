@@ -99,9 +99,7 @@ pub fn config_includes(paths: &Paths) -> Vec<String> {
 pub fn resolve_scope(paths: &Paths, config: &BoxConfig, scope: &str) -> Result<Vec<String>> {
     match scope.trim() {
         "all" => Ok(Vec::new()),
-        "" => bail!(
-            "a restore scope is required: \"all\", \"config\", or the name of a service"
-        ),
+        "" => bail!("a restore scope is required: \"all\", \"config\", or the name of a service"),
         "config" => Ok(config_includes(paths)),
         svc => {
             if config.find(svc).is_none() {
@@ -228,7 +226,11 @@ fn probe_s3_endpoint(b: &BackendConfig) -> Result<()> {
     let Some(ep) = b.endpoint.as_deref().filter(|e| !e.is_empty()) else {
         return Ok(()); // repo_url reports the missing field better
     };
-    let url = if ep.contains("://") { ep.to_string() } else { format!("https://{ep}") };
+    let url = if ep.contains("://") {
+        ep.to_string()
+    } else {
+        format!("https://{ep}")
+    };
     let out = std::process::Command::new("curl")
         .args(["-sS", "-m", "10", "-o", "/dev/null", &url])
         .output()
@@ -380,7 +382,9 @@ pub fn is_due(bc: &BackupConfig, last: Option<&Snapshot>) -> bool {
     };
     match last.and_then(|s| chrono::DateTime::parse_from_rfc3339(&s.time).ok()) {
         None => true,
-        Some(t) => chrono::Utc::now().signed_duration_since(t.with_timezone(&chrono::Utc)) >= interval,
+        Some(t) => {
+            chrono::Utc::now().signed_duration_since(t.with_timezone(&chrono::Utc)) >= interval
+        }
     }
 }
 
@@ -481,7 +485,10 @@ mod tests {
 
         let mut b = backend("rest");
         b.url = Some("rest:https://user:pass@rest.example/box".into());
-        assert_eq!(repo_url(&b).unwrap(), "rest:https://user:pass@rest.example/box");
+        assert_eq!(
+            repo_url(&b).unwrap(),
+            "rest:https://user:pass@rest.example/box"
+        );
     }
 
     #[test]
@@ -558,7 +565,8 @@ mod tests {
         assert!(got.contains(&data), "always backs up the data dir");
         assert!(got.contains(&extra_present), "includes existing extras");
         assert!(
-            !got.iter().any(|p| p.to_string_lossy().contains("nonexistent")),
+            !got.iter()
+                .any(|p| p.to_string_lossy().contains("nonexistent")),
             "drops paths that don't exist yet"
         );
     }

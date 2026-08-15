@@ -126,9 +126,7 @@ pub fn validate_domain(params: &Value) -> Result<()> {
             && label.len() <= 63
             && !label.starts_with('-')
             && !label.ends_with('-')
-            && label
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '-')
+            && label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
     };
     if !d.split('.').all(label_ok) {
         bail!("domain {d:?} is not a valid hostname — letters, digits, hyphens and dots only");
@@ -152,7 +150,11 @@ fn nix_attrs(obj: &serde_json::Map<String, Value>) -> String {
     let mut s = String::from("{");
     for (k, v) in obj {
         if let Some(val) = v.as_str() {
-            s.push_str(&format!(" \"{}\" = \"{}\";", nix_escape(k), nix_escape(val)));
+            s.push_str(&format!(
+                " \"{}\" = \"{}\";",
+                nix_escape(k),
+                nix_escape(val)
+            ));
         }
     }
     s.push_str(" }");
@@ -313,7 +315,12 @@ impl Template for ReverseProxiedApp {
 
     fn nix_module(&self, name: &str, params: &Value) -> String {
         // `port` is injected by nixgen from the service's resolved allocation.
-        let command = nix_escape(params.get("command").and_then(Value::as_str).unwrap_or("true"));
+        let command = nix_escape(
+            params
+                .get("command")
+                .and_then(Value::as_str)
+                .unwrap_or("true"),
+        );
         let port = params.get("port").and_then(Value::as_u64).unwrap_or(0);
         let public = nix_public(params);
         let domain = params
@@ -352,7 +359,9 @@ fn validate_bind_mount(spec: &str) -> Result<()> {
     if path == Path::new("/") {
         bail!("container: refusing to mount the host root ({spec:?})");
     }
-    for base in ["/etc", "/proc", "/sys", "/dev", "/boot", "/nix", "/root", "/run"] {
+    for base in [
+        "/etc", "/proc", "/sys", "/dev", "/boot", "/nix", "/root", "/run",
+    ] {
         if path == Path::new(base) || path.starts_with(base) {
             bail!("container: refusing to mount {base} into a container ({spec:?})");
         }
@@ -424,7 +433,9 @@ impl Template for Container {
     fn validate(&self, params: &Value) -> Result<()> {
         match params.get("image").and_then(Value::as_str) {
             Some(i) if !i.trim().is_empty() => {}
-            _ => bail!("container: 'image' is required (an OCI image reference, e.g. \"nginx:1.27\")"),
+            _ => bail!(
+                "container: 'image' is required (an OCI image reference, e.g. \"nginx:1.27\")"
+            ),
         }
         if let Some(volumes) = params.get("volumes").and_then(Value::as_array) {
             for v in volumes.iter().filter_map(Value::as_str) {
@@ -518,7 +529,10 @@ mod tests {
         assert!(get("container").is_some());
         assert!(get("nope").is_none());
         assert_eq!(all().len(), 3);
-        assert_eq!(get("container").unwrap().exposure(&json!({})), Exposure::Proxied);
+        assert_eq!(
+            get("container").unwrap().exposure(&json!({})),
+            Exposure::Proxied
+        );
         // A container's exposure is per-instance: a database runs loopback-only.
         assert_eq!(
             get("container")
@@ -527,13 +541,22 @@ mod tests {
             Exposure::Internal
         );
         // Exposure drives port allocation + firewall.
-        assert_eq!(get("static-site").unwrap().exposure(&json!({})), Exposure::Files);
-        assert!(!get("static-site").unwrap().exposure(&json!({})).needs_port());
+        assert_eq!(
+            get("static-site").unwrap().exposure(&json!({})),
+            Exposure::Files
+        );
+        assert!(!get("static-site")
+            .unwrap()
+            .exposure(&json!({}))
+            .needs_port());
         assert_eq!(
             get("reverse-proxied-app").unwrap().exposure(&json!({})),
             Exposure::Proxied
         );
-        assert!(get("reverse-proxied-app").unwrap().exposure(&json!({})).needs_port());
+        assert!(get("reverse-proxied-app")
+            .unwrap()
+            .exposure(&json!({}))
+            .needs_port());
     }
 
     #[test]
@@ -567,7 +590,10 @@ mod tests {
 
         // A malicious image string can't inject Nix.
         let evil = t.nix_module("x", &json!({ "image": "a\"; badNix = \"y", "port": 8000 }));
-        assert!(!evil.contains("badNix = \"y\""), "image must be escaped: {evil}");
+        assert!(
+            !evil.contains("badNix = \"y\""),
+            "image must be escaped: {evil}"
+        );
     }
 
     #[test]

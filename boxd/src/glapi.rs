@@ -103,8 +103,9 @@ impl Forge for GitLab {
         let base = base_url(cfg);
         // `membership=true` is the difference between "projects this person is
         // on" and "every public project on the instance".
-        let mut url =
-            format!("{base}/api/v4/projects?membership=true&per_page=100&order_by=last_activity_at");
+        let mut url = format!(
+            "{base}/api/v4/projects?membership=true&per_page=100&order_by=last_activity_at"
+        );
         let mut repos = Vec::new();
         loop {
             let (value, next) = crate::forge::get_json(&url, token)?;
@@ -139,7 +140,10 @@ pub fn parse_project(v: &Value) -> Option<Repo> {
         // GitLab has three visibilities. Only `public` is not private, and an
         // absent field means we do not know, which is not a reason to say public.
         private: v.get("visibility").and_then(Value::as_str) != Some("public"),
-        clone_url: v.get("http_url_to_repo").and_then(Value::as_str)?.to_string(),
+        clone_url: v
+            .get("http_url_to_repo")
+            .and_then(Value::as_str)?
+            .to_string(),
     })
 }
 
@@ -155,7 +159,10 @@ mod tests {
         c.client_id = Some("appid".into());
         let ep = GitLab.endpoints(&c).unwrap();
         // The trailing slash must not survive into a double-slashed URL.
-        assert_eq!(ep.device_code_url, "https://git.example.com/oauth/authorize_device");
+        assert_eq!(
+            ep.device_code_url,
+            "https://git.example.com/oauth/authorize_device"
+        );
         assert_eq!(ep.token_url, "https://git.example.com/oauth/token");
         assert_eq!(ep.scope, Some(SCOPE));
     }

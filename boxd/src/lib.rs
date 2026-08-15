@@ -5,6 +5,7 @@
 //! local dashboard, JSON API and deployed static sites.
 
 pub mod agecrypt;
+pub mod approvals;
 pub mod auth;
 pub mod backup;
 pub mod board;
@@ -37,6 +38,6 @@ pub mod store;
 pub mod templates;
 pub mod tunnel;
 pub mod util;
+pub mod web;
 pub mod webauthn;
 pub mod words;
-pub mod web;

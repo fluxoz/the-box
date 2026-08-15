@@ -89,7 +89,9 @@ pub enum BuildExec {
 impl BuildExec {
     pub fn detect() -> Self {
         if let Some(tar) = std::env::var_os("BOX_BUILDER_IMAGE") {
-            return Self::Podman { image_tar: PathBuf::from(tar) };
+            return Self::Podman {
+                image_tar: PathBuf::from(tar),
+            };
         }
         if std::env::var_os("BOX_BUILD_INSECURE_DIRECT").is_some_and(|v| v == "1") {
             return Self::Direct;
@@ -129,7 +131,11 @@ pub fn image_ref_for(image_tar: &Path) -> String {
         .take_while(|c| c.is_ascii_alphanumeric())
         .take(12)
         .collect();
-    let tag = if tag.is_empty() { "local".to_string() } else { tag.to_lowercase() };
+    let tag = if tag.is_empty() {
+        "local".to_string()
+    } else {
+        tag.to_lowercase()
+    };
     format!("localhost/box-builder:{tag}")
 }
 
@@ -204,7 +210,14 @@ pub fn phase_args(
     args.extend(["run", "--rm"].map(String::from));
     // The whole defence, per the module doc: no capabilities, no privilege
     // escalation, nothing writable but the two mounts and /tmp.
-    args.extend(["--cap-drop=ALL", "--security-opt=no-new-privileges", "--read-only"].map(String::from));
+    args.extend(
+        [
+            "--cap-drop=ALL",
+            "--security-opt=no-new-privileges",
+            "--read-only",
+        ]
+        .map(String::from),
+    );
     args.extend(["--tmpfs".into(), "/tmp:rw,size=512m,mode=1777".to_string()]);
     // Hard limits: memory (no swap escape hatch), processes, wall clock.
     args.push(format!("--memory={MEMORY_MB}m"));
@@ -287,7 +300,10 @@ impl PhaseRunner<'_> {
         let phase = if network { "install" } else { "build" };
         let out = match self.exec {
             BuildExec::Podman { .. } => {
-                let image = self.image.as_deref().expect("podman exec resolves its image first");
+                let image = self
+                    .image
+                    .as_deref()
+                    .expect("podman exec resolves its image first");
                 let args = phase_args(image, self.tree, self.cache, self.subdir, network, command);
                 Command::new("podman")
                     .args(&args)
@@ -414,7 +430,14 @@ mod tests {
         let tree = Path::new("/data/repo-trees/app");
         let cache = Path::new("/data/repos/app.cache");
         let install = phase_args("localhost/box-builder:t", tree, cache, None, true, "npm ci");
-        let build = phase_args("localhost/box-builder:t", tree, cache, None, false, "npm run build");
+        let build = phase_args(
+            "localhost/box-builder:t",
+            tree,
+            cache,
+            None,
+            false,
+            "npm run build",
+        );
         assert!(
             !install.contains(&"--network=none".to_string()),
             "install needs the registry: {install:?}"
@@ -444,7 +467,10 @@ mod tests {
                 assert!(args.contains(&flag.to_string()), "{flag} missing: {args:?}");
             }
             assert!(args.contains(&format!("--memory={MEMORY_MB}m")));
-            assert!(args.contains(&format!("--memory-swap={MEMORY_MB}m")), "no swap escape hatch");
+            assert!(
+                args.contains(&format!("--memory-swap={MEMORY_MB}m")),
+                "no swap escape hatch"
+            );
             assert!(args.contains(&format!("--pids-limit={PIDS_LIMIT}")));
             assert!(args.contains(&format!("--timeout={PHASE_TIMEOUT_SECS}")));
             // Only the repo tree and the cache are writable mounts.
@@ -458,7 +484,10 @@ mod tests {
         // Node sizes its heap at half the cgroup limit unless told otherwise;
         // told otherwise must still fit.
         let (heap, memory) = (NODE_HEAP_MB, MEMORY_MB);
-        assert!(heap < memory, "heap must leave room for the rest of the process");
+        assert!(
+            heap < memory,
+            "heap must leave room for the rest of the process"
+        );
         let env = phase_env();
         let node_options = env
             .iter()
@@ -470,7 +499,14 @@ mod tests {
 
     #[test]
     fn a_monorepo_subdir_becomes_the_working_directory() {
-        let args = phase_args("img", Path::new("/t"), Path::new("/c"), Some("apps/web"), false, "x");
+        let args = phase_args(
+            "img",
+            Path::new("/t"),
+            Path::new("/c"),
+            Some("apps/web"),
+            false,
+            "x",
+        );
         let w = args.iter().position(|a| a == "-w").unwrap();
         assert_eq!(args[w + 1], "/work/apps/web");
     }
@@ -479,13 +515,23 @@ mod tests {
     fn the_lockfile_picks_the_install_command() {
         let tmp = tempfile::TempDir::new().unwrap();
         let dir = tmp.path();
-        assert_eq!(default_install(dir), None, "no package.json, no install phase");
+        assert_eq!(
+            default_install(dir),
+            None,
+            "no package.json, no install phase"
+        );
         fs::write(dir.join("package.json"), "{}").unwrap();
         assert_eq!(default_install(dir).as_deref(), Some("npm install"));
         fs::write(dir.join("pnpm-lock.yaml"), "").unwrap();
-        assert_eq!(default_install(dir).as_deref(), Some("pnpm install --frozen-lockfile"));
+        assert_eq!(
+            default_install(dir).as_deref(),
+            Some("pnpm install --frozen-lockfile")
+        );
         fs::write(dir.join("yarn.lock"), "").unwrap();
-        assert_eq!(default_install(dir).as_deref(), Some("yarn install --frozen-lockfile"));
+        assert_eq!(
+            default_install(dir).as_deref(),
+            Some("yarn install --frozen-lockfile")
+        );
         fs::write(dir.join("package-lock.json"), "{}").unwrap();
         assert_eq!(default_install(dir).as_deref(), Some("npm ci"));
     }

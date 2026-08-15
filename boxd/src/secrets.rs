@@ -202,7 +202,10 @@ mod tests {
         let mode = fs::metadata(&file).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600);
         let bytes = fs::read(&file).unwrap();
-        assert!(!bytes.windows(6).any(|w| w == b"s3cret"), "plaintext leaked");
+        assert!(
+            !bytes.windows(6).any(|w| w == b"s3cret"),
+            "plaintext leaked"
+        );
         assert!(bytes.starts_with(b"age-encryption.org/"), "not an age file");
 
         delete(&paths, "my-token").unwrap();
@@ -225,7 +228,10 @@ mod tests {
         migrate_plaintext(&paths);
 
         // The plaintext is gone; the value is now readable from the .age.
-        assert!(!dir.join("cloud-api-token").exists(), "plaintext not removed");
+        assert!(
+            !dir.join("cloud-api-token").exists(),
+            "plaintext not removed"
+        );
         assert!(op_dir(&paths).join("cloud-api-token.age").exists());
         assert_eq!(
             get(&paths, "cloud-api-token").unwrap().as_deref(),

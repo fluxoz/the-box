@@ -89,7 +89,12 @@ async fn loopback_does_not_grant_authority() {
             .uri(path)
             .header("content-type", "application/json")
             .extension(loopback());
-        let (s, b, _) = send(&app, req.body(body.map(Body::from).unwrap_or(Body::empty())).unwrap()).await;
+        let (s, b, _) = send(
+            &app,
+            req.body(body.map(Body::from).unwrap_or(Body::empty()))
+                .unwrap(),
+        )
+        .await;
         println!("[loopback] {method} {path} -> {s}");
         assert_ne!(
             s,
@@ -308,7 +313,11 @@ async fn unpublished_sites_are_not_served_through_the_tunnel() {
             .unwrap(),
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "published site must still be served");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "published site must still be served"
+    );
     assert!(body.contains("shared"), "{body}");
 
     // On your own network, both are reachable with no credential — unchanged.
@@ -322,7 +331,11 @@ async fn unpublished_sites_are_not_served_through_the_tunnel() {
                 .unwrap(),
         )
         .await;
-        assert_eq!(status, StatusCode::OK, "LAN access to {name} must be unchanged");
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "LAN access to {name} must be unchanged"
+        );
         assert!(body.contains(name), "{body}");
     }
 }

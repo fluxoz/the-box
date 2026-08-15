@@ -263,7 +263,10 @@ pub fn parse_pending(v: &Value, now: u64) -> Result<Pending> {
     // but a JSON body that came back form-decoded would make them strings.
     let n = |k: &str, d: u64| {
         v.get(k)
-            .and_then(|x| x.as_u64().or_else(|| x.as_str().and_then(|s| s.parse().ok())))
+            .and_then(|x| {
+                x.as_u64()
+                    .or_else(|| x.as_str().and_then(|s| s.parse().ok()))
+            })
             .unwrap_or(d)
     };
     if let Some(err) = describe_oauth_error(v) {
@@ -315,7 +318,8 @@ pub fn parse_token(v: &Value) -> Outcome {
                 .into(),
         ),
         _ => Outcome::Refused(
-            describe_oauth_error(v).unwrap_or_else(|| "the forge sent no token and no error".into()),
+            describe_oauth_error(v)
+                .unwrap_or_else(|| "the forge sent no token and no error".into()),
         ),
     }
 }
@@ -361,7 +365,10 @@ pub fn send(req: &Request) -> Result<Value> {
         format!(
             "{} returned something that is not JSON: {}",
             req.url,
-            String::from_utf8_lossy(&out.stdout).chars().take(200).collect::<String>()
+            String::from_utf8_lossy(&out.stdout)
+                .chars()
+                .take(200)
+                .collect::<String>()
         )
     })
 }
@@ -403,7 +410,11 @@ fn split_headers(raw: &str) -> (String, &str) {
     let mut headers = String::new();
     let mut rest = raw;
     while let Some(idx) = rest.find("\r\n\r\n").or_else(|| rest.find("\n\n")) {
-        let sep = if rest[idx..].starts_with("\r\n\r\n") { 4 } else { 2 };
+        let sep = if rest[idx..].starts_with("\r\n\r\n") {
+            4
+        } else {
+            2
+        };
         let (block, after) = rest.split_at(idx);
         if !block.starts_with("HTTP/") {
             break;
@@ -500,7 +511,9 @@ pub enum Status {
     },
     Connected,
     /// Something ended the attempt. The flow is cleared; starting again is fine.
-    Failed { reason: String },
+    Failed {
+        reason: String,
+    },
 }
 
 pub fn status(paths: &Paths, id: &str) -> Result<Status> {
@@ -510,7 +523,8 @@ pub fn status(paths: &Paths, id: &str) -> Result<Status> {
     let Some(raw) = crate::secrets::get(paths, &pending_secret(id))? else {
         return Ok(Status::Disconnected);
     };
-    let p: Pending = serde_json::from_str(&raw).context("stored device authorization is corrupt")?;
+    let p: Pending =
+        serde_json::from_str(&raw).context("stored device authorization is corrupt")?;
     Ok(Status::Waiting {
         user_code: p.user_code,
         verification_uri: p.verification_uri,
@@ -624,12 +638,18 @@ mod tests {
     #[test]
     fn scope_is_sent_only_when_the_forge_wants_one() {
         // GitLab requires a scope...
-        assert!(device_code_request(&ep()).form.iter().any(|(k, _)| k == "scope"));
+        assert!(device_code_request(&ep())
+            .form
+            .iter()
+            .any(|(k, _)| k == "scope"));
         // ...and a GitHub App takes its permissions from the installation, so
         // sending one would be describing access we do not decide.
         let mut none = ep();
         none.scope = None;
-        assert!(!device_code_request(&none).form.iter().any(|(k, _)| k == "scope"));
+        assert!(!device_code_request(&none)
+            .form
+            .iter()
+            .any(|(k, _)| k == "scope"));
     }
 
     #[test]
@@ -663,10 +683,22 @@ mod tests {
             parse_token(&json!({"access_token": "t"})),
             Outcome::Token("t".into())
         );
-        assert_eq!(parse_token(&json!({"error": "authorization_pending"})), Outcome::Waiting);
-        assert_eq!(parse_token(&json!({"error": "slow_down"})), Outcome::SlowDown);
-        assert_eq!(parse_token(&json!({"error": "access_denied"})), Outcome::Denied);
-        assert_eq!(parse_token(&json!({"error": "expired_token"})), Outcome::Expired);
+        assert_eq!(
+            parse_token(&json!({"error": "authorization_pending"})),
+            Outcome::Waiting
+        );
+        assert_eq!(
+            parse_token(&json!({"error": "slow_down"})),
+            Outcome::SlowDown
+        );
+        assert_eq!(
+            parse_token(&json!({"error": "access_denied"})),
+            Outcome::Denied
+        );
+        assert_eq!(
+            parse_token(&json!({"error": "expired_token"})),
+            Outcome::Expired
+        );
 
         // The one that means "you forgot a checkbox" must not read as a
         // transient failure, or it will be retried forever.
@@ -730,7 +762,10 @@ mod tests {
         // A nearly-dead code is NOT reused — and with no client id configured,
         // minting a fresh one fails at endpoints() before any network call,
         // which both proves the reuse path was skipped and keeps this offline.
-        let dying = Pending { expires_at: now() + 30, ..live };
+        let dying = Pending {
+            expires_at: now() + 30,
+            ..live
+        };
         crate::secrets::set(
             &paths,
             &pending_secret("gitlab"),
@@ -756,8 +791,8 @@ mod tests {
         .unwrap();
         // Supplying only a slug later must not drop the client id — that would
         // silently break a Box that was working a moment ago.
-        let merged = crate::forge::configure(&paths, "github", None, None, Some("renamed".into()))
-            .unwrap();
+        let merged =
+            crate::forge::configure(&paths, "github", None, None, Some("renamed".into())).unwrap();
         assert_eq!(merged.client_id.as_deref(), Some("Iv23liABC"));
         assert_eq!(merged.app_slug.as_deref(), Some("renamed"));
 
@@ -777,7 +812,8 @@ mod tests {
 
     #[test]
     fn pagination_follows_only_the_next_link() {
-        let headers = "HTTP/2 200\r\nlink: <https://a/2>; rel=\"next\", <https://a/9>; rel=\"last\"";
+        let headers =
+            "HTTP/2 200\r\nlink: <https://a/2>; rel=\"next\", <https://a/9>; rel=\"last\"";
         assert_eq!(next_link(headers), Some("https://a/2".into()));
         // The last page says prev/first and no next, which is how a loop ends.
         assert_eq!(

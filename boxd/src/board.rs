@@ -92,7 +92,10 @@ mod tests {
         assert_eq!(from_model("Raspberry Pi 5 Model B Rev 1.0"), Some("pi5"));
         assert_eq!(from_model("Raspberry Pi 4 Model B Rev 1.4"), Some("pi4"));
         assert_eq!(from_model("Raspberry Pi Compute Module 4"), Some("pi4"));
-        assert_eq!(from_model("Raspberry Pi 3 Model B Plus Rev 1.3"), Some("pi3"));
+        assert_eq!(
+            from_model("Raspberry Pi 3 Model B Plus Rev 1.3"),
+            Some("pi3")
+        );
         // Unsupported Pis map to None (detect() turns that into an error).
         assert_eq!(from_model("Raspberry Pi Zero 2 W"), None);
         // Non-Pi hardware is simply not a board.

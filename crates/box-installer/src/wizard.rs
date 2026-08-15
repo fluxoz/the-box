@@ -237,10 +237,7 @@ fn title(f: &mut Frame, area: Rect, app: &App) {
         ),
     ])];
     if let Some(hint) = &app.browser_hint {
-        lines.push(Line::styled(
-            format!("  {hint}"),
-            Style::default().fg(IRON),
-        ));
+        lines.push(Line::styled(format!("  {hint}"), Style::default().fg(IRON)));
     }
     f.render_widget(
         Paragraph::new(lines).block(

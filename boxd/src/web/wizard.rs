@@ -138,16 +138,32 @@ async fn probe_disks(State(cfg): St, headers: HeaderMap) -> (StatusCode, Json<Va
     (StatusCode::OK, Json(body))
 }
 
-async fn plan(State(cfg): St, headers: HeaderMap, Json(body): Json<Value>) -> (StatusCode, Json<Value>) {
+async fn plan(
+    State(cfg): St,
+    headers: HeaderMap,
+    Json(body): Json<Value>,
+) -> (StatusCode, Json<Value>) {
     if let Some(r) = pin_reject(&cfg, &headers) {
         return r;
     }
-    let Some(kind) = body.get("layout").and_then(Value::as_str).and_then(LayoutKind::parse) else {
-        return (StatusCode::OK, Json(json!({ "ok": false, "error": "unknown layout" })));
+    let Some(kind) = body
+        .get("layout")
+        .and_then(Value::as_str)
+        .and_then(LayoutKind::parse)
+    else {
+        return (
+            StatusCode::OK,
+            Json(json!({ "ok": false, "error": "unknown layout" })),
+        );
     };
     let disks = match probe::probe() {
         Ok(d) => d,
-        Err(e) => return (StatusCode::OK, Json(json!({ "ok": false, "error": e.to_string() }))),
+        Err(e) => {
+            return (
+                StatusCode::OK,
+                Json(json!({ "ok": false, "error": e.to_string() })),
+            )
+        }
     };
     let body = match resolve::resolve(&disks, kind, &ResolveOpts::default()) {
         Ok(layout) => {
@@ -172,20 +188,41 @@ async fn plan(State(cfg): St, headers: HeaderMap, Json(body): Json<Value>) -> (S
     (StatusCode::OK, Json(body))
 }
 
-async fn commit(State(cfg): St, headers: HeaderMap, Json(body): Json<Value>) -> (StatusCode, Json<Value>) {
+async fn commit(
+    State(cfg): St,
+    headers: HeaderMap,
+    Json(body): Json<Value>,
+) -> (StatusCode, Json<Value>) {
     if let Some(r) = pin_reject(&cfg, &headers) {
         return r;
     }
-    let Some(kind) = body.get("layout").and_then(Value::as_str).and_then(LayoutKind::parse) else {
-        return (StatusCode::OK, Json(json!({ "ok": false, "error": "unknown layout" })));
+    let Some(kind) = body
+        .get("layout")
+        .and_then(Value::as_str)
+        .and_then(LayoutKind::parse)
+    else {
+        return (
+            StatusCode::OK,
+            Json(json!({ "ok": false, "error": "unknown layout" })),
+        );
     };
     let disks = match probe::probe() {
         Ok(d) => d,
-        Err(e) => return (StatusCode::OK, Json(json!({ "ok": false, "error": e.to_string() }))),
+        Err(e) => {
+            return (
+                StatusCode::OK,
+                Json(json!({ "ok": false, "error": e.to_string() })),
+            )
+        }
     };
     let layout = match resolve::resolve(&disks, kind, &ResolveOpts::default()) {
         Ok(l) => l,
-        Err(e) => return (StatusCode::OK, Json(json!({ "ok": false, "error": e.to_string() }))),
+        Err(e) => {
+            return (
+                StatusCode::OK,
+                Json(json!({ "ok": false, "error": e.to_string() })),
+            )
+        }
     };
     // The pasted setup code (browser, already decoded) wins; else the installer-
     // provided base orders; else null for a blank box configured entirely here.
@@ -193,13 +230,26 @@ async fn commit(State(cfg): St, headers: HeaderMap, Json(body): Json<Value>) -> 
     let effective = orders::effective_orders(&base, &layout);
 
     if let Err(e) = write_commit(&cfg, &effective, &layout) {
-        return (StatusCode::OK, Json(json!({ "ok": false, "error": format!("{e:#}") })));
+        return (
+            StatusCode::OK,
+            Json(json!({ "ok": false, "error": format!("{e:#}") })),
+        );
     }
-    let host = effective.get("hostname").and_then(Value::as_str).unwrap_or("box");
-    (StatusCode::OK, Json(json!({ "ok": true, "hostname": host })))
+    let host = effective
+        .get("hostname")
+        .and_then(Value::as_str)
+        .unwrap_or("box");
+    (
+        StatusCode::OK,
+        Json(json!({ "ok": true, "hostname": host })),
+    )
 }
 
-fn write_commit(cfg: &WizardCfg, effective: &Value, layout: &box_core::ResolvedLayout) -> anyhow::Result<()> {
+fn write_commit(
+    cfg: &WizardCfg,
+    effective: &Value,
+    layout: &box_core::ResolvedLayout,
+) -> anyhow::Result<()> {
     std::fs::write(&cfg.orders_out, serde_json::to_string_pretty(effective)?)?;
     std::fs::write(&cfg.disko_out, disko::render(layout))?;
     // Commit flag last: only meaningful once the orders + disko are on disk.
@@ -214,7 +264,10 @@ async fn status(State(cfg): St, headers: HeaderMap) -> (StatusCode, Json<Value>)
     let committed = cfg.commit_flag.exists();
     let done = cfg.done.exists();
     let log = tail(&cfg.progress, 6000);
-    (StatusCode::OK, Json(json!({ "committed": committed, "done": done, "log": log })))
+    (
+        StatusCode::OK,
+        Json(json!({ "committed": committed, "done": done, "log": log })),
+    )
 }
 
 /// Last `max` bytes of a file (best-effort), trimmed to whole lines.

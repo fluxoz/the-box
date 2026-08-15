@@ -33,7 +33,20 @@ pub async fn end_session() -> Response {
     StatusCode::NO_CONTENT.into_response()
 }
 
-pub async fn handle(State(state): State<SharedState>, Json(message): Json<Value>) -> Response {
+pub async fn handle(
+    State(state): State<SharedState>,
+    caller: Option<axum::Extension<crate::web::Caller>>,
+    Json(message): Json<Value>,
+) -> Response {
+    let caller = caller
+        .map(|axum::Extension(c)| c)
+        .unwrap_or(crate::web::Caller {
+            // No session extension means an unauthenticated path let this through
+            // (tests drive the router directly); treat it as a non-autonomous
+            // stranger so the destructive gate still holds.
+            label: "unknown".into(),
+            autonomous: false,
+        });
     // Notifications (no id) need no response body.
     let Some(id) = message.get("id").cloned() else {
         return StatusCode::ACCEPTED.into_response();
@@ -58,7 +71,7 @@ pub async fn handle(State(state): State<SharedState>, Json(message): Json<Value>
         })),
         "ping" => Ok(json!({})),
         "tools/list" => Ok(json!({ "tools": tool_definitions() })),
-        "tools/call" => call_tool(state, params).await,
+        "tools/call" => call_tool(state, params, caller).await,
         _ => Err((-32601, format!("method not found: {method}"))),
     };
 
@@ -330,7 +343,7 @@ fn tool_definitions() -> Value {
         },
         {
             "name": "provision_machine",
-            "description": "Turn a spare machine on the network into ANOTHER Box, hands-off: ship it an identity over SSH, run the takeover installer, wait for it to boot as a Box, and pair with it. THIS ERASES THE TARGET'S DISK — name the machine to the person and get their explicit yes before calling (a wrong address here wipes the wrong computer; this Box's network may contain machines that matter). Requirements: the target must be a Linux machine this Box can reach as root over SSH, and at least one SSH public key to authorize on the new Box. Runs as a background job (up to ~15 minutes): poll job_status; the finished job's message carries the new Box's address and a session token — manage it by connecting a NEW MCP endpoint at http://<address>/mcp with that token, exactly like this one.",
+            "description": "Turn a spare machine on the network into ANOTHER Box, hands-off: ship it an identity over SSH, run the takeover installer, wait for it to boot as a Box, and pair with it. THIS ERASES THE TARGET'S DISK — name the machine to the person and get their explicit yes before calling (a wrong address here wipes the wrong computer; this Box's network may contain machines that matter). Requirements: the target must be a Linux machine this Box can reach as root over SSH, and at least one SSH public key to authorize on the new Box. Runs as a background job (up to ~15 minutes): poll job_status; the finished job's message carries the new Box's address and a session token — manage it by connecting a NEW MCP endpoint at http://<address>/mcp with that token, exactly like this one. Unless this session has autonomy the call QUEUES for a human tap first (pending_approval id — follow with approval_status); the person's console approval IS the explicit yes.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -340,6 +353,18 @@ fn tool_definitions() -> Value {
                     "layout": { "type": "string", "description": "Storage layout: single | mirror | pool (default: decided on-box)" }
                 },
                 "required": ["target", "ssh_public_keys"],
+                "additionalProperties": false,
+            },
+        },
+        {
+            "name": "approval_status",
+            "description": "Check on a destructive call that was queued for the operator's approval (you got a pending_approval id back instead of a result). pending means the person has not decided; approved carries the executed call's result; denied means no — respect it and tell the person why you asked. Do not re-submit the same call to nag; ask the human instead.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "The pending_approval id a destructive tool returned" }
+                },
+                "required": ["id"],
                 "additionalProperties": false,
             },
         },
@@ -370,7 +395,7 @@ fn tool_definitions() -> Value {
         },
         {
             "name": "delete_service",
-            "description": "Remove a service and activate a new generation without it. The previous generation remains available for rollback.",
+            "description": "Remove a service and activate a new generation without it. The previous generation remains available for rollback. Destructive, so unless this session has autonomy it QUEUES for a human tap: you get a pending_approval id — follow it with approval_status.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -429,7 +454,7 @@ fn tool_definitions() -> Value {
         }),
         json!({
             "name": "backup_restore",
-            "description": "Restore from a backup snapshot, in place. Destructive — overwrites current files. Scope with 'config' (Box config only, the default), 'all' (everything), or a service name (that service's data).",
+            "description": "Restore from a backup snapshot, in place. Destructive — overwrites current files. Scope with 'config' (Box config only, the default), 'all' (everything), or a service name (that service's data). Unless this session has autonomy it QUEUES for a human tap: you get a pending_approval id — follow it with approval_status.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -442,7 +467,38 @@ fn tool_definitions() -> Value {
     ])
 }
 
-async fn call_tool(state: SharedState, params: Value) -> Result<Value, (i64, String)> {
+/// The operations that need a human tap unless the session was explicitly
+/// granted autonomy: they erase machines, remove services, or overwrite live
+/// data, and an agent's mistaken yes must not be enough on its own.
+const NEEDS_APPROVAL: [&str; 3] = ["provision_machine", "delete_service", "backup_restore"];
+
+/// One line for the human, in consequences rather than tool names.
+fn destructive_summary(name: &str, args: &Value) -> String {
+    let a = |k: &str| args.get(k).and_then(Value::as_str).unwrap_or("?");
+    match name {
+        "provision_machine" => format!(
+            "ERASE {} and turn it into a new Box (its current disk contents are destroyed)",
+            a("target")
+        ),
+        "delete_service" => format!("delete the service {:?} and stop serving it", a("name")),
+        "backup_restore" => format!(
+            "restore snapshot {:?} over the current data (scope: {})",
+            args.get("snapshot")
+                .and_then(Value::as_str)
+                .unwrap_or("latest"),
+            args.get("scope")
+                .and_then(Value::as_str)
+                .unwrap_or("config"),
+        ),
+        other => format!("run {other}"),
+    }
+}
+
+async fn call_tool(
+    state: SharedState,
+    params: Value,
+    caller: crate::web::Caller,
+) -> Result<Value, (i64, String)> {
     let name = params
         .get("name")
         .and_then(Value::as_str)
@@ -452,6 +508,30 @@ async fn call_tool(state: SharedState, params: Value) -> Result<Value, (i64, Str
         .get("arguments")
         .cloned()
         .unwrap_or_else(|| json!({}));
+
+    if NEEDS_APPROVAL.contains(&name.as_str()) && !caller.autonomous {
+        let summary = destructive_summary(&name, &args);
+        let action = crate::approvals::request(&state.paths, &name, args, &summary, &caller.label)
+            .map_err(|e| (-32603, format!("{e:#}")))?;
+        let body = json!({
+            "pending_approval": action.id,
+            "would": summary,
+            "message": "This is a destructive operation and this session does not have \
+                        autonomous leave for those, so it is QUEUED, not run. Tell the \
+                        person it is waiting on the console's Approvals page. Poll \
+                        approval_status with this id — an approval runs the exact call \
+                        you made and the result lands there. (The operator can grant \
+                        this session autonomy for future destructive calls in the \
+                        device list.)",
+        });
+        return Ok(json!({
+            "content": [{
+                "type": "text",
+                "text": serde_json::to_string_pretty(&body).unwrap_or_default(),
+            }],
+            "isError": false,
+        }));
+    }
 
     let outcome = execute(state, &name, args).await?;
     Ok(match outcome {
@@ -470,7 +550,7 @@ async fn call_tool(state: SharedState, params: Value) -> Result<Value, (i64, Str
     })
 }
 
-async fn execute(
+pub(crate) async fn execute(
     state: SharedState,
     tool: &str,
     args: Value,
@@ -484,6 +564,16 @@ async fn execute(
 
     match tool {
         "get_status" => Ok(status(&state)),
+        "approval_status" => {
+            let Some(id) = str_arg("id") else {
+                return Err((-32602, "missing required argument: id".into()));
+            };
+            Ok((|| {
+                let action = crate::approvals::get(&state.paths, &id)
+                    .ok_or_else(|| anyhow::anyhow!("no pending action {id:?}"))?;
+                Ok(serde_json::to_value(&action)?)
+            })())
+        }
         "list_services" => Ok(services(&state)),
         "list_generations" => Ok(generations(&state)),
         "list_history" => Ok(config_history(&state)),
@@ -594,7 +684,10 @@ async fn execute(
                 return Err((-32602, "missing required argument: name".into()));
             };
             let Some(files_obj) = args.get("files").and_then(Value::as_object).cloned() else {
-                return Err((-32602, "missing required argument: files (an object of path → contents)".into()));
+                return Err((
+                    -32602,
+                    "missing required argument: files (an object of path → contents)".into(),
+                ));
             };
             let mut files = Vec::with_capacity(files_obj.len());
             for (path, content) in files_obj {
@@ -603,19 +696,25 @@ async fn execute(
                     Value::Object(o) => match o.get("base64").and_then(Value::as_str) {
                         Some(b) => match crate::provision::base64_decode(b) {
                             Ok(bytes) => bytes,
-                            Err(e) => return Err((-32602, format!("{path}: invalid base64: {e:#}"))),
+                            Err(e) => {
+                                return Err((-32602, format!("{path}: invalid base64: {e:#}")))
+                            }
                         },
                         None => {
                             return Err((
                                 -32602,
-                                format!("{path}: expected a string, or an object with a \"base64\" key"),
+                                format!(
+                                    "{path}: expected a string, or an object with a \"base64\" key"
+                                ),
                             ))
                         }
                     },
                     _ => {
                         return Err((
                             -32602,
-                            format!("{path}: expected a string, or an object with a \"base64\" key"),
+                            format!(
+                                "{path}: expected a string, or an object with a \"base64\" key"
+                            ),
                         ))
                     }
                 };
@@ -677,10 +776,11 @@ async fn execute(
             let state = state.clone();
             Ok(blocking(move || {
                 let status = state.tunnel.status();
-                let urls: Vec<Value> = crate::ingress::published_urls(&state.paths, status.address.as_deref())
-                    .into_iter()
-                    .map(|(service, url)| json!({ "service": service, "url": url }))
-                    .collect();
+                let urls: Vec<Value> =
+                    crate::ingress::published_urls(&state.paths, status.address.as_deref())
+                        .into_iter()
+                        .map(|(service, url)| json!({ "service": service, "url": url }))
+                        .collect();
                 // The trap this closes: tunnel "running", service "published",
                 // and the public URL answering 502 — because nothing on this
                 // machine listens where the tunnel points. All three tools used
@@ -770,9 +870,10 @@ async fn execute(
                     crate::ingress::setup_cloudflare(&state.paths, &zone, hostname.as_deref())?;
                 let mut value = serde_json::to_value(&outcome)?;
                 if enable {
-                    let status = state
-                        .tunnel
-                        .set_ingress("cloudflare-tunnel", Some(zone.clone()), true)?;
+                    let status =
+                        state
+                            .tunnel
+                            .set_ingress("cloudflare-tunnel", Some(zone.clone()), true)?;
                     value["ingress"] = serde_json::to_value(status)?;
                     value["note"] = json!(format!(
                         "Publishing is on. A service published now answers at \
@@ -821,8 +922,11 @@ async fn execute(
             let Some(provider) = str_arg("provider") else {
                 return Err((-32602, "missing required argument: provider".into()));
             };
-            let (base_url, client_id, app_slug) =
-                (str_arg("base_url"), str_arg("client_id"), str_arg("app_slug"));
+            let (base_url, client_id, app_slug) = (
+                str_arg("base_url"),
+                str_arg("client_id"),
+                str_arg("app_slug"),
+            );
             let state = state.clone();
             Ok(blocking(move || {
                 if crate::secrets::exists(&state.paths, &crate::forge::token_secret(&provider)) {
@@ -876,7 +980,8 @@ async fn execute(
                 let status = crate::forge::poll(&state.paths, &cfg)?;
                 let mut value = serde_json::to_value(&status)?;
                 if matches!(status, crate::forge::Status::Connected) {
-                    value["next"] = json!("Call forge_repos to show them what this Box can now see.");
+                    value["next"] =
+                        json!("Call forge_repos to show them what this Box can now see.");
                 }
                 Ok(value)
             })
@@ -925,10 +1030,16 @@ async fn execute(
             let (branch, subdir, domain) =
                 (str_arg("branch"), str_arg("subdir"), str_arg("domain"));
             let public = args.get("public").and_then(Value::as_bool).unwrap_or(false);
-            let build = match (str_arg("build_command"), str_arg("install_command"), str_arg("output_dir")) {
-                (Some(command), install, output_dir) => {
-                    Some(crate::build::BuildSpec { command, install, output_dir })
-                }
+            let build = match (
+                str_arg("build_command"),
+                str_arg("install_command"),
+                str_arg("output_dir"),
+            ) {
+                (Some(command), install, output_dir) => Some(crate::build::BuildSpec {
+                    command,
+                    install,
+                    output_dir,
+                }),
                 (None, None, None) => None,
                 _ => {
                     return Err((
@@ -1061,11 +1172,8 @@ async fn execute(
                         if crate::ostier::update_unit_available() {
                             progress.phase("handing the switch to the system updater");
                             crate::ostier::run_update_unit()?;
-                            let release = platform_release()
-                                .unwrap_or_else(|| "unknown".into());
-                            return Ok(format!(
-                                "updated; running platform release {release}"
-                            ));
+                            let release = platform_release().unwrap_or_else(|| "unknown".into());
+                            return Ok(format!("updated; running platform release {release}"));
                         }
                         // No unit means no OS tier gating (a root-run dev
                         // serve, tests): do the whole thing here.
@@ -1099,11 +1207,19 @@ async fn execute(
             let keys: Vec<String> = args
                 .get("ssh_public_keys")
                 .and_then(Value::as_array)
-                .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(str::to_string))
+                        .collect()
+                })
                 .unwrap_or_default();
             if keys.is_empty() {
-                return Err((-32602, "ssh_public_keys must carry at least one public key — \
-                                     without one, no human can ever SSH into the new Box".into()));
+                return Err((
+                    -32602,
+                    "ssh_public_keys must carry at least one public key — \
+                                     without one, no human can ever SSH into the new Box"
+                        .into(),
+                ));
             }
             let hostname = str_arg("hostname").unwrap_or_else(|| "auto".into());
             let layout = str_arg("layout");
@@ -1148,10 +1264,11 @@ async fn execute(
             };
             let state = state.clone();
             Ok(blocking(move || {
-                let job = state
-                    .jobs
-                    .get(&id)
-                    .ok_or_else(|| anyhow::anyhow!("no job with id {id:?} (jobs are kept in memory; a restart forgets them)"))?;
+                let job = state.jobs.get(&id).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "no job with id {id:?} (jobs are kept in memory; a restart forgets them)"
+                    )
+                })?;
                 Ok(serde_json::to_value(&job)?)
             })
             .await)
@@ -1205,7 +1322,10 @@ async fn execute(
                 .unwrap_or(100)
                 .clamp(1, 1000);
             let state = state.clone();
-            Ok(blocking(move || crate::logs::service_logs(&state.paths, &name, lines as usize)).await)
+            Ok(
+                blocking(move || crate::logs::service_logs(&state.paths, &name, lines as usize))
+                    .await,
+            )
         }
         "rollback" => {
             let Some(number) = args.get("generation").and_then(Value::as_u64) else {
@@ -1296,7 +1416,10 @@ fn verify_service(state: &SharedState, name: &str) -> anyhow::Result<Value> {
                  not what is running yet"
                     .into(),
             );
-            fix.get_or_insert("wait for or retry the system apply; the reason field says why it is pending".into());
+            fix.get_or_insert(
+                "wait for or retry the system apply; the reason field says why it is pending"
+                    .into(),
+            );
         }
 
         // 2. Is the web server alive?
@@ -1348,21 +1471,32 @@ fn verify_service(state: &SharedState, name: &str) -> anyhow::Result<Value> {
         checks.insert("public_url".into(), json!(public_url));
 
         if !tunnel.enabled {
-            verdict.get_or_insert(
-                "published, but no way in from the internet is turned on".into(),
+            verdict.get_or_insert("published, but no way in from the internet is turned on".into());
+            fix.get_or_insert(
+                "ask for ingress_options and turn one on with ingress_configure".into(),
             );
-            fix.get_or_insert("ask for ingress_options and turn one on with ingress_configure".into());
         } else if public_url.is_none() {
             verdict.get_or_insert(
                 "published and the way in is starting, but it has no address yet".into(),
             );
-            fix.get_or_insert("check back in a moment (ingress_status carries the address when it exists)".into());
+            fix.get_or_insert(
+                "check back in a moment (ingress_status carries the address when it exists)".into(),
+            );
         } else if verdict.is_none() {
             // Nothing known to be broken: prove it. Through the actual edge,
             // like a stranger would reach it.
             let url = public_url.clone().unwrap();
             let code = std::process::Command::new("curl")
-                .args(["-sS", "-o", "/dev/null", "-w", "%{http_code}", "-m", "15", &url])
+                .args([
+                    "-sS",
+                    "-o",
+                    "/dev/null",
+                    "-w",
+                    "%{http_code}",
+                    "-m",
+                    "15",
+                    &url,
+                ])
                 .output()
                 .ok()
                 .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
@@ -1370,10 +1504,14 @@ fn verify_service(state: &SharedState, name: &str) -> anyhow::Result<Value> {
             checks.insert("public_fetch_http_status".into(), json!(code));
             match code.as_str() {
                 c if c.starts_with('2') || c.starts_with('3') => {
-                    verdict = Some(format!("reachable — fetched {url} from here and it answered {c}"));
+                    verdict = Some(format!(
+                        "reachable — fetched {url} from here and it answered {c}"
+                    ));
                 }
                 "502" | "503" => {
-                    verdict = Some(format!("the edge answers but this Box does not ({code} at {url})"));
+                    verdict = Some(format!(
+                        "the edge answers but this Box does not ({code} at {url})"
+                    ));
                     fix = Some("the tunnel or the origin came up in the last few seconds, or the system apply is still settling — try once more shortly".into());
                 }
                 "" => {

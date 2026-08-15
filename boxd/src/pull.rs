@@ -121,7 +121,10 @@ fn git(args: &[&str], env: &[(String, String)]) -> Result<()> {
 }
 
 fn git_stdout(args: &[&str]) -> Result<String> {
-    let out = Command::new("git").args(args).output().context("running git")?;
+    let out = Command::new("git")
+        .args(args)
+        .output()
+        .context("running git")?;
     if !out.status.success() {
         bail!(
             "git {} failed: {}",
@@ -147,8 +150,14 @@ pub fn fetch(paths: &Paths, service: &str, link: &RepoLink) -> Result<String> {
     // because a rebased branch must not wedge the loop.
     git(
         &[
-            "--git-dir", &gd,
-            "fetch", "--depth", "1", "--no-tags", "--force", "--quiet",
+            "--git-dir",
+            &gd,
+            "fetch",
+            "--depth",
+            "1",
+            "--no-tags",
+            "--force",
+            "--quiet",
             &link.clone_url,
             &link.branch,
         ],
@@ -170,8 +179,22 @@ pub fn checkout(paths: &Paths, service: &str, commit: &str) -> Result<PathBuf> {
     let wt = tree.to_string_lossy().to_string();
     let index = git_dir.join("pull-index");
     git(
-        &["--git-dir", &gd, "--work-tree", &wt, "checkout", "--quiet", "-f", commit, "--", "."],
-        &[("GIT_INDEX_FILE".into(), index.to_string_lossy().into_owned())],
+        &[
+            "--git-dir",
+            &gd,
+            "--work-tree",
+            &wt,
+            "checkout",
+            "--quiet",
+            "-f",
+            commit,
+            "--",
+            ".",
+        ],
+        &[(
+            "GIT_INDEX_FILE".into(),
+            index.to_string_lossy().into_owned(),
+        )],
     )
     .with_context(|| format!("checking out {commit}"))?;
     Ok(tree)
@@ -233,9 +256,19 @@ pub fn sync_recorded(
     let result = sync(paths, builder, exec, name, force);
     let state = match &result {
         Ok(SyncOutcome::UpToDate { commit }) | Ok(SyncOutcome::Deployed { commit, .. }) => {
-            SyncState { at: unix_now(), ok: true, commit: Some(commit.clone()), error: None }
+            SyncState {
+                at: unix_now(),
+                ok: true,
+                commit: Some(commit.clone()),
+                error: None,
+            }
         }
-        Err(e) => SyncState { at: unix_now(), ok: false, commit: None, error: Some(format!("{e:#}")) },
+        Err(e) => SyncState {
+            at: unix_now(),
+            ok: false,
+            commit: None,
+            error: Some(format!("{e:#}")),
+        },
     };
     record_sync(paths, name, &state);
     result
@@ -246,7 +279,9 @@ pub fn sync_recorded(
 /// deploy then "works" and serves a 404, which reads as our bug, not theirs.
 /// Saying "your site is in dist/, pass subdir" at link time is the difference.
 pub fn suggest_subdir(tree: &std::path::Path) -> Option<String> {
-    const COMMON: [&str; 8] = ["public", "dist", "build", "site", "docs", "out", "_site", "www"];
+    const COMMON: [&str; 8] = [
+        "public", "dist", "build", "site", "docs", "out", "_site", "www",
+    ];
     COMMON
         .iter()
         .find(|d| tree.join(d).join("index.html").is_file())
@@ -350,8 +385,8 @@ pub fn link(
     domain: Option<String>,
     public: bool,
 ) -> Result<(RepoLink, SyncOutcome, Option<String>)> {
-    let forge = crate::forge::get(forge_id)
-        .with_context(|| format!("unknown forge {forge_id:?}"))?;
+    let forge =
+        crate::forge::get(forge_id).with_context(|| format!("unknown forge {forge_id:?}"))?;
     if let Some(sub) = &subdir {
         validate_subdir(sub)?;
     }
@@ -431,13 +466,7 @@ pub fn link(
         })
     };
 
-    let req = DeployRequest::static_site(
-        service,
-        None,
-        Some(source),
-        domain,
-        public,
-    );
+    let req = DeployRequest::static_site(service, None, Some(source), domain, public);
     let info = crate::ops::deploy(paths, builder, req)?;
 
     // deploy() saved the service; attach the link to it.
@@ -452,7 +481,12 @@ pub fn link(
     record_sync(
         paths,
         service,
-        &SyncState { at: unix_now(), ok: true, commit: Some(commit.clone()), error: None },
+        &SyncState {
+            at: unix_now(),
+            ok: true,
+            commit: Some(commit.clone()),
+            error: None,
+        },
     );
 
     Ok((
@@ -517,8 +551,12 @@ pub fn spawn(state: crate::web::SharedState) {
                     &name,
                     false,
                 ) {
-                    Ok(SyncOutcome::Deployed { commit, generation, .. }) => {
-                        tracing::info!("pull: {name}: deployed {commit} as generation #{generation}");
+                    Ok(SyncOutcome::Deployed {
+                        commit, generation, ..
+                    }) => {
+                        tracing::info!(
+                            "pull: {name}: deployed {commit} as generation #{generation}"
+                        );
                     }
                     Ok(SyncOutcome::UpToDate { .. }) => {}
                     Err(e) => tracing::warn!("pull: {name}: {e:#}"),
@@ -555,13 +593,18 @@ mod tests {
         assert_eq!(get("GIT_TERMINAL_PROMPT"), "0");
         // The header applies to github.com and to nothing else — a submodule
         // pointing at attacker.example must never receive it.
-        assert_eq!(get("GIT_CONFIG_KEY_0"), "http.https://github.com/.extraheader");
+        assert_eq!(
+            get("GIT_CONFIG_KEY_0"),
+            "http.https://github.com/.extraheader"
+        );
         assert!(get("GIT_CONFIG_VALUE_0").starts_with("AUTHORIZATION: basic "));
         // And the token appears nowhere in plaintext.
         assert!(!get("GIT_CONFIG_VALUE_0").contains("ghu_secret"));
 
         // No auth, no header keys at all.
-        assert!(auth_env(None).iter().all(|(k, _)| k == "GIT_TERMINAL_PROMPT"));
+        assert!(auth_env(None)
+            .iter()
+            .all(|(k, _)| k == "GIT_TERMINAL_PROMPT"));
     }
 
     #[test]

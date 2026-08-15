@@ -373,7 +373,9 @@ mod tests {
         );
 
         // A named tunnel on someone's own domain announces no such address.
-        assert!(address_from_log("INF Registered tunnel connection", &["trycloudflare.com"]).is_none());
+        assert!(
+            address_from_log("INF Registered tunnel connection", &["trycloudflare.com"]).is_none()
+        );
         // And a URL that merely mentions the host in a path is not an address.
         assert!(address_from_log(
             "INF see https://developers.cloudflare.com/docs/trycloudflare.com/guide",

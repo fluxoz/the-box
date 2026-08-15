@@ -53,7 +53,9 @@ pub fn availability(host: &str, forwarded_proto: Option<&str>) -> Availability {
 
     let loopback = host_only == "localhost"
         || host_only.ends_with(".localhost")
-        || host_only.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback());
+        || host_only
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback());
     // An rpId must be a domain: "Only the domain format of host is allowed
     // here" (WebAuthn L3 §5.1.3). An IP origin can never register a credential.
     let is_ip = host_only.parse::<std::net::IpAddr>().is_ok();
@@ -279,12 +281,18 @@ mod tests {
 
     #[test]
     fn rp_id_is_the_bare_host() {
-        assert_eq!(availability("box.example.com:2693", Some("https")).rp_id, "box.example.com");
+        assert_eq!(
+            availability("box.example.com:2693", Some("https")).rp_id,
+            "box.example.com"
+        );
         assert_eq!(
             availability("box.example.com", Some("https")).origin,
             "https://box.example.com"
         );
-        assert_eq!(availability("localhost:2693", None).origin, "http://localhost:2693");
+        assert_eq!(
+            availability("localhost:2693", None).origin,
+            "http://localhost:2693"
+        );
     }
 
     #[test]
@@ -295,7 +303,11 @@ mod tests {
             .start_registration(&avail, Uuid::new_v4(), &[])
             .expect("start");
         // Wrong kind is refused, and the handle is consumed either way.
-        assert!(c.finish_authentication(&handle, serde_json::json!({})).is_err());
-        assert!(c.finish_registration(&handle, serde_json::json!({})).is_err());
+        assert!(c
+            .finish_authentication(&handle, serde_json::json!({}))
+            .is_err());
+        assert!(c
+            .finish_registration(&handle, serde_json::json!({}))
+            .is_err());
     }
 }

@@ -29,6 +29,11 @@ struct StoredSession {
     label: String,
     hash: String,
     created_at: i64,
+    /// May this session run destructive operations (wipe a machine, delete a
+    /// service, restore over live data) WITHOUT a human tap? Off by default;
+    /// the operator turns it on per-session, eyes open, in the device list.
+    #[serde(default)]
+    autonomous: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -62,6 +67,7 @@ pub struct SessionInfo {
     pub id: String,
     pub label: String,
     pub created_at: i64,
+    pub autonomous: bool,
 }
 
 fn hash(s: &str) -> String {
@@ -101,10 +107,12 @@ fn load_checked(paths: &Paths) -> Result<Store> {
     let file = paths.auth_file();
     match std::fs::read_to_string(&file) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Store::default()),
-        Err(e) => Err(anyhow::Error::from(e))
-            .with_context(|| format!("reading {}", file.display())),
-        Ok(text) => serde_json::from_str(&text)
-            .with_context(|| format!("parsing {}", file.display())),
+        Err(e) => {
+            Err(anyhow::Error::from(e)).with_context(|| format!("reading {}", file.display()))
+        }
+        Ok(text) => {
+            serde_json::from_str(&text).with_context(|| format!("parsing {}", file.display()))
+        }
     }
 }
 
@@ -133,6 +141,7 @@ pub fn mint_session(paths: &Paths, label: &str) -> Result<String> {
         label: label.to_string(),
         hash: hash(&token),
         created_at: now(),
+        autonomous: false,
     });
     save(paths, &store)?;
     Ok(token)
@@ -152,8 +161,42 @@ pub fn list(paths: &Paths) -> Vec<SessionInfo> {
             id: s.id,
             label: s.label,
             created_at: s.created_at,
+            autonomous: s.autonomous,
         })
         .collect()
+}
+
+/// The session a token belongs to, for callers that need to know WHO is
+/// asking, not just that someone authorized is.
+pub fn session_for(paths: &Paths, token: &str) -> Option<SessionInfo> {
+    let h = hash(token);
+    load(paths)
+        .sessions
+        .into_iter()
+        .find(|s| s.hash == h)
+        .map(|s| SessionInfo {
+            id: s.id,
+            label: s.label,
+            created_at: s.created_at,
+            autonomous: s.autonomous,
+        })
+}
+
+/// Grant or revoke a session's leave to run destructive operations without a
+/// human tap. An operator decision, made in the device list.
+pub fn set_autonomous(paths: &Paths, id: &str, on: bool) -> Result<bool> {
+    let mut store = load(paths);
+    let mut found = false;
+    for s in &mut store.sessions {
+        if s.id == id {
+            s.autonomous = on;
+            found = true;
+        }
+    }
+    if found {
+        save(paths, &store)?;
+    }
+    Ok(found)
 }
 
 pub fn revoke(paths: &Paths, id: &str) -> Result<bool> {
@@ -215,6 +258,7 @@ pub fn redeem_code(paths: &Paths, code: &str, session_label: &str) -> Result<Str
         label: session_label.to_string(),
         hash: hash(&token),
         created_at: t,
+        autonomous: false,
     });
     save(paths, &store)?;
     Ok(token)
@@ -260,6 +304,7 @@ pub fn claim(paths: &Paths, label: &str) -> Result<Option<String>> {
         label: label.to_string(),
         hash: hash(&token),
         created_at: now(),
+        autonomous: false,
     });
     save(paths, &store)?;
     Ok(Some(token))
@@ -436,6 +481,7 @@ pub fn session_from_key(paths: &Paths, cred_id: &[u8], label: &str) -> Result<St
         label: label.to_string(),
         hash: hash(&token),
         created_at: now(),
+        autonomous: false,
     });
     save(paths, &store)?;
     Ok(token)
@@ -479,8 +525,14 @@ mod tests {
         // write must never look like a factory-fresh Box.
         let (_t3, p3) = paths();
         std::fs::write(p3.auth_file(), "{ this is not json").unwrap();
-        assert!(!is_claimable(&p3), "an unreadable auth store is not claimable");
-        assert!(claim(&p3, "attacker").is_err(), "claim must refuse to overwrite it");
+        assert!(
+            !is_claimable(&p3),
+            "an unreadable auth store is not claimable"
+        );
+        assert!(
+            claim(&p3, "attacker").is_err(),
+            "claim must refuse to overwrite it"
+        );
     }
 
     #[test]
