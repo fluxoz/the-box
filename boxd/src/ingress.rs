@@ -557,6 +557,53 @@ pub fn setup_cloudflare(
     }
 }
 
+/// Turn the remote console (console.<zone> through the tunnel) on or off by
+/// re-applying the tunnel's edge rules. The wildcard DNS record from setup
+/// already routes the name; only the edge config changes. Returns the
+/// console's address when enabling.
+pub fn set_console_remote(paths: &Paths, enable: bool) -> Result<Option<String>> {
+    use crate::cfapi;
+    let mut config = BoxConfig::load(paths)?;
+    let ing = config
+        .ingress
+        .as_mut()
+        .filter(|i| i.provider == "cloudflare")
+        .context("no Cloudflare ingress is set up on this Box (ingress_setup first)")?;
+    let zone = ing
+        .zone
+        .clone()
+        .context("the Cloudflare ingress has no zone recorded")?;
+    let token = crate::secrets::get(paths, cfapi::API_TOKEN_SECRET)?
+        .context("no Cloudflare account token stored (ingress_connect_account)")?;
+    let z = cfapi::lookup_zone(&token, &zone)?;
+    let name = format!("the-box-{}", crate::fleet::hostname());
+    let tunnels = cfapi::call(&token, &cfapi::list_tunnels(&z.account_id, &name))?;
+    let tunnel_id = tunnels
+        .get("result")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|a| a.first())
+        .and_then(|t| t.get("id"))
+        .and_then(serde_json::Value::as_str)
+        .with_context(|| format!("no tunnel named {name} on the account"))?
+        .to_string();
+    cfapi::call(
+        &token,
+        &cfapi::put_ingress(&z.account_id, &tunnel_id, &zone, PUBLIC_PORT, enable),
+    )?;
+    ing.console_remote = enable;
+    config.save(paths)?;
+    crate::journal::record(
+        paths,
+        "ingress",
+        if enable {
+            format!("the console became reachable at https://console.{zone} (passkeys work there)")
+        } else {
+            format!("the console stopped being served at console.{zone}")
+        },
+    );
+    Ok(enable.then(|| format!("https://console.{zone}")))
+}
+
 fn setup_cloudflare_inner(
     paths: &Paths,
     zone: &str,
@@ -608,7 +655,7 @@ fn setup_cloudflare_inner(
 
     cfapi::call(
         &token,
-        &cfapi::put_ingress(&z.account_id, &tunnel_id, zone, PUBLIC_PORT),
+        &cfapi::put_ingress(&z.account_id, &tunnel_id, zone, PUBLIC_PORT, false),
     )?;
     did.push(format!(
         "pointed *.{zone} at this Box's public entrance (only services you publish are served there)"

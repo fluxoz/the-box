@@ -55,6 +55,11 @@ pub struct IngressConfig {
     /// their own hostname leave it unset.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub zone: Option<String>,
+    /// Serve the console at console.<zone> through the tunnel (opt-in). The
+    /// point is an https origin: that is what lets passkeys work from a
+    /// phone. The console's own auth fronts it either way.
+    #[serde(default)]
+    pub console_remote: bool,
 }
 
 impl IngressConfig {
@@ -63,6 +68,7 @@ impl IngressConfig {
             provider: provider.into(),
             enabled: false,
             zone: None,
+            console_remote: false,
         }
     }
 }

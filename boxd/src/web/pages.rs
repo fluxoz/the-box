@@ -2163,7 +2163,7 @@ pub async fn pair(
                             // claimed and has one enrolled.
                             @if has_keys {
                                 div #keysigninbox style="margin-bottom:1.2rem" {
-                                    button.btn type="button" #keysignin { "Sign in with a security key" }
+                                    button.btn type="button" #keysignin { "Sign in with Face ID, fingerprint, or security key" }
                                     p.hint #keysigninmsg {}
                                 }
                                 p.muted style="margin-bottom:1.2rem" { "or enter a pairing code" }
@@ -2515,9 +2515,9 @@ fn devices_page_full(
         }
 
         section {
-            div.section-head { h2 { "Security keys" } }
+            div.section-head { h2 { "Passkeys & security keys" } }
             p.muted {
-                "Sign in by touching a YubiKey or using a passkey, instead of copying a "
+                "Sign in with Face ID, a fingerprint, or a YubiKey instead of copying a "
                 "one-time code. The private half never leaves the key, and what it signs is "
                 "tied to this Box's address, so it cannot be replayed anywhere else."
             }

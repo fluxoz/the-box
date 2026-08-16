@@ -84,30 +84,54 @@ pub fn tunnel_run_token(account_id: &str, tunnel_id: &str) -> Request {
 /// not published is simply not served (see nix/module.nix). The trailing
 /// catch-all is required — Cloudflare rejects a rule set whose last entry has a
 /// hostname.
-pub fn put_ingress(account_id: &str, tunnel_id: &str, zone: &str, port: u16) -> Request {
+/// Find a tunnel on the account by its name (the Box's own naming scheme),
+/// so settings can be re-applied without creating a duplicate.
+pub fn list_tunnels(account_id: &str, name: &str) -> Request {
+    Request {
+        method: "GET",
+        url: format!("{API}/accounts/{account_id}/cfd_tunnel?name={name}&is_deleted=false"),
+        body: None,
+    }
+}
+
+pub fn put_ingress(
+    account_id: &str,
+    tunnel_id: &str,
+    zone: &str,
+    port: u16,
+    console: bool,
+) -> Request {
+    let mut rules: Vec<Value> = vec![
+        // Webhooks: ONLY /hooks/* on the hooks hostname reaches boxd itself
+        // (which answers with signature verification or 404). Everything else
+        // on that hostname falls through. Rule order is the security
+        // boundary; the test below pins it.
+        json!({
+            "hostname": format!("hooks.{zone}"),
+            "path": "^/hooks/.*",
+            "service": "http://127.0.0.1:2693",
+        }),
+    ];
+    if console {
+        // Remote console, OPT-IN: an https origin is what lets passkeys
+        // (Face ID, fingerprints, security keys) work from a phone. Off by
+        // default; the console's own sessions, CSRF checks, and the
+        // proxied-is-never-local rule front it, and rule order keeps it
+        // ahead of the wildcard.
+        rules.push(json!({
+            "hostname": format!("console.{zone}"),
+            "service": "http://127.0.0.1:2693",
+        }));
+    }
+    rules.push(
+        json!({ "hostname": format!("*.{zone}"), "service": format!("http://127.0.0.1:{port}") }),
+    );
+    rules.push(json!({ "hostname": zone, "service": format!("http://127.0.0.1:{port}") }));
+    rules.push(json!({ "service": "http_status:404" }));
     Request {
         method: "PUT",
         url: format!("{API}/accounts/{account_id}/cfd_tunnel/{tunnel_id}/configurations"),
-        body: Some(json!({
-            "config": {
-                "ingress": [
-                    // Webhooks: ONLY /hooks/* on the hooks hostname reaches
-                    // boxd itself (which answers with signature verification
-                    // or 404). Everything else on that hostname falls through
-                    // to the catch-all — the tunnel still never fronts the
-                    // console. Rule order is the security boundary; the test
-                    // below pins it.
-                    {
-                        "hostname": format!("hooks.{zone}"),
-                        "path": "^/hooks/.*",
-                        "service": "http://127.0.0.1:2693",
-                    },
-                    { "hostname": format!("*.{zone}"), "service": format!("http://127.0.0.1:{port}") },
-                    { "hostname": zone, "service": format!("http://127.0.0.1:{port}") },
-                    { "service": "http_status:404" },
-                ]
-            }
-        })),
+        body: Some(json!({ "config": { "ingress": rules } })),
     }
 }
 
@@ -382,8 +406,27 @@ mod tests {
     }
 
     #[test]
+    fn the_console_rule_is_opt_in_and_sits_ahead_of_the_wildcard() {
+        // Off: no console hostname anywhere in the rules.
+        let r = put_ingress("acct", "tid", "example.com", 2694, false);
+        let rules = r.body.unwrap()["config"]["ingress"].clone();
+        assert!(
+            !rules.to_string().contains("console.example.com"),
+            "console must be opt-in: {rules}"
+        );
+        // On: the console rule exists, routes to the console port, and comes
+        // BEFORE the wildcard (rule order is the security boundary).
+        let r = put_ingress("acct", "tid", "example.com", 2694, true);
+        let rules = r.body.unwrap()["config"]["ingress"].clone();
+        let rules = rules.as_array().unwrap().clone();
+        assert_eq!(rules[1]["hostname"], "console.example.com");
+        assert_eq!(rules[1]["service"], "http://127.0.0.1:2693");
+        assert_eq!(rules[2]["hostname"], "*.example.com");
+    }
+
+    #[test]
     fn ingress_is_a_wildcard_plus_a_required_catch_all() {
-        let r = put_ingress("acct", "tid", "example.com", 2694);
+        let r = put_ingress("acct", "tid", "example.com", 2694, false);
         assert_eq!(r.method, "PUT");
         let rules = r.body.unwrap()["config"]["ingress"].clone();
         let rules = rules.as_array().unwrap().clone();
