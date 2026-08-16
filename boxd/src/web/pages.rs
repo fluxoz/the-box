@@ -2172,7 +2172,7 @@ pub async fn pair(
                                 label {
                                     "Pairing code"
                                     input type="text" name="code" required autofocus
-                                        placeholder="abcd1234ef" autocomplete="one-time-code";
+                                        placeholder="abcd1234ef" autocomplete="one-time-code webauthn";
                                 }
                                 button.btn type="submit" { "Pair" }
                             }

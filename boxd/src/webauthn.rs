@@ -172,7 +172,21 @@ impl Ceremonies {
             origin: avail.origin.clone(),
             created: now(),
         })?;
-        Ok((serde_json::to_value(challenge)?, handle))
+        let mut value = serde_json::to_value(challenge)?;
+        // Ask for a DISCOVERABLE credential where the authenticator offers one
+        // (iCloud/Google synced passkeys, resident slots on security keys),
+        // without refusing hardware that cannot: "preferred", not "required".
+        // Verification does not depend on this hint, so adjusting the challenge
+        // JSON is safe; it only changes what the authenticator creates, and it
+        // is what lets sign-in need no code, no username, and no re-pair.
+        if let Some(sel) = value
+            .pointer_mut("/publicKey/authenticatorSelection")
+            .and_then(|v| v.as_object_mut())
+        {
+            sel.insert("residentKey".into(), "preferred".into());
+            sel.insert("requireResidentKey".into(), false.into());
+        }
+        Ok((value, handle))
     }
 
     /// Step 2: verify what the key signed and produce the credential to store.
@@ -293,6 +307,21 @@ mod tests {
             availability("localhost:2693", None).origin,
             "http://localhost:2693"
         );
+    }
+
+    #[test]
+    fn registration_asks_for_discoverable_credentials_without_requiring_them() {
+        let c = Ceremonies::new();
+        let avail = availability("localhost:2693", None);
+        let (challenge, _) = c
+            .start_registration(&avail, Uuid::new_v4(), &[])
+            .expect("start");
+        let sel = challenge
+            .pointer("/publicKey/authenticatorSelection")
+            .expect("authenticatorSelection present");
+        assert_eq!(sel["residentKey"], "preferred");
+        assert_eq!(sel["requireResidentKey"], false);
+        assert_eq!(sel["userVerification"], "required");
     }
 
     #[test]
