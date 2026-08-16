@@ -2455,9 +2455,12 @@ fn devices_page_full(
                     label {
                         "Name this key"
                         span.hint { "So you can tell them apart later." }
-                        input type="text" #keylabel value="Security key";
+                        input type="text" #keylabel value="This phone";
                     }
-                    button.btn type="button" #keyadd { "Enroll a security key" }
+                    button.btn type="button" #keyaddplatform data-kind="platform" {
+                        "Set up Face ID / fingerprint on this device"
+                    }
+                    button type="button" #keyadd data-kind="key" { "Add a hardware security key instead" }
                     p.hint #keymsg {}
                 }
             } @else {
@@ -3254,6 +3257,8 @@ fn json_err(e: impl std::fmt::Display) -> Response {
 pub struct KeyStart {
     #[serde(default)]
     label: String,
+    #[serde(default)]
+    pub kind: Option<String>,
 }
 
 /// Enroll a key, step 1: hand the browser a challenge for the authenticator.
@@ -3274,10 +3279,12 @@ pub async fn key_register_start(
         Ok(id) => id,
         Err(e) => return json_err(e),
     };
-    match state
-        .ceremonies
-        .start_registration(&avail, operator, &existing)
-    {
+    match state.ceremonies.start_registration(
+        &avail,
+        operator,
+        &existing,
+        form.kind.as_deref().unwrap_or("any"),
+    ) {
         Ok((challenge, handle)) => axum::Json(serde_json::json!({
             "challenge": challenge, "handle": handle, "label": form.label
         }))
