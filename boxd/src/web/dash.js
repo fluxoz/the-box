@@ -322,6 +322,7 @@
   // explicit button, and conditional UI (the passkey suggestion the platform
   // shows on its own, which is what makes Face ID appear with zero taps).
   var conditionalAbort = null;
+  var conditionalDone = Promise.resolve();
   function keySignIn(mediation, btn) {
     var msg = document.getElementById("keysigninmsg");
     return post("/pair/key/start", {}, false)
@@ -339,17 +340,24 @@
       .then(function (j) { location.href = j.next || "/"; })
       .catch(function (err) {
         if (err && err.name === "AbortError") return; // superseded, not failed
-        if (mediation !== "conditional") {
-          say(msg, err.message || String(err), true);
-          if (btn) btn.disabled = false;
+        if (mediation === "conditional") return;
+        // Safari sometimes refuses the first modal request right after the
+        // ambient one is torn down; one quiet retry before showing anything.
+        if (!keySignIn.retried && err && err.name === "NotAllowedError") {
+          keySignIn.retried = true;
+          say(msg, "One more try…");
+          return new Promise(function (r) { setTimeout(r, 400); })
+            .then(function () { return keySignIn(undefined, btn); });
         }
+        say(msg, err.message || String(err), true);
+        if (btn) btn.disabled = false;
       });
   }
   // Offer the platform's own passkey prompt as soon as the page can.
   if (document.getElementById("keysignin") && window.PublicKeyCredential
       && PublicKeyCredential.isConditionalMediationAvailable) {
     PublicKeyCredential.isConditionalMediationAvailable().then(function (yes) {
-      if (yes) keySignIn("conditional", null);
+      if (yes) conditionalDone = keySignIn("conditional", null);
     });
   }
   document.addEventListener("click", function (e) {
@@ -361,9 +369,11 @@
       say(msg, "This browser has no security-key support on this address.", true);
       return;
     }
-    if (conditionalAbort) conditionalAbort.abort();
     btn.disabled = true;
-    say(msg, "Touch your key or use Face ID…");
-    keySignIn(undefined, btn);
+    say(msg, "Use Face ID, a fingerprint, or touch your key…");
+    // Tear the ambient request down FULLY before the modal one starts; the
+    // race between them is exactly what Safari refuses.
+    if (conditionalAbort) conditionalAbort.abort();
+    conditionalDone.then(function () { keySignIn(undefined, btn); });
   });
 })();
