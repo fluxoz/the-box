@@ -157,6 +157,9 @@ a.card:active { transform: none; }
 .card .big { font-family: var(--mono); font-size: 1.95rem; font-weight: 700; margin: .3rem 0 0; color: var(--ink); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
 .card p { margin: .2rem 0 0; }
 .card p.muted { font-family: var(--mono); font-size: 11px; letter-spacing: .04em; color: var(--dim); text-transform: uppercase; }
+/* links inside tiles wear the theme, not the browser default */
+.card a { color: var(--brass); text-decoration: none; }
+.card a:hover { text-decoration: underline; }
 
 /* ---- navigation feedback ----
    A hairline brass progress bar while a view loads or an action runs, plus a
@@ -358,4 +361,86 @@ pre.copyable {
 pre.copyable code {
   font-family: var(--mono); font-size: 12.5px; line-height: 1.55;
   white-space: pre-wrap; word-break: break-all; user-select: all; background: none; padding: 0;
+}
+
+/* ================= phones =================
+   The console is server-rendered and the markup never changes per device;
+   everything below is the same pages reflowed for a hand. Three rules of the
+   layer: nothing scrolls sideways except things meant to (tabs, logs), every
+   touch target is at least 44px, and list tables become labeled cards (the
+   labels arrive via data-l, copied from the thead by dash.js). */
+
+@media (pointer: coarse) {
+  .btn, button, nav.tabs a, .theme-btn { min-height: 44px; }
+  .btn, button { display: inline-flex; align-items: center; justify-content: center; }
+}
+
+@media (max-width: 720px) {
+  body { font-size: 16px; }
+
+  /* header: brand and theme button; the release stamp is /system's job */
+  header.top { padding: 12px 14px 8px; gap: 10px; }
+  .stamp { display: none; }
+
+  /* tabs: one row that scrolls, stuck to the top like an app bar */
+  nav.tabs {
+    position: sticky; top: 0; z-index: 40; background: var(--bg);
+    padding: 0 8px; flex-wrap: nowrap; overflow-x: auto;
+    -webkit-overflow-scrolling: touch; scrollbar-width: none;
+  }
+  nav.tabs::-webkit-scrollbar { display: none; }
+  nav.tabs a { padding: 13px 12px; font-size: 12px; white-space: nowrap; }
+  nav.tabs a.btn { margin-left: 8px; }
+
+  main { padding: 18px max(14px, env(safe-area-inset-left)) 34px max(14px, env(safe-area-inset-right)); }
+  footer { padding: 14px 14px calc(30px + env(safe-area-inset-bottom)); }
+
+  .cards { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+  .card .big { font-size: 1.6rem; }
+  .section-head { flex-wrap: wrap; }
+  /* inline header forms (mint a key, sync now) drop below their heading and
+     take the row; the input stops being a squeezed sliver */
+  .section-head form { flex: 1 1 100%; display: flex; gap: 8px; }
+  .section-head form input { flex: 1; min-width: 0; font-size: 16px; }
+
+  /* list tables (they have labeled cells) become stacked cards */
+  table:has(td[data-l]) { display: block; background: none; border: none; overflow: visible; }
+  table:has(td[data-l]) thead { display: none; }
+  table:has(td[data-l]) tbody { display: block; }
+  table:has(td[data-l]) tbody tr {
+    display: block; background: var(--panel); border: 1px solid var(--line-strong);
+    border-radius: 3px; box-shadow: 0 1px 0 var(--shadow);
+    padding: 4px 0; margin-bottom: 10px;
+  }
+  table:has(td[data-l]) td {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    border-bottom: none; padding: 7px 14px; text-align: right;
+  }
+  table:has(td[data-l]) td::before {
+    content: attr(data-l);
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--faint); font-weight: 600;
+    flex: none; text-align: left;
+  }
+  table:has(td[data-l]) td:not([data-l])::before { content: none; }
+  table:has(td[data-l]) td:not([data-l]) { justify-content: flex-end; padding-top: 10px; }
+  table:has(td[data-l]) td:first-child { font-size: 15.5px; }
+  table:has(td[data-l]) td:empty { display: none; }
+  /* generated-credential rows span the card, labels off */
+  table:has(td[data-l]) tr.credrow td { display: block; text-align: left; }
+  table:has(td[data-l]) tr.credrow td::before { content: none; }
+
+  /* tables that never got labels (no JS, or key-value shape) scroll instead
+     of shearing the page sideways */
+  table:not(:has(td[data-l])) { display: block; overflow-x: auto; }
+
+  /* forms: full-width fields and buttons, 16px inputs so phones don't zoom */
+  form.stack { max-width: none; }
+  form.stack input, form.stack textarea, form.stack select { font-size: 16px; padding: 11px 12px; }
+  form.stack .btn { align-self: stretch; text-align: center; }
+  .cred { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .credkey { min-width: 0; }
+  .cred code { font-size: 13px; word-break: break-all; }
+  pre.copyable code { font-size: 11.5px; }
+  .joblog, pre.logs { max-height: 12rem; }
 }
