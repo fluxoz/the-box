@@ -2283,7 +2283,16 @@ pub async fn pair_redeem(
             if wants_json {
                 axum::Json(serde_json::json!({ "token": token, "label": label })).into_response()
             } else {
-                let mut resp = Redirect::to("/?ok=Device+paired").into_response();
+                // Land where the next step is: on a passkey-capable origin
+                // with no key enrolled yet, that step is enrolling one.
+                let dest = if key_availability(&headers).usable
+                    && !crate::auth::has_security_keys(&state.paths)
+                {
+                    "/devices?ok=Paired.+Enroll+Face+ID%2C+a+fingerprint%2C+or+a+security+key+below+and+you+will+never+need+a+code+on+this+device+again"
+                } else {
+                    "/?ok=Device+paired"
+                };
+                let mut resp = Redirect::to(dest).into_response();
                 if let Ok(cookie) = HeaderValue::from_str(&crate::auth::session_cookie(&token)) {
                     resp.headers_mut().insert(header::SET_COOKIE, cookie);
                 }
@@ -2434,6 +2443,66 @@ fn devices_page_full(
         }
 
         section {
+            div.section-head { h2 { "Passkeys & security keys" } }
+            p.muted {
+                "Sign in with Face ID, a fingerprint, or a YubiKey instead of copying a "
+                "one-time code. The private half never leaves the key, and what it signs is "
+                "tied to this Box's address, so it cannot be replayed anywhere else."
+            }
+
+            @if avail.usable {
+                form.stack #keyform onsubmit="return false" {
+                    label {
+                        "Name this key"
+                        span.hint { "So you can tell them apart later." }
+                        input type="text" #keylabel value="Security key";
+                    }
+                    button.btn type="button" #keyadd { "Enroll a security key" }
+                    p.hint #keymsg {}
+                }
+            } @else {
+                div.empty {
+                    p { strong { "Not available at this address." } }
+                    p.muted { (avail.reason) }
+                    p.muted {
+                        "You are on " code { (avail.origin) } ". That is a rule of the web "
+                        "platform rather than a setting here: browsers only offer security "
+                        "keys over an encrypted connection, and never to a bare IP address."
+                    }
+                }
+            }
+
+            @if keys.is_empty() {
+                p.muted { "No security keys enrolled yet." }
+            } @else {
+                table {
+                    thead { tr { th { "Name" } th { "Works at" } th { "Last used" } th {} } }
+                    tbody {
+                        @for k in &keys {
+                            tr {
+                                td { strong { (k.label) } }
+                                td {
+                                    code { (k.rp_id) }
+                                    @if k.rp_id != avail.rp_id { " " span.badge { "other address" } }
+                                }
+                                td {
+                                    @match k.last_used_at.and_then(|t| chrono::DateTime::from_timestamp(t, 0)) {
+                                        Some(t) => { (t.format("%Y-%m-%d %H:%M UTC").to_string()) },
+                                        None => { "never" },
+                                    }
+                                }
+                                td {
+                                    form method="post" action={ "/devices/keys/" (k.id) "/revoke" } {
+                                        button.danger type="submit" { "Remove" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        section {
             div.section-head {
                 h2 { "AI keys" }
                 form method="post" action="/devices/ai-key" {
@@ -2514,66 +2583,6 @@ fn devices_page_full(
             }
         }
 
-        section {
-            div.section-head { h2 { "Passkeys & security keys" } }
-            p.muted {
-                "Sign in with Face ID, a fingerprint, or a YubiKey instead of copying a "
-                "one-time code. The private half never leaves the key, and what it signs is "
-                "tied to this Box's address, so it cannot be replayed anywhere else."
-            }
-
-            @if avail.usable {
-                form.stack #keyform onsubmit="return false" {
-                    label {
-                        "Name this key"
-                        span.hint { "So you can tell them apart later." }
-                        input type="text" #keylabel value="Security key";
-                    }
-                    button.btn type="button" #keyadd { "Enroll a security key" }
-                    p.hint #keymsg {}
-                }
-            } @else {
-                div.empty {
-                    p { strong { "Not available at this address." } }
-                    p.muted { (avail.reason) }
-                    p.muted {
-                        "You are on " code { (avail.origin) } ". That is a rule of the web "
-                        "platform rather than a setting here: browsers only offer security "
-                        "keys over an encrypted connection, and never to a bare IP address."
-                    }
-                }
-            }
-
-            @if keys.is_empty() {
-                p.muted { "No security keys enrolled yet." }
-            } @else {
-                table {
-                    thead { tr { th { "Name" } th { "Works at" } th { "Last used" } th {} } }
-                    tbody {
-                        @for k in &keys {
-                            tr {
-                                td { strong { (k.label) } }
-                                td {
-                                    code { (k.rp_id) }
-                                    @if k.rp_id != avail.rp_id { " " span.badge { "other address" } }
-                                }
-                                td {
-                                    @match k.last_used_at.and_then(|t| chrono::DateTime::from_timestamp(t, 0)) {
-                                        Some(t) => { (t.format("%Y-%m-%d %H:%M UTC").to_string()) },
-                                        None => { "never" },
-                                    }
-                                }
-                                td {
-                                    form method="post" action={ "/devices/keys/" (k.id) "/revoke" } {
-                                        button.danger type="submit" { "Remove" }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
     };
     layout("Devices", flash, body)
 }
