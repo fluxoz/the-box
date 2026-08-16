@@ -194,6 +194,21 @@ pub fn ensure_image(image_tar: &Path) -> Result<String> {
 /// The full argv (after `podman`) for one phase. Pure, so the tests can hold
 /// every security-load-bearing flag up to the light without a container
 /// runtime in sight.
+/// Knobs a non-build caller (the work runner) turns; builds take the default.
+pub struct PhaseOpts {
+    pub timeout_secs: u64,
+    pub extra_env: Vec<(String, String)>,
+}
+
+impl Default for PhaseOpts {
+    fn default() -> Self {
+        Self {
+            timeout_secs: PHASE_TIMEOUT_SECS,
+            extra_env: Vec::new(),
+        }
+    }
+}
+
 pub fn phase_args(
     image: &str,
     tree: &Path,
@@ -201,6 +216,7 @@ pub fn phase_args(
     subdir: Option<&str>,
     network: bool,
     command: &str,
+    opts: &PhaseOpts,
 ) -> Vec<String> {
     let workdir = match subdir {
         Some(s) => format!("/work/{s}"),
@@ -223,7 +239,7 @@ pub fn phase_args(
     args.push(format!("--memory={MEMORY_MB}m"));
     args.push(format!("--memory-swap={MEMORY_MB}m"));
     args.push(format!("--pids-limit={PIDS_LIMIT}"));
-    args.push(format!("--timeout={PHASE_TIMEOUT_SECS}"));
+    args.push(format!("--timeout={}", opts.timeout_secs));
     if !network {
         args.push("--network=none".into());
     }
@@ -233,6 +249,9 @@ pub fn phase_args(
     args.extend(["-v".into(), format!("{}:/cache:rw", cache.display())]);
     args.extend(["-w".into(), workdir]);
     for (k, v) in phase_env() {
+        args.extend(["-e".into(), format!("{k}={v}")]);
+    }
+    for (k, v) in &opts.extra_env {
         args.extend(["-e".into(), format!("{k}={v}")]);
     }
     args.push(image.into());
@@ -304,7 +323,15 @@ impl PhaseRunner<'_> {
                     .image
                     .as_deref()
                     .expect("podman exec resolves its image first");
-                let args = phase_args(image, self.tree, self.cache, self.subdir, network, command);
+                let args = phase_args(
+                    image,
+                    self.tree,
+                    self.cache,
+                    self.subdir,
+                    network,
+                    command,
+                    &PhaseOpts::default(),
+                );
                 Command::new("podman")
                     .args(&args)
                     .output()
@@ -429,7 +456,15 @@ mod tests {
     fn the_build_phase_has_no_network_and_the_install_phase_does() {
         let tree = Path::new("/data/repo-trees/app");
         let cache = Path::new("/data/repos/app.cache");
-        let install = phase_args("localhost/box-builder:t", tree, cache, None, true, "npm ci");
+        let install = phase_args(
+            "localhost/box-builder:t",
+            tree,
+            cache,
+            None,
+            true,
+            "npm ci",
+            &PhaseOpts::default(),
+        );
         let build = phase_args(
             "localhost/box-builder:t",
             tree,
@@ -437,6 +472,7 @@ mod tests {
             None,
             false,
             "npm run build",
+            &PhaseOpts::default(),
         );
         assert!(
             !install.contains(&"--network=none".to_string()),
@@ -453,7 +489,15 @@ mod tests {
         let tree = Path::new("/t");
         let cache = Path::new("/c");
         for network in [true, false] {
-            let args = phase_args("img", tree, cache, None, network, "x");
+            let args = phase_args(
+                "img",
+                tree,
+                cache,
+                None,
+                network,
+                "x",
+                &PhaseOpts::default(),
+            );
             for flag in [
                 "--cap-drop=ALL",
                 "--security-opt=no-new-privileges",
@@ -506,6 +550,7 @@ mod tests {
             Some("apps/web"),
             false,
             "x",
+            &PhaseOpts::default(),
         );
         let w = args.iter().position(|a| a == "-w").unwrap();
         assert_eq!(args[w + 1], "/work/apps/web");

@@ -253,6 +253,48 @@ pub fn register_hook(token: &str, repo: &str, url: &str, secret: &str) -> Result
     Ok(value)
 }
 
+/// Open a pull request and return its html_url. Used by the work runner:
+/// the agent's branch is already pushed; this is the handoff to the human.
+pub fn create_pull_request(
+    token: &str,
+    repo: &str,
+    head: &str,
+    base: &str,
+    title: &str,
+    body: &str,
+) -> Result<String> {
+    let payload = serde_json::json!({ "title": title, "head": head, "base": base, "body": body });
+    let out = std::process::Command::new("curl")
+        .args(["-sS", "-m", "30", "-X", "POST"])
+        .args(["-H", &format!("Authorization: Bearer {token}")])
+        .args(["-H", "Accept: application/vnd.github+json"])
+        .args(["-H", "Content-Type: application/json"])
+        .args(["-d", &payload.to_string()])
+        .args(["-w", "\n%{http_code}"])
+        .arg(format!("{API}/repos/{repo}/pulls"))
+        .output()
+        .context("running curl against the GitHub API")?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let (payload, status) = text.rsplit_once('\n').unwrap_or((text.as_ref(), ""));
+    let value: Value = serde_json::from_str(payload.trim())
+        .context("GitHub returned something that is not JSON")?;
+    if status.trim() != "201" {
+        bail!(
+            "GitHub refused the pull request (HTTP {}): {}",
+            status.trim(),
+            value
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or("no detail")
+        );
+    }
+    value
+        .get("html_url")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .context("the created PR has no html_url")
+}
+
 /// Leave a comment on an issue or pull request (they share the endpoint).
 /// Best-effort by design at the call sites: the App may lack the permission,
 /// and a preview that deploys without its comment still deployed.

@@ -50,3 +50,4 @@ pub mod util;
 pub mod web;
 pub mod webauthn;
 pub mod words;
+pub mod work;

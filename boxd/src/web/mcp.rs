@@ -400,6 +400,31 @@ fn tool_definitions() -> Value {
             "inputSchema": no_args,
         },
         {
+            "name": "work_configure",
+            "description": "Store the API key the Box's work runner uses to drive a coding agent (Claude Code, headless) inside the build sandbox. Stored encrypted like every secret; overwrite any time.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "api_key": { "type": "string", "description": "An Anthropic API key for the agent runs" }
+                },
+                "required": ["api_key"],
+                "additionalProperties": false,
+            },
+        },
+        {
+            "name": "work_start",
+            "description": "Put a coding agent to work overnight ON this Box, against a service's linked repository. The agent runs inside the hardened build sandbox (its world is one scratch checkout; box credentials never enter the container), commits to a work/<commit> branch, and a pull request is opened for human review. Returns a job id — follow it with job_status. Nothing merges on the Box's say-so.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "service": { "type": "string", "description": "A service with a linked repository" },
+                    "prompt": { "type": "string", "description": "What the agent should do, e.g. 'fix the failing date parsing and add a test'" }
+                },
+                "required": ["service", "prompt"],
+                "additionalProperties": false,
+            },
+        },
+        {
             "name": "ai_key_create",
             "description": "Mint an API key for this Box's OpenAI-compatible endpoint (POST /v1/chat/completions, GET /v1/models on the Box's own port). Any app or SDK that takes a base_url runs against the Box's models by setting base_url to http://<box>:2693/v1 and pasting this key. Shown ONCE; store it now. Revocable per key, like devices.",
             "inputSchema": {
@@ -635,6 +660,39 @@ pub(crate) async fn execute(
 
     match tool {
         "get_status" => Ok(status(&state)),
+        "work_configure" => {
+            let api_key = str_arg("api_key");
+            let state = state.clone();
+            Ok(blocking(move || {
+                use anyhow::Context as _;
+                let key = api_key.context("api_key is required")?;
+                crate::secrets::set(&state.paths, crate::work::API_KEY_SECRET, &key)?;
+                crate::journal::record(
+                    &state.paths,
+                    "work",
+                    "the work runner got its agent credentials",
+                );
+                Ok(json!({ "work": "configured" }))
+            })
+            .await)
+        }
+        "work_start" => {
+            let service = str_arg("service");
+            let prompt = str_arg("prompt");
+            let state = state.clone();
+            Ok(blocking(move || {
+                use anyhow::Context as _;
+                let service = service.context("service is required")?;
+                let prompt = prompt.context("prompt is required")?;
+                let id = crate::work::start(&state, &service, &prompt)?;
+                Ok(json!({
+                    "job": id,
+                    "note": "Poll job_status with this id. The agent works in the sandbox; \
+                             the result is a branch and, on GitHub, a pull request.",
+                }))
+            })
+            .await)
+        }
         "resident_configure" => {
             let enabled = args.get("enabled").and_then(Value::as_bool).unwrap_or(true);
             let base_url = str_arg("base_url");
