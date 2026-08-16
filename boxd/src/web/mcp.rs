@@ -399,6 +399,44 @@ fn tool_definitions() -> Value {
             "inputSchema": no_args,
         },
         {
+            "name": "memory_save",
+            "description": "Leave a note in the Box's memory vault: durable, private, never leaves the machine. For context worth keeping across sessions and agents ('the staging DB is the one named blue', 'the owner prefers tabs'). Recall with memory_search.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "text": { "type": "string", "description": "The note itself, one fact per note" },
+                    "tags": { "type": "array", "items": { "type": "string" }, "description": "Optional labels for recall" }
+                },
+                "required": ["text"],
+                "additionalProperties": false,
+            },
+        },
+        {
+            "name": "memory_search",
+            "description": "Recall notes from the Box's memory vault. Every query term must match (text or tags); most recent first. Keyword recall today, semantic when the Box has an embedding model.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string", "description": "Terms to match" },
+                    "limit": { "type": "integer", "description": "Max notes (default 10)" }
+                },
+                "required": ["query"],
+                "additionalProperties": false,
+            },
+        },
+        {
+            "name": "memory_forget",
+            "description": "Remove every vault note matching the query terms. Returns the count removed. There is no undo; the vault belongs to the owner.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string", "description": "Terms that select the notes to remove" }
+                },
+                "required": ["query"],
+                "additionalProperties": false,
+            },
+        },
+        {
             "name": "resident_configure",
             "description": "Give this Box its own resident caretaker: a scheduled agent that reads the Box's state daily, writes a plain-sentence report into the journal, names concerns, and queues any destructive suggestion for the human's approval (the same leash you are on). The brain is any OpenAI-compatible endpoint — a metered provider, or this Box's own /v1 once a model is pulled. Pass enabled:false to stand it down.",
             "inputSchema": {
@@ -647,7 +685,7 @@ async fn call_tool(
         }));
     }
 
-    let outcome = execute(state, &name, args).await?;
+    let outcome = execute_as(state, &name, args, &caller.label).await?;
     Ok(match outcome {
         Ok(value) => json!({
             "content": [{
@@ -668,6 +706,17 @@ pub(crate) async fn execute(
     state: SharedState,
     tool: &str,
     args: Value,
+) -> Result<anyhow::Result<Value>, (i64, String)> {
+    execute_as(state, tool, args, "someone").await
+}
+
+/// Like execute, but with the caller's label for tools that attribute their
+/// writes (the vault). Approval re-dispatch passes the original requester.
+pub(crate) async fn execute_as(
+    state: SharedState,
+    tool: &str,
+    args: Value,
+    by: &str,
 ) -> Result<anyhow::Result<Value>, (i64, String)> {
     let str_arg = |key: &str| {
         args.get(key)
@@ -708,6 +757,54 @@ pub(crate) async fn execute(
                     "note": "Poll job_status with this id. The agent works in the sandbox; \
                              the result is a branch and, on GitHub, a pull request.",
                 }))
+            })
+            .await)
+        }
+        "memory_save" => {
+            let text_arg = str_arg("text");
+            let tags: Vec<String> = args
+                .get("tags")
+                .and_then(Value::as_array)
+                .map(|a| {
+                    a.iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default();
+            let by = by.to_string();
+            let state = state.clone();
+            Ok(blocking(move || {
+                use anyhow::Context as _;
+                let text = text_arg.context("text is required")?;
+                crate::vault::save(&state.paths, &by, &text, tags)?;
+                Ok(json!({ "saved": true }))
+            })
+            .await)
+        }
+        "memory_search" => {
+            let query = str_arg("query");
+            let limit = args
+                .get("limit")
+                .and_then(Value::as_u64)
+                .unwrap_or(10)
+                .min(100) as usize;
+            let state = state.clone();
+            Ok(blocking(move || {
+                use anyhow::Context as _;
+                let query = query.context("query is required")?;
+                Ok(json!({ "notes": crate::vault::search(&state.paths, &query, limit) }))
+            })
+            .await)
+        }
+        "memory_forget" => {
+            let query = str_arg("query");
+            let state = state.clone();
+            Ok(blocking(move || {
+                use anyhow::Context as _;
+                let query = query.context("query is required")?;
+                let removed = crate::vault::forget(&state.paths, &query)?;
+                Ok(json!({ "removed": removed }))
             })
             .await)
         }
