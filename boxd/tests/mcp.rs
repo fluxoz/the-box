@@ -1476,3 +1476,82 @@ async fn work_refuses_honestly_and_never_echoes_the_key() {
         "should fail on sandbox or service lookup, honestly: {t}"
     );
 }
+
+/// The router: with no local model server, /v1 forwards to the configured
+/// cloud fallback carrying the owner's key, and the stats count the trip.
+#[tokio::test]
+async fn router_falls_back_to_the_cloud_and_counts_it() {
+    if !curl_present() {
+        return;
+    }
+    let (_tmp, app, token) = app();
+    let text = |v: &Value| {
+        v["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+
+    // A stub cloud that echoes the auth it was shown and bills 7 tokens.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let stub = axum::Router::new().route(
+        "/v1/chat/completions",
+        axum::routing::post(|headers: axum::http::HeaderMap| async move {
+            let auth = headers
+                .get("authorization")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("")
+                .to_string();
+            axum::Json(serde_json::json!({
+                "choices": [{ "message": { "role": "assistant",
+                    "content": format!("cloud answered under {auth}") } }],
+                "usage": { "completion_tokens": 7 }
+            }))
+        }),
+    );
+    tokio::spawn(async move {
+        axum::serve(listener, stub).await.unwrap();
+    });
+
+    let conf = call_tool(
+        &app,
+        &token,
+        "router_configure",
+        json!({ "base_url": format!("http://127.0.0.1:{port}/v1"), "api_key": "sk-cloud-test" }),
+    )
+    .await;
+    assert_eq!(conf["result"]["isError"], false, "{conf}");
+
+    let minted = call_tool(&app, &token, "ai_key_create", json!({ "label": "app" })).await;
+    let key = serde_json::from_str::<Value>(&text(&minted)).unwrap()["key"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let req = Request::post("/v1/chat/completions")
+        .header("content-type", "application/json")
+        .header("authorization", format!("Bearer {key}"))
+        .extension(remote_hook())
+        .body(Body::from(
+            json!({ "model": "whatever", "messages": [{ "role": "user", "content": "hi" }] })
+                .to_string(),
+        ))
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body =
+        String::from_utf8_lossy(&resp.into_body().collect().await.unwrap().to_bytes()).to_string();
+    assert!(body.contains("cloud answered"), "{body}");
+    assert!(
+        body.contains("Bearer sk-cloud-test"),
+        "the owner's key must reach the fallback: {body}"
+    );
+
+    let status = call_tool(&app, &token, "router_status", json!({})).await;
+    let t = text(&status);
+    let v: Value = serde_json::from_str(&t).unwrap();
+    assert_eq!(v["stats"]["cloud_requests"], 1, "{t}");
+    assert_eq!(v["stats"]["cloud_tokens"], 7, "{t}");
+    assert_eq!(v["stats"]["local_requests"], 0, "{t}");
+}
