@@ -291,9 +291,10 @@
     el.style.color = bad ? "var(--critical)" : "var(--ok)";
   }
 
-  // Enroll, from the Devices page.
+  // Enroll, from the Devices page. Two doors, one handler: the button says
+  // which authenticator family the server should ask for.
   document.addEventListener("click", function (e) {
-    var btn = e.target.closest && e.target.closest("#keyadd");
+    var btn = e.target.closest && e.target.closest("#keyadd, #keyaddplatform");
     if (!btn) return;
     e.preventDefault();
     var msg = document.getElementById("keymsg");
@@ -303,8 +304,8 @@
       return;
     }
     btn.disabled = true;
-    say(msg, "Touch your key…");
-    post("/devices/keys/start", { label: label }, false)
+    say(msg, btn.dataset.kind === "platform" ? "Follow the Face ID or fingerprint prompt…" : "Touch your key…");
+    post("/devices/keys/start", { label: label, kind: btn.dataset.kind || "any" }, false)
       .then(function (j) {
         return navigator.credentials
           .create({ publicKey: reviveRequest(j.challenge) })

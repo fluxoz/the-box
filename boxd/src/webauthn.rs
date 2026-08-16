@@ -155,11 +155,17 @@ impl Ceremonies {
     }
 
     /// Step 1 of enrolling a key: the challenge the browser hands the key.
+    /// `kind` picks the door: "platform" forces this device's own
+    /// authenticator (Face ID, Windows Hello) and requires a discoverable
+    /// credential, "key" asks for external hardware, anything else lets the
+    /// browser offer whatever it has. Explicit doors exist because iOS only
+    /// reliably surfaces Face ID when the request says platform out loud.
     pub fn start_registration(
         &self,
         avail: &Availability,
         operator_id: Uuid,
         existing: &[Passkey],
+        kind: &str,
     ) -> Result<(serde_json::Value, String)> {
         let webauthn = build(&avail.rp_id, &avail.origin)?;
         let exclude: Vec<CredentialID> = existing.iter().map(|p| p.cred_id().clone()).collect();
@@ -183,8 +189,34 @@ impl Ceremonies {
             .pointer_mut("/publicKey/authenticatorSelection")
             .and_then(|v| v.as_object_mut())
         {
-            sel.insert("residentKey".into(), "preferred".into());
-            sel.insert("requireResidentKey".into(), false.into());
+            match kind {
+                "platform" => {
+                    sel.insert("authenticatorAttachment".into(), "platform".into());
+                    sel.insert("residentKey".into(), "required".into());
+                    sel.insert("requireResidentKey".into(), true.into());
+                }
+                "key" => {
+                    sel.insert("authenticatorAttachment".into(), "cross-platform".into());
+                    sel.insert("residentKey".into(), "preferred".into());
+                    sel.insert("requireResidentKey".into(), false.into());
+                }
+                _ => {
+                    sel.insert("residentKey".into(), "preferred".into());
+                    sel.insert("requireResidentKey".into(), false.into());
+                }
+            }
+        }
+        if let Some(pk) = value
+            .pointer_mut("/publicKey")
+            .and_then(|v| v.as_object_mut())
+        {
+            // WebAuthn L3 hints; newer browsers use them to pick the sheet.
+            let hint = match kind {
+                "platform" => "client-device",
+                "key" => "security-key",
+                _ => return Ok((value, handle)),
+            };
+            pk.insert("hints".into(), serde_json::json!([hint]));
         }
         Ok((value, handle))
     }
@@ -314,7 +346,7 @@ mod tests {
         let c = Ceremonies::new();
         let avail = availability("localhost:2693", None);
         let (challenge, _) = c
-            .start_registration(&avail, Uuid::new_v4(), &[])
+            .start_registration(&avail, Uuid::new_v4(), &[], "any")
             .expect("start");
         let sel = challenge
             .pointer("/publicKey/authenticatorSelection")
@@ -322,6 +354,27 @@ mod tests {
         assert_eq!(sel["residentKey"], "preferred");
         assert_eq!(sel["requireResidentKey"], false);
         assert_eq!(sel["userVerification"], "required");
+
+        // The platform door says platform out loud: attachment, discoverable
+        // required, and the hint. iOS shows Face ID only when asked plainly.
+        let (challenge, _) = c
+            .start_registration(&avail, Uuid::new_v4(), &[], "platform")
+            .expect("start");
+        let sel = challenge
+            .pointer("/publicKey/authenticatorSelection")
+            .expect("authenticatorSelection present");
+        assert_eq!(sel["authenticatorAttachment"], "platform");
+        assert_eq!(sel["residentKey"], "required");
+        assert_eq!(challenge["publicKey"]["hints"][0], "client-device");
+
+        let (challenge, _) = c
+            .start_registration(&avail, Uuid::new_v4(), &[], "key")
+            .expect("start");
+        assert_eq!(
+            challenge["publicKey"]["authenticatorSelection"]["authenticatorAttachment"],
+            "cross-platform"
+        );
+        assert_eq!(challenge["publicKey"]["hints"][0], "security-key");
     }
 
     #[test]
@@ -329,7 +382,7 @@ mod tests {
         let c = Ceremonies::new();
         let avail = availability("localhost:2693", None);
         let (_challenge, handle) = c
-            .start_registration(&avail, Uuid::new_v4(), &[])
+            .start_registration(&avail, Uuid::new_v4(), &[], "any")
             .expect("start");
         // Wrong kind is refused, and the handle is consumed either way.
         assert!(c
