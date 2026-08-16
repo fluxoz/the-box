@@ -1,0 +1,14 @@
+id = "llamacpp"
+title = "llama.cpp server (fast Vulkan inference)"
+description = "The reference llama.cpp server with Vulkan acceleration. On AMD unified-memory machines (Ryzen AI Max) this is roughly twice Ollama's speed on the same model, and it is the engine behind the store's tokens-per-second ratings. Downloads its model from Hugging Face on first start: the default is gpt-oss-20b (~13GB); a 128GB machine can change cmd to -hf ggml-org/gpt-oss-120b-GGUF. Serves the standard OpenAI-compatible API, and the Box's own /v1 endpoint fronts it automatically."
+category = "AI"
+base = "container"
+icon = "spark"
+
+[params]
+image = "ghcr.io/ggml-org/llama.cpp:server-vulkan"
+container_port = 8080
+expose = "proxied"
+gpu = true
+cmd = ["-hf", "ggml-org/gpt-oss-20b-GGUF", "--host", "0.0.0.0", "--port", "8080", "--ctx-size", "16384", "--jinja"]
+volumes = ["/var/lib/box/llamacpp:/root/.cache/llama.cpp"]

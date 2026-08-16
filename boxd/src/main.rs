@@ -342,7 +342,8 @@ enum ChannelCmd {
         /// appliance), or pi3|pi4|pi5. A Pi rebuilt without its board won't boot.
         #[arg(long, default_value = "auto")]
         board: String,
-        /// GPU layer: auto (detect an NVIDIA card), none, or nvidia. Installs
+        /// GPU layer: auto (detect an NVIDIA card), none, nvidia, or amd
+        /// (Ryzen AI Max unified-memory machines; say it explicitly). Installs
         /// the driver + container CDI so containers can take the GPU.
         #[arg(long, default_value = "auto")]
         gpu: String,
@@ -803,7 +804,11 @@ fn run_channel(paths: &Paths, action: ChannelCmd) -> Result<()> {
                 }
                 "none" => None,
                 "nvidia" => Some("nvidia".to_string()),
-                other => anyhow::bail!("unknown gpu {other:?} (auto | none | nvidia)"),
+                // No auto-detect for amd: every AMD iGPU shares the vendor id,
+                // and only unified-memory machines (Ryzen AI Max) should take
+                // this layer. Saying it explicitly is the safety.
+                "amd" => Some("amd".to_string()),
+                other => anyhow::bail!("unknown gpu {other:?} (auto | none | nvidia | amd)"),
             };
             let cfg = ChannelConfig {
                 host_id,
