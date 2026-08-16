@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Why own the machine | The Box</title>
+<meta name="description" content="Intelligence is becoming infrastructure, and infrastructure has landlords. The case for owning the machine your AI runs on.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="The Box">
+<meta property="og:title" content="We don't know if AGI is coming. We know rent is.">
+<meta property="og:description" content="The case for owning the machine your AI runs on.">
+<meta property="og:url" content="https://thebox.build/why/">
+<meta property="og:image" content="https://thebox.build/og.png">
+<style>
+  :root{
+    --bg:#14110c; --panel:#1b170f; --panel2:#221d13; --line:#322b1f; --line2:#4a4030;
+    --ink:#ece5d5; --dim:#948a68; --faint:#6e654a;
+    --brass:#c99b4e; --brass2:#ddb15c; --brass-wash:rgba(201,155,78,.12);
+    --mono:ui-monospace,"SF Mono","Cascadia Code","JetBrains Mono",Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme:light){
+    :root{--bg:#e7e3d8;--panel:#f1ede2;--panel2:#e9e4d6;--line:#cbc4b3;--line2:#a89f8b;--ink:#1f1b14;--dim:#6c6455;--faint:#918872;--brass:#916d2f;--brass2:#a97f34;--brass-wash:rgba(169,127,52,.12);}
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.65;-webkit-font-smoothing:antialiased;}
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);
+    background-size:44px 44px;opacity:.16;
+    -webkit-mask-image:radial-gradient(ellipse 130% 80% at 50% 0%,#000 24%,transparent 76%);
+    mask-image:radial-gradient(ellipse 130% 80% at 50% 0%,#000 24%,transparent 76%);}
+  main{position:relative;z-index:1;max-width:680px;margin:0 auto;padding:9vh 1.25rem 6rem;}
+  .topbar{display:flex;align-items:baseline;gap:.6rem;}
+  .brand{display:flex;align-items:center;gap:.5rem;font-weight:800;letter-spacing:.14em;font-size:1.05rem;}
+  .brand .mk{width:1.35em;height:1.35em;flex:none;}
+  .brand .mk path{stroke:var(--brass2);stroke-width:2.8;fill:none;stroke-linejoin:round;stroke-linecap:round;}
+  .brand .sub{font-weight:600;color:var(--dim);letter-spacing:.22em;text-transform:uppercase;font-size:.7rem;}
+  .topbar nav{margin-left:auto;display:flex;gap:1.1rem;font-size:.82rem;letter-spacing:.04em;}
+  a{color:var(--brass2);text-decoration:none;border-bottom:1px solid transparent;}
+  a:hover{border-bottom-color:var(--brass);}
+  h1{font-size:clamp(2rem,6vw,3rem);line-height:1.1;margin:2.6rem 0 1.4rem;letter-spacing:-.015em;text-wrap:balance;}
+  h1 b{color:var(--brass2);}
+  h2{font-size:1.35rem;margin:2.6rem 0 .7rem;letter-spacing:-.01em;text-wrap:balance;}
+  p{color:var(--dim);font-size:1.05rem;margin:.9rem 0;}
+  p b{color:var(--ink);font-weight:600;}
+  .pull{color:var(--ink);font-size:1.15rem;border-left:3px solid var(--brass);padding:.2rem 0 .2rem 1rem;margin:1.6rem 0;}
+  .start{margin:3rem 0 0;display:flex;align-items:baseline;gap:.9rem;flex-wrap:wrap;}
+  .go{display:inline-block;background:var(--brass);color:#1a1408;border:none;border-radius:8px;
+    padding:.6rem 1.1rem;font-weight:700;letter-spacing:.01em;}
+  .go:hover{border-bottom-color:transparent;background:var(--brass2);}
+  .more{color:var(--faint);font-size:.9rem;}
+  footer{margin-top:4rem;padding-top:1.4rem;border-top:1px solid var(--line);color:var(--faint);
+    font-size:.78rem;letter-spacing:.05em;display:flex;gap:1.2rem;flex-wrap:wrap;}
+</style>
+</head>
+<body>
+<main>
+  <div class="topbar">
+    <div class="brand"><svg class="mk" viewBox="0 0 48 48" aria-hidden="true"><path d="M24 7 L39 15 V33 L24 41 L9 33 V15 Z"/><path d="M24 24 L9 15 M24 24 L39 15 M24 24 V41"/></svg>THE <b style="color:var(--brass2)">BOX</b> <span class="sub">why</span></div>
+    <nav><a href="/">Home</a> <a href="/store/">Store</a> <a href="/docs/">Docs</a> <a href="https://github.com/fluxoz/the-box">GitHub</a></nav>
+  </div>
+
+  <h1>We don't know if AGI is coming.<br>We know <b>rent</b> is.</h1>
+
+  <p>Every year, more of your work passes through a model. Code, email, contracts, questions you
+  would not ask out loud. That part is settled. The open questions are quieter: whose machine it
+  runs on, who can read the logs, and what it costs once they know you can't leave.</p>
+
+  <h2>Intelligence is becoming infrastructure. Infrastructure has landlords.</h2>
+  <p>The frontier models are astonishing, and you will keep renting some of them. That part is
+  fine. The problem is everything else moving into the same buildings: your notes, your codebase,
+  your assistant's memory of your life. When the meter is theirs, the price is theirs. When the
+  logs are theirs, so is the training data. Nobody who owned the pipe has ever declined to raise
+  the rate.</p>
+
+  <h2>The hedge is not beating them. It's needing them less.</h2>
+  <p>A 128 GB machine on a desk now runs gpt-oss-120b at conversation speed. It is not the
+  smartest model on earth and it does not need to be. It covers the daily eighty percent, holds
+  the context you would never upload, works when the internet doesn't, and answers to nobody.
+  The frontier becomes something you choose for the hard problems, not the landlord of your whole
+  working life.</p>
+  <p class="pull">You can't buy a share of the singularity. You can buy 128 GB of unified memory.</p>
+
+  <h2>What we are not saying</h2>
+  <p>Local models trail the frontier, and anyone who tells you otherwise is selling something
+  with worse invoices than ours. We are not predicting doom and we are not naming dates. We are
+  noticing two things: owning your tools has never once been the wrong long-term call, and the
+  window where a private machine runs serious intelligence opened about a year ago.</p>
+  <p>The software here is <b>free forever</b> either way. Install it on anything with a spare
+  hundred gigabytes and a UEFI. The store is for people who want the machine to show up working,
+  with the price of the hardware shown at cost and a
+  <a href="/store/">tokens-per-second guarantee in writing</a>.</p>
+
+  <div class="start">
+    <a class="go" href="/store/">See the machines →</a>
+    <span class="more">or <a href="/">install it free on your own hardware</a></span>
+  </div>
+
+  <footer>
+    <span>Free &amp; open source.</span>
+    <span>No account, no phone-home.</span>
+    <span>The Box. A personal server you actually own.</span>
+  </footer>
+</main>
+</body>
+</html>
