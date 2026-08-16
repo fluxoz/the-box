@@ -1,5 +1,22 @@
 # The Box — Product Plan
 
+## Positioning (set 2026-08-16)
+
+One sovereign machine, two jobs, stated in this order everywhere:
+
+1. Ship what you build: push-to-deploy for repos, vibe-coded projects and
+   containers, PR previews, your own domain, encrypted backups, self-rolling-back
+   changes.
+2. Run your AI at home, turn-key: private household chat, one OpenAI-compatible
+   endpoint (local models first, owner's cloud key as fallback), overnight agent
+   runs that end in pull requests, the savings meter.
+
+The umbrella over both is sovereignty and control as physics, not vibes: owned
+hardware, data that never leaves, no account, no rent, the approvals leash,
+receipts for every claim. Voice stays plain (see the copy-voice memory); every
+positioning claim must point at a shipped feature.
+
+
 ## Vision
 
 The Box is a Nix-powered, plug-and-play personal server platform that turns almost any machine (old PC, mini-PC, Raspberry Pi, VPS, or dedicated appliance) into a reliable, publicly reachable host for static sites, full-stack web apps, APIs, mobile backends, databases, and AI-related workloads.
