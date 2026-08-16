@@ -317,7 +317,40 @@
       .catch(function (err) { say(msg, err.message || String(err), true); btn.disabled = false; });
   });
 
-  // Sign in, from the pair page.
+  // Sign in, from the pair page. One code path serves both doors: the
+  // explicit button, and conditional UI (the passkey suggestion the platform
+  // shows on its own, which is what makes Face ID appear with zero taps).
+  var conditionalAbort = null;
+  function keySignIn(mediation, btn) {
+    var msg = document.getElementById("keysigninmsg");
+    return post("/pair/key/start", {}, false)
+      .then(function (j) {
+        var req = { publicKey: reviveRequest(j.challenge) };
+        if (mediation === "conditional") {
+          conditionalAbort = new AbortController();
+          req.mediation = "conditional";
+          req.signal = conditionalAbort.signal;
+        }
+        return navigator.credentials.get(req).then(function (cred) {
+          return post("/pair/key/finish", { handle: j.handle, response: serialize(cred) }, true);
+        });
+      })
+      .then(function (j) { location.href = j.next || "/"; })
+      .catch(function (err) {
+        if (err && err.name === "AbortError") return; // superseded, not failed
+        if (mediation !== "conditional") {
+          say(msg, err.message || String(err), true);
+          if (btn) btn.disabled = false;
+        }
+      });
+  }
+  // Offer the platform's own passkey prompt as soon as the page can.
+  if (document.getElementById("keysignin") && window.PublicKeyCredential
+      && PublicKeyCredential.isConditionalMediationAvailable) {
+    PublicKeyCredential.isConditionalMediationAvailable().then(function (yes) {
+      if (yes) keySignIn("conditional", null);
+    });
+  }
   document.addEventListener("click", function (e) {
     var btn = e.target.closest && e.target.closest("#keysignin");
     if (!btn) return;
@@ -327,17 +360,9 @@
       say(msg, "This browser has no security-key support on this address.", true);
       return;
     }
+    if (conditionalAbort) conditionalAbort.abort();
     btn.disabled = true;
-    say(msg, "Touch your key…");
-    post("/pair/key/start", {}, false)
-      .then(function (j) {
-        return navigator.credentials
-          .get({ publicKey: reviveRequest(j.challenge) })
-          .then(function (cred) {
-            return post("/pair/key/finish", { handle: j.handle, response: serialize(cred) }, true);
-          });
-      })
-      .then(function (j) { location.href = j.next || "/"; })
-      .catch(function (err) { say(msg, err.message || String(err), true); btn.disabled = false; });
+    say(msg, "Touch your key or use Face ID…");
+    keySignIn(undefined, btn);
   });
 })();
