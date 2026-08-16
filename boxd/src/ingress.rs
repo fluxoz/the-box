@@ -567,7 +567,9 @@ pub fn set_console_remote(paths: &Paths, enable: bool) -> Result<Option<String>>
     let ing = config
         .ingress
         .as_mut()
-        .filter(|i| i.provider == "cloudflare")
+        // The BYO-domain provider's id is "cloudflare-tunnel"; match the
+        // family rather than remembering which spelling a given Box saved.
+        .filter(|i| i.provider.starts_with("cloudflare"))
         .context("no Cloudflare ingress is set up on this Box (ingress_setup first)")?;
     let zone = ing
         .zone
