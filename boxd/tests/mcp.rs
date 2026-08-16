@@ -1425,3 +1425,54 @@ async fn mcp_deploy_host_routing_and_rollback() {
     let missing = call_tool(&app, &token, "rollback", json!({ "generation": 99 })).await;
     assert_eq!(missing["result"]["isError"], true);
 }
+
+/// The work runner refuses in the right order with the right signposts: no
+/// credentials -> name the tool that stores them; credentials but no sandbox
+/// (a dev machine) -> say so; and the key never echoes back.
+#[tokio::test]
+async fn work_refuses_honestly_and_never_echoes_the_key() {
+    let (_tmp, app, token) = app();
+    let text = |v: &Value| {
+        v["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+
+    // Before any credentials: the refusal names work_configure.
+    let start = call_tool(
+        &app,
+        &token,
+        "work_start",
+        json!({ "service": "site", "prompt": "fix the tests" }),
+    )
+    .await;
+    assert_eq!(start["result"]["isError"], true, "{start}");
+    assert!(text(&start).contains("work_configure"), "{}", text(&start));
+
+    // Store a key; it is accepted and never repeated back.
+    let conf = call_tool(
+        &app,
+        &token,
+        "work_configure",
+        json!({ "api_key": "sk-ant-test-not-a-real-key" }),
+    )
+    .await;
+    assert_eq!(conf["result"]["isError"], false, "{conf}");
+    assert!(!conf.to_string().contains("sk-ant-test"), "{conf}");
+
+    // With credentials on a machine without the sandbox: honest about that.
+    let start = call_tool(
+        &app,
+        &token,
+        "work_start",
+        json!({ "service": "site", "prompt": "fix the tests" }),
+    )
+    .await;
+    assert_eq!(start["result"]["isError"], true, "{start}");
+    let t = text(&start);
+    assert!(
+        t.contains("sandbox") || t.contains("no service named"),
+        "should fail on sandbox or service lookup, honestly: {t}"
+    );
+}
