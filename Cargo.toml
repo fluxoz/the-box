@@ -7,7 +7,7 @@ members = ["boxd", "crates/box-core", "crates/box-installer"]
 # label baked into /etc/box/platform.json agree), and CI refuses to publish a
 # tag that doesn't match it. Bump this when cutting a release.
 [workspace.package]
-version = "0.3.28"
+version = "0.3.29"
 
 # Shared release profile for the appliance binaries: small and quiet.
 [profile.release]
