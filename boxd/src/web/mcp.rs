@@ -399,6 +399,17 @@ fn tool_definitions() -> Value {
             "inputSchema": no_args,
         },
         {
+            "name": "console_remote",
+            "description": "Serve this Box's console at https://console.<zone> through the tunnel (or stop). The point is passkeys: Face ID, fingerprints and security keys only work on an https origin, so a phone needs this to sign in without codes. Off by default; the console's own sessions and CSRF rules front it, and proxied traffic is never treated as local.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "enabled": { "type": "boolean", "description": "Default true" }
+                },
+                "additionalProperties": false,
+            },
+        },
+        {
             "name": "memory_save",
             "description": "Leave a note in the Box's memory vault: durable, private, never leaves the machine. For context worth keeping across sessions and agents ('the staging DB is the one named blue', 'the owner prefers tabs'). Recall with memory_search.",
             "inputSchema": {
@@ -756,6 +767,19 @@ pub(crate) async fn execute_as(
                     "job": id,
                     "note": "Poll job_status with this id. The agent works in the sandbox; \
                              the result is a branch and, on GitHub, a pull request.",
+                }))
+            })
+            .await)
+        }
+        "console_remote" => {
+            let enabled = args.get("enabled").and_then(Value::as_bool).unwrap_or(true);
+            let state = state.clone();
+            Ok(blocking(move || {
+                let url = crate::ingress::set_console_remote(&state.paths, enabled)?;
+                Ok(json!({
+                    "console": url.unwrap_or_else(|| "stopped".into()),
+                    "note": "passkeys (Face ID, fingerprint, security key) enroll and sign in \
+                             at this address; plain-HTTP LAN addresses cannot offer them",
                 }))
             })
             .await)
