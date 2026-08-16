@@ -1,7 +1,10 @@
 # The Box
 
-> The Box is a sovereign, self-hosting personal-server platform. One generic OS
-> image installs any machine; identity arrives at first boot. Every change is an
+> The Box is a sovereign personal-server platform with two jobs: self-hosting
+> whatever its owner builds (repos, vibe-coded projects, containers, static
+> sites) and running their AI at home (local models behind an OpenAI-compatible
+> /v1, overnight agent runs, private chat). One generic OS image installs any
+> machine; identity arrives at first boot. Every change is an
 > atomic, reversible Nix generation. A running Box exposes a dashboard, a JSON
 > API, and an MCP server, so an agent can provision and manage it end to end.
 
