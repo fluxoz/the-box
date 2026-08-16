@@ -381,6 +381,24 @@ fn tool_definitions() -> Value {
             },
         },
         {
+            "name": "router_configure",
+            "description": "Give the Box's /v1 endpoint a cloud fallback: when no local model server is running, requests forward to this OpenAI-compatible endpoint with the owner's own key. Local models always win when present. Pass enabled:false to stand it down.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "base_url": { "type": "string", "description": "OpenAI-compatible base, e.g. https://api.x.ai/v1" },
+                    "api_key": { "type": "string", "description": "The owner's key for that endpoint (stored encrypted)" },
+                    "enabled": { "type": "boolean", "description": "Default true" }
+                },
+                "additionalProperties": false,
+            },
+        },
+        {
+            "name": "router_status",
+            "description": "Where this Box's /v1 traffic has been going: local vs cloud request and token counts, and a conservative estimate of dollars saved by serving locally.",
+            "inputSchema": no_args,
+        },
+        {
             "name": "resident_configure",
             "description": "Give this Box its own resident caretaker: a scheduled agent that reads the Box's state daily, writes a plain-sentence report into the journal, names concerns, and queues any destructive suggestion for the human's approval (the same leash you are on). The brain is any OpenAI-compatible endpoint — a metered provider, or this Box's own /v1 once a model is pulled. Pass enabled:false to stand it down.",
             "inputSchema": {
@@ -692,6 +710,45 @@ pub(crate) async fn execute(
                 }))
             })
             .await)
+        }
+        "router_configure" => {
+            let enabled = args.get("enabled").and_then(Value::as_bool).unwrap_or(true);
+            let base_url = str_arg("base_url");
+            let api_key = str_arg("api_key");
+            let state = state.clone();
+            Ok(blocking(move || {
+                use anyhow::Context as _;
+                let mut config = crate::config::BoxConfig::load(&state.paths)?;
+                if !enabled {
+                    config.router = None;
+                    config.save(&state.paths)?;
+                    return Ok(json!({ "router": "fallback stood down" }));
+                }
+                let base_url = base_url.context("base_url is required to enable the fallback")?;
+                if let Some(k) = api_key {
+                    crate::secrets::set(&state.paths, crate::router::FALLBACK_KEY_SECRET, &k)?;
+                }
+                anyhow::ensure!(
+                    crate::secrets::exists(&state.paths, crate::router::FALLBACK_KEY_SECRET),
+                    "no api_key stored yet — pass one"
+                );
+                config.router = Some(crate::router::RouterConfig {
+                    enabled: true,
+                    base_url,
+                });
+                config.save(&state.paths)?;
+                crate::journal::record(
+                    &state.paths,
+                    "router",
+                    "the /v1 endpoint got a cloud fallback (local models still win)",
+                );
+                Ok(json!({ "router": "fallback configured" }))
+            })
+            .await)
+        }
+        "router_status" => {
+            let state = state.clone();
+            Ok(blocking(move || crate::router::status_json(&state.paths)).await)
         }
         "resident_configure" => {
             let enabled = args.get("enabled").and_then(Value::as_bool).unwrap_or(true);

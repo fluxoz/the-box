@@ -30,6 +30,9 @@ pub struct BoxConfig {
     /// The resident caretaker agent's configuration. Absent = no resident.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resident: Option<crate::resident::ResidentConfig>,
+    /// The model router's cloud fallback (local models always win).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub router: Option<crate::router::RouterConfig>,
     /// Where this Box pulls code from. Empty = nowhere yet.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub forges: Vec<ForgeConfig>,

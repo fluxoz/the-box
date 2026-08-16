@@ -48,8 +48,9 @@ fn no_upstream() -> Response {
         StatusCode::SERVICE_UNAVAILABLE,
         axum::Json(json!({
             "error": {
-                "message": "this Box has no model server yet. Deploy the 'llamacpp' or 'ollama' catalog \
-                            preset (and pull a model), then this endpoint serves it.",
+                "message": "this Box has no model server and no fallback. Deploy the 'llamacpp' or \
+                            'ollama' catalog preset (and pull a model), or point router_configure at \
+                            a cloud endpoint with your own key; then this endpoint serves either way.",
                 "type": "server_error",
             }
         })),
@@ -70,16 +71,16 @@ pub async fn models(State(state): State<SharedState>, headers: HeaderMap) -> Res
     if !authed(&state, &headers) {
         return unauthorized();
     }
-    let Some(port) = upstream_port(&state.paths) else {
+    let Some(t) = crate::router::resolve(&state.paths, upstream_port(&state.paths)) else {
         return no_upstream();
     };
+    let mut args: Vec<String> = vec!["-sS".into(), "-m".into(), "20".into()];
+    if let Some(auth) = &t.auth {
+        args.extend(["-H".into(), auth.clone()]);
+    }
+    args.push(format!("{}/models", t.base));
     let out = tokio::process::Command::new("curl")
-        .args([
-            "-sS",
-            "-m",
-            "20",
-            &format!("http://127.0.0.1:{port}/v1/models"),
-        ])
+        .args(&args)
         .output()
         .await;
     match out {
@@ -103,10 +104,10 @@ pub async fn chat_completions(
     if !authed(&state, &headers) {
         return unauthorized();
     }
-    let Some(port) = upstream_port(&state.paths) else {
+    let Some(t) = crate::router::resolve(&state.paths, upstream_port(&state.paths)) else {
         return no_upstream();
     };
-    let url = format!("http://127.0.0.1:{port}/v1/chat/completions");
+    let url = format!("{}/chat/completions", t.base);
     let wants_stream = serde_json::from_str::<serde_json::Value>(&body)
         .ok()
         .and_then(|v| v.get("stream").and_then(serde_json::Value::as_bool))
@@ -115,17 +116,21 @@ pub async fn chat_completions(
     if wants_stream {
         // -N: no buffering; the child's stdout becomes the response body, so
         // tokens reach the client as the model produces them.
+        let mut args: Vec<String> = vec![
+            "-sN".into(),
+            "-X".into(),
+            "POST".into(),
+            "-H".into(),
+            "Content-Type: application/json".into(),
+        ];
+        if let Some(auth) = &t.auth {
+            args.extend(["-H".into(), auth.clone()]);
+        }
+        args.extend(["-d".into(), body.clone(), url.clone()]);
+        // Streaming counts the request but not its tokens; honesty over guesswork.
+        crate::router::record(&state.paths, t.local, 0);
         let mut child = match tokio::process::Command::new("curl")
-            .args([
-                "-sN",
-                "-X",
-                "POST",
-                "-H",
-                "Content-Type: application/json",
-                "-d",
-                &body,
-                &url,
-            ])
+            .args(&args)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
             .spawn()
@@ -148,21 +153,27 @@ pub async fn chat_completions(
             .into_response();
     }
 
+    let mut args: Vec<String> = vec![
+        "-sS".into(),
+        "-m".into(),
+        "600".into(),
+        "-X".into(),
+        "POST".into(),
+        "-H".into(),
+        "Content-Type: application/json".into(),
+    ];
+    if let Some(auth) = &t.auth {
+        args.extend(["-H".into(), auth.clone()]);
+    }
+    args.extend([
+        "-d".into(),
+        body.clone(),
+        "-w".into(),
+        "\n%{http_code}".into(),
+        url,
+    ]);
     let out = tokio::process::Command::new("curl")
-        .args([
-            "-sS",
-            "-m",
-            "600",
-            "-X",
-            "POST",
-            "-H",
-            "Content-Type: application/json",
-            "-d",
-            &body,
-            "-w",
-            "\n%{http_code}",
-            &url,
-        ])
+        .args(&args)
         .output()
         .await;
     match out {
@@ -171,6 +182,15 @@ pub async fn chat_completions(
             let (payload, status) = text.rsplit_once('\n').unwrap_or((text.as_ref(), "502"));
             let code = StatusCode::from_u16(status.trim().parse().unwrap_or(502))
                 .unwrap_or(StatusCode::BAD_GATEWAY);
+            let tokens = serde_json::from_str::<serde_json::Value>(payload.trim())
+                .ok()
+                .and_then(|v| {
+                    v.get("usage")
+                        .and_then(|u| u.get("completion_tokens"))
+                        .and_then(serde_json::Value::as_u64)
+                })
+                .unwrap_or(0);
+            crate::router::record(&state.paths, t.local, tokens);
             (
                 code,
                 [("content-type", "application/json")],
