@@ -62,6 +62,26 @@
     return true;
   }
 
+  // Copy each list-table's header text onto its cells (data-l), so the
+  // phone-width stylesheet can stack rows into labeled cards. Idempotent;
+  // key-value tables (no thead) are left alone.
+  function labelTables(root) {
+    (root || document).querySelectorAll("table").forEach(function (t) {
+      var ths = t.querySelectorAll("thead th");
+      if (!ths.length) return;
+      var labels = [];
+      ths.forEach(function (th) { labels.push(th.textContent.trim()); });
+      t.querySelectorAll("tbody tr").forEach(function (tr) {
+        var i = 0;
+        tr.querySelectorAll(":scope > td").forEach(function (td) {
+          var l = labels[i++];
+          if (l && !td.hasAttribute("data-l")) td.setAttribute("data-l", l);
+        });
+      });
+    });
+  }
+  labelTables();
+
   function swap(html, url) {
     var doc = new DOMParser().parseFromString(html, "text/html");
     var fresh = doc.querySelector("main");
@@ -77,6 +97,7 @@
     // Move focus so a screen reader announces the new view.
     var h = main.querySelector("h2");
     if (h) { h.setAttribute("tabindex", "-1"); h.focus({ preventScroll: true }); }
+    labelTables(main);
     watchJob(); // the new view may itself be a running job
     watchLive();
   }

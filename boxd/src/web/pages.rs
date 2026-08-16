@@ -68,7 +68,7 @@ fn layout(title: &str, flash: &Flash, body: Markup) -> Html<String> {
         html lang="en" {
             head {
                 meta charset="utf-8";
-                meta name="viewport" content="width=device-width, initial-scale=1";
+                meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover";
                 title { (title) " · The Box Console" }
                 style { (PreEscaped(CSS)) }
             }
@@ -2100,7 +2100,7 @@ pub async fn pair(
         html lang="en" {
             head {
                 meta charset="utf-8";
-                meta name="viewport" content="width=device-width, initial-scale=1";
+                meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover";
                 title { "Pair · The Box Console" }
                 style { (PreEscaped(CSS)) }
             }
