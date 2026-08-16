@@ -116,8 +116,8 @@
       #                               (the spare-RTX-PC inference Box; generic
       #                               appliance only — Jetson arrives as a board)
       boxSystem = { system, board ? null, gpu ? null, modules ? [ ] }:
-        assert nixpkgs.lib.assertMsg (gpu == null || gpu == "nvidia")
-          "boxSystem: unsupported gpu ${toString gpu} (nvidia)";
+        assert nixpkgs.lib.assertMsg (gpu == null || gpu == "nvidia" || gpu == "amd")
+          "boxSystem: unsupported gpu ${toString gpu} (nvidia|amd)";
         assert nixpkgs.lib.assertMsg (gpu == null || board == null)
           "boxSystem: gpu is the generic-appliance axis; a board brings its own GPU story";
         if board == null then
@@ -127,6 +127,7 @@
               self.nixosModules.platform
               self.nixosModules.hardwareAppliance
             ] ++ nixpkgs.lib.optional (gpu == "nvidia") ./nix/gpu-nvidia.nix
+            ++ nixpkgs.lib.optional (gpu == "amd") ./nix/gpu-amd.nix
             ++ modules;
           }
         else
@@ -483,6 +484,29 @@
       # instantiates to a system derivation — driver wired, CDI toolkit on,
       # unfree allowed for exactly the driver. CI has no GPU, so evaluation is
       # the check; the first spare-RTX machine is the live verification.
+      # Same proof for the unified-memory (Strix Halo) layer: gpu = "amd"
+      # evaluates with the GTT/TTM boot params that let the iGPU take the
+      # memory — the exact settings the store's tokens-per-second guarantee
+      # stands on. All free software; the check is that nothing regresses it.
+      checks.x86_64-linux.gpu-amd-eval =
+        let
+          sys = boxSystem {
+            system = "x86_64-linux";
+            gpu = "amd";
+            modules = [{ networking.hostName = "amdbox"; }];
+          };
+          ok =
+            assert nixpkgs.lib.assertMsg
+              (builtins.elem "ttm.pages_limit=32505856" sys.config.boot.kernelParams)
+              "gpu-amd-eval: the unified-memory boot params must be present";
+            assert nixpkgs.lib.assertMsg
+              (sys.config.services.the-box.gpuContainerDevices == [ "/dev/dri:/dev/dri" ])
+              "gpu-amd-eval: gpu containers must receive /dev/dri, not CDI";
+            builtins.unsafeDiscardStringContext sys.config.system.build.toplevel.drvPath;
+        in
+        nixpkgs.legacyPackages.x86_64-linux.runCommand "gpu-amd-eval-ok"
+          { inherit ok; } "echo $ok > $out";
+
       checks.x86_64-linux.gpu-eval =
         let
           sys = boxSystem {

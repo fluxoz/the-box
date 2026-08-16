@@ -22,7 +22,9 @@ fn upstream_port(paths: &crate::paths::Paths) -> Option<u16> {
     let config = crate::config::BoxConfig::load(paths).ok()?;
     config.services.iter().find_map(|s| {
         let image = s.params.get("image").and_then(|v| v.as_str())?;
-        (s.template == "container" && image.contains("ollama")).then_some(s.port?)
+        // "llama" matches both ollama and llama.cpp images; either one
+        // speaks the OpenAI wire format on its /v1.
+        (s.template == "container" && image.contains("llama")).then_some(s.port?)
     })
 }
 
@@ -46,7 +48,7 @@ fn no_upstream() -> Response {
         StatusCode::SERVICE_UNAVAILABLE,
         axum::Json(json!({
             "error": {
-                "message": "this Box has no model server yet. Deploy the 'ollama' catalog \
+                "message": "this Box has no model server yet. Deploy the 'llamacpp' or 'ollama' catalog \
                             preset (and pull a model), then this endpoint serves it.",
                 "type": "server_error",
             }

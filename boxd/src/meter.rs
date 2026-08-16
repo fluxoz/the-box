@@ -84,7 +84,7 @@ pub fn cloud_equivalent(config: &BoxConfig, gpu: Option<&str>) -> Vec<CloudLine>
                             5.0,
                             "~100 GB of managed object storage",
                         )
-                    } else if image.contains("ollama") || image.contains("open-webui") {
+                    } else if image.contains("llama") || image.contains("open-webui") {
                         (
                             format!("hosted AI inference ({})", s.name),
                             20.0,
