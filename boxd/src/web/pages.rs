@@ -2184,6 +2184,10 @@ pub async fn pair(
                     }
                 }
                 footer { "THE BOX CONSOLE · pairing" }
+                // The console's script, on the one page that is not built by
+                // layout(): the sign-in button's WebAuthn handlers live there,
+                // and without it the button is furniture.
+                script { (PreEscaped(JS)) }
             }
         }
     };
