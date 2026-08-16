@@ -136,6 +136,10 @@ pub struct Meter {
     pub electricity_monthly_usd: f64,
     pub cloud_lines: Vec<CloudLine>,
     pub cloud_monthly_usd: f64,
+    /// Measured, not estimated: what the router served locally instead of
+    /// buying from a metered API (0 until the /v1 endpoint sees traffic).
+    pub tokens_served_locally: u64,
+    pub tokens_saved_usd: f64,
     pub note: &'static str,
 }
 
@@ -151,12 +155,15 @@ pub fn read(paths: &Paths, config: &BoxConfig, rate: Option<f64>) -> Meter {
     let electricity = power.watts * 24.0 * 30.0 / 1000.0 * rate;
     let cloud_lines = cloud_equivalent(config, gpu.as_deref());
     let cloud_total: f64 = cloud_lines.iter().map(|l| l.monthly_usd).sum();
+    let rstats = crate::router::stats(paths);
     Meter {
         power,
         rate_per_kwh: rate,
         electricity_monthly_usd: (electricity * 100.0).round() / 100.0,
         cloud_lines,
         cloud_monthly_usd: cloud_total,
+        tokens_served_locally: rstats.local_tokens,
+        tokens_saved_usd: (rstats.local_tokens as f64 / 1_000_000.0 * 3.0 * 100.0).round() / 100.0,
         note: "Estimates on both sides, and they say what they assume. \
                The point is the ratio, not the pennies.",
     }

@@ -91,3 +91,40 @@ ensure "order-minisforum-s1max" "Inference Box order: Minisforum MS-S1 MAX (128G
 ensure "order-gmktec-evo-64"    "Inference Box order: GMKtec EVO-X2 (64GB)"         29900 "$ORDER_MSG"
 ensure "order-gmktec-g2-starter" "Starter Box order: GMKtec G2 Plus (N150)"           9900 "$ORDER_MSG"
 ensure "kit-usb"                "The Installer Kit"                                  9900 "$KIT_MSG"
+
+# Box Cloud: a $9/mo subscription with 30 free days, so billing never starts
+# before the service is provisioned and connected. Same idempotency rules.
+CLOUD_MSG="Subscribed. Your first 30 days are free; we email connection instructions for your Box within a few days, and billing only begins after the trial. Cancel any time from the receipt email."
+ensure_sub() { # sku name amount_cents message
+  local sku="$1" name="$2" amount="$3" msg="$4"
+  local product
+  product=$(auth -G "$API/products/search" --data-urlencode "query=metadata['sku']:'$sku'" \
+    | jqpy "print(d['data'][0]['id'] if d['data'] else '')")
+  if [ -z "$product" ]; then
+    product=$(auth "$API/products" -d "name=$name" -d "metadata[sku]=$sku" | jqpy "print(d['id'])")
+    echo "created product $product ($sku)" >&2
+  fi
+  local price
+  price=$(auth -G "$API/products/$product" | jqpy "print(d.get('default_price') or '')")
+  if [ -z "$price" ]; then
+    price=$(auth "$API/prices" -d "product=$product" -d "unit_amount=$amount" -d "currency=usd" \
+      -d "recurring[interval]=month" | jqpy "print(d['id'])")
+    auth "$API/products/$product" -d "default_price=$price" >/dev/null
+    echo "created monthly price $price ($sku)" >&2
+  fi
+  local url
+  url=$(auth -G "$API/products/$product" | jqpy "print(d['metadata'].get('payment_link_url') or '')")
+  if [ -z "$url" ]; then
+    url=$(auth "$API/payment_links" \
+      -d "line_items[0][price]=$price" -d "line_items[0][quantity]=1" \
+      -d "subscription_data[trial_period_days]=30" \
+      -d "after_completion[type]=hosted_confirmation" \
+      --data-urlencode "after_completion[hosted_confirmation][custom_message]=$msg" \
+      -d "metadata[sku]=$sku" \
+      | jqpy "print(d['url'])")
+    auth "$API/products/$product" -d "metadata[sku]=$sku" -d "metadata[payment_link_url]=$url" >/dev/null
+    echo "created payment link ($sku)" >&2
+  fi
+  echo "$sku $url"
+}
+ensure_sub "cloud-monthly" "Box Cloud" 900 "$CLOUD_MSG"
