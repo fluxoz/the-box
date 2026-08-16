@@ -17,7 +17,7 @@ API="https://api.stripe.com/v1"
 auth() { curl -fsS -u "$STRIPE_KEY:" "$@"; }
 jqpy() { python3 -c "import json,sys; d=json.load(sys.stdin); $1"; }
 
-ORDER_MSG="Order received. Within one business day we email your hardware quote with the distributor's invoice attached. Approve it and the machine ships direct to you; or take the full refund, no questions. The \$499 covers order handling, the setup stick, and a year of Box Cloud."
+ORDER_MSG="Order received. Within one business day we email your hardware quote with the distributor's invoice attached. Approve it and we order your machine to our bench: Box OS installed, your unit benchmarked against its rating, access keys loaded on the USB in the box. Then it ships to you. Full refund any time before it ships. The fee covers the bench work, a year of Box Cloud, and support until it works."
 KIT_MSG="Order received. The setup stick ships within a few days; a year of Box Cloud is included. Instructions ride along in the envelope."
 
 ensure() { # sku name amount_cents message
@@ -31,17 +31,33 @@ ensure() { # sku name amount_cents message
     echo "created product $product ($sku)" >&2
   fi
 
-  local price
+  local price cur_amount
   price=$(auth -G "$API/products/$product" | jqpy "print(d.get('default_price') or '')")
-  if [ -z "$price" ]; then
+  cur_amount=""
+  [ -n "$price" ] && cur_amount=$(auth -G "$API/prices/$price" | jqpy "print(d['unit_amount'])")
+  if [ "$cur_amount" != "$amount" ]; then
+    # Price changed (or never existed): mint a new price, retire the old
+    # payment link so nobody can pay yesterday's number.
     price=$(auth "$API/prices" -d "product=$product" -d "unit_amount=$amount" -d "currency=usd" \
       | jqpy "print(d['id'])")
     auth "$API/products/$product" -d "default_price=$price" >/dev/null
-    echo "created price $price ($sku)" >&2
+    local old_link
+    old_link=$(auth -G "$API/products/$product" | jqpy "print(d['metadata'].get('payment_link_id') or '')")
+    [ -n "$old_link" ] && auth "$API/payment_links/$old_link" -d "active=false" >/dev/null
+    auth "$API/products/$product" -d "metadata[sku]=$sku" -d "metadata[payment_link_url]=" \
+      -d "metadata[payment_link_id]=" >/dev/null
+    echo "priced $sku at $amount" >&2
   fi
 
   local url
   url=$(auth -G "$API/products/$product" | jqpy "print(d['metadata'].get('payment_link_url') or '')")
+  if [ -n "$url" ] && [ -n "${FORCE_RELINK:-}" ]; then
+    # Recreate links in place (e.g. the confirmation message changed).
+    local old_link
+    old_link=$(auth -G "$API/products/$product" | jqpy "print(d['metadata'].get('payment_link_id') or '')")
+    [ -n "$old_link" ] && auth "$API/payment_links/$old_link" -d "active=false" >/dev/null
+    url=""
+  fi
   if [ -z "$url" ]; then
     url=$(auth "$API/payment_links" \
       -d "line_items[0][price]=$price" -d "line_items[0][quantity]=1" \
@@ -56,15 +72,22 @@ ensure() { # sku name amount_cents message
       --data-urlencode "after_completion[hosted_confirmation][custom_message]=$msg" \
       -d "metadata[sku]=$sku" \
       | jqpy "print(d['url'])")
-    auth "$API/products/$product" -d "metadata[sku]=$sku" -d "metadata[payment_link_url]=$url" >/dev/null
+    local link_id
+    link_id=$(auth -G "$API/payment_links" -d "limit=100" | jqpy "print(next((l['id'] for l in d['data'] if l.get('url')=='$url'),''))")
+    auth "$API/products/$product" -d "metadata[sku]=$sku" -d "metadata[payment_link_url]=$url" \
+      -d "metadata[payment_link_id]=$link_id" >/dev/null
     echo "created payment link ($sku)" >&2
   fi
 
   echo "$sku $url"
 }
 
-ensure "order-hp-z2-128"        "Inference Box order: HP Z2 Mini G1a (128GB)"      49900 "$ORDER_MSG"
-ensure "order-gmktec-evo-128"   "Inference Box order: GMKtec EVO-X2 (128GB)"       49900 "$ORDER_MSG"
-ensure "order-minisforum-s1max" "Inference Box order: Minisforum MS-S1 MAX (128GB)" 49900 "$ORDER_MSG"
-ensure "order-gmktec-evo-64"    "Inference Box order: GMKtec EVO-X2 (64GB)"        49900 "$ORDER_MSG"
-ensure "kit-usb"                "The Installer Kit"                                 9900 "$KIT_MSG"
+# The fee is a flat 15 percent of the hardware, charged at order time from
+# the current price band and refundable until ship. Re-run after any band
+# move; changed amounts retire the old link and mint a fresh one.
+ensure "order-hp-z2-128"        "Inference Box order: HP Z2 Mini G1a (128GB)"       35900 "$ORDER_MSG"
+ensure "order-gmktec-evo-128"   "Inference Box order: GMKtec EVO-X2 (128GB)"        48900 "$ORDER_MSG"
+ensure "order-minisforum-s1max" "Inference Box order: Minisforum MS-S1 MAX (128GB)" 55900 "$ORDER_MSG"
+ensure "order-gmktec-evo-64"    "Inference Box order: GMKtec EVO-X2 (64GB)"         29900 "$ORDER_MSG"
+ensure "order-gmktec-g2-starter" "Starter Box order: GMKtec G2 Plus (N150)"           9900 "$ORDER_MSG"
+ensure "kit-usb"                "The Installer Kit"                                  9900 "$KIT_MSG"
