@@ -820,20 +820,47 @@ footer.foot b { color: var(--dim); }
     const btn = $("#key-gen"); btn.disabled = true; btn.querySelector(".lbl").textContent = "Generating…";
     try {
       const { pub, priv } = await generateKeypair();
+      // The public half goes straight into the Box's authorized keys, which is
+      // what makes the generated pair actually useful.
       addKey(pub, "generated");
       const wrap = $("#privout");
+      // Both halves, both saveable. A keypair where you only get one part is
+      // not a keypair: you need the private key to log in, and the public key
+      // to put in ~/.ssh, to recognise later, or to authorize on a second Box.
       wrap.innerHTML = `
         <div class="privkey">
-          <div class="warn"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2 1.5 13.5h13z"/><path d="M8 6.2v3.3"/><circle cx="8" cy="11.5" r=".6" fill="currentColor" stroke="none"/></svg> Private key — save this now, it is shown once and never leaves this browser</div>
-          <textarea class="mono" readonly spellcheck="false"></textarea>
+          <div class="warn"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2 1.5 13.5h13z"/><path d="M8 6.2v3.3"/><circle cx="8" cy="11.5" r=".6" fill="currentColor" stroke="none"/></svg> Private key — save it now. It is shown once, and it never leaves this browser.</div>
+          <textarea class="mono" id="priv-text" readonly spellcheck="false"></textarea>
           <div class="deploybar" style="margin-top:9px">
-            <button type="button" class="btn small" id="dl-priv"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v8M4.5 6.5 8 10l3.5-3.5M2.5 13.5h11"/></svg> Save id_ed25519</button>
-            <button type="button" class="btn small ghost" id="cp-priv">Copy</button>
+            <button type="button" class="btn small" id="dl-both"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v8M4.5 6.5 8 10l3.5-3.5M2.5 13.5h11"/></svg> Save both keys</button>
+            <button type="button" class="btn small ghost" id="dl-priv">id_ed25519</button>
+            <button type="button" class="btn small ghost" id="cp-priv">Copy private</button>
           </div>
+          <div class="lbl" style="margin-top:12px">Public key — already added to this Box below</div>
+          <textarea class="mono" id="pub-text" readonly spellcheck="false" style="min-height:3.2em"></textarea>
+          <div class="deploybar" style="margin-top:9px">
+            <button type="button" class="btn small ghost" id="dl-pub">id_ed25519.pub</button>
+            <button type="button" class="btn small ghost" id="cp-pub">Copy public</button>
+          </div>
+          <div class="note" style="margin-top:9px">On your laptop: save both into <code>~/.ssh/</code> and
+          <code>chmod 600 ~/.ssh/id_ed25519</code>, then you can <code>ssh</code> to the Box with them.</div>
         </div>`;
-      wrap.querySelector("textarea").value = priv;
-      $("#dl-priv").addEventListener("click", () => download("id_ed25519", priv, "text/plain"));
+      $("#priv-text").value = priv;
+      $("#pub-text").value = pub;
+      // octet-stream, not text/plain: a browser appends .txt to an
+      // extensionless filename served as text, and ssh wants id_ed25519 exactly.
+      const KEY_MIME = "application/octet-stream";
+      $("#dl-priv").addEventListener("click", () => download("id_ed25519", priv, KEY_MIME));
+      $("#dl-pub").addEventListener("click", () => download("id_ed25519.pub", pub + "\n", KEY_MIME));
+      $("#dl-both").addEventListener("click", () => {
+        download("id_ed25519", priv, KEY_MIME);
+        // Two saves in a row: browsers serialise them, but give the first one a
+        // moment or the second download can be dropped.
+        setTimeout(() => download("id_ed25519.pub", pub + "\n", KEY_MIME), 350);
+        toast("Saving both keys");
+      });
       $("#cp-priv").addEventListener("click", () => { navigator.clipboard.writeText(priv); toast("Private key copied"); });
+      $("#cp-pub").addEventListener("click", () => { navigator.clipboard.writeText(pub); toast("Public key copied"); });
       toast("Keypair generated — locally");
     } catch (e) {
       $("#key-err").textContent = "This browser can't generate Ed25519 keys — paste an existing public key instead.";
