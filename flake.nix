@@ -307,17 +307,72 @@
                 (personalizable "thebox-pi${m}" cfg.config.system.build.sdImage))
               boxPis;
 
-          x86_64-linux = {
+          x86_64-linux =
+            let
+              pkgs = nixpkgs.legacyPackages.x86_64-linux;
+              netbootBuild = self.nixosConfigurations.box-installer-netboot.config.system.build;
+              # One standalone GRUB for every delivery of the RAM installer: it
+              # searches every disk for the payload directory's marker file, so
+              # the same binary boots from an NTFS Windows partition or the USB
+              # image's FAT partition (hence both filesystems' modules). The
+              # kernel params (init=/nix/store/.../init, root=fstab, …) are
+              # derived at build time from the netboot iPXE script so the
+              # closure-finder always gets exactly what the image expects; each
+              # delivery adds only its own extra params.
+              grubEfiWith = extraParams:
+                let
+                  grubCfg = pkgs.runCommand "box-grub-embedded.cfg" { } ''
+                    params=$(grep '^kernel' ${netbootBuild.netbootIpxeScript}/netboot.ipxe \
+                      | sed -e 's/^kernel bzImage //' \
+                            -e 's/ initrd=initrd//' \
+                            -e 's/ *''${cmdline}//')
+                    cat > $out <<EOF
+                    insmod part_gpt
+                    insmod part_msdos
+                    insmod ntfs
+                    insmod fat
+                    insmod search_fs_file
+                    set timeout=0
+                    search --no-floppy --file /box-installer/box-marker --set root
+                    linux /box-installer/bzImage $params ${extraParams}
+                    initrd /box-installer/initrd
+                    boot
+                    EOF
+                  '';
+                  # Explicitly embed every module the config needs — the default
+                  # standalone set does not reliably include part_gpt/ntfs.
+                  grubModules = [
+                    "part_gpt"
+                    "part_msdos"
+                    "ntfs"
+                    "ntfscomp"
+                    "fat"
+                    "search"
+                    "search_fs_file"
+                    "linux"
+                    "normal"
+                    "echo"
+                    "test"
+                    "configfile"
+                    "boot"
+                    "all_video"
+                  ];
+                in
+                pkgs.runCommand "box-grub-efi"
+                  { nativeBuildInputs = [ pkgs.grub2_efi ]; } ''
+                  mkdir -p $out
+                  grub-mkstandalone -O x86_64-efi -o $out/grubx64.efi \
+                    --modules="${nixpkgs.lib.concatStringsSep " " grubModules}" \
+                    "boot/grub/grub.cfg=${grubCfg}"
+                '';
+            in
+            {
             installer-iso =
               self.nixosConfigurations.box-installer-iso.config.system.build.isoImage;
             installer-netboot =
-              let
-                build = self.nixosConfigurations.box-installer-netboot.config.system.build;
-                pkgs = nixpkgs.legacyPackages.x86_64-linux;
-              in
               pkgs.symlinkJoin {
                 name = "box-installer-netboot";
-                paths = [ build.kernel build.netbootRamdisk build.netbootIpxeScript ];
+                paths = [ netbootBuild.kernel netbootBuild.netbootRamdisk netbootBuild.netbootIpxeScript ];
               };
 
             # Payload for the staged-from-Windows hot install: GRUB reads the
@@ -325,64 +380,56 @@
             # too small for the initrd), boots the RAM installer with
             # partition scanning enabled, and the installer takes it from
             # there. stage.ps1 is the user-facing entry point.
-            installer-windows =
-              let
-                build = self.nixosConfigurations.box-installer-netboot.config.system.build;
-                pkgs = nixpkgs.legacyPackages.x86_64-linux;
-                # The payload lives on the NTFS Windows partition; GRUB must
-                # load GPT + NTFS drivers before it can enumerate and read it.
-                # The kernel params (init=/nix/store/.../init, root=fstab, …)
-                # are derived at build time from the netboot iPXE script so the
-                # closure-finder always gets exactly what the image expects;
-                # only box.install-scan=1 is added on top.
-                grubCfg = pkgs.runCommand "box-grub-embedded.cfg" { } ''
-                  params=$(grep '^kernel' ${build.netbootIpxeScript}/netboot.ipxe \
-                    | sed -e 's/^kernel bzImage //' \
-                          -e 's/ initrd=initrd//' \
-                          -e 's/ *''${cmdline}//')
-                  cat > $out <<EOF
-                  insmod part_gpt
-                  insmod part_msdos
-                  insmod ntfs
-                  insmod fat
-                  insmod search_fs_file
-                  set timeout=0
-                  search --no-floppy --file /box-installer/box-marker --set root
-                  linux /box-installer/bzImage $params box.install-scan=1
-                  initrd /box-installer/initrd
-                  boot
-                  EOF
-                '';
-                # Explicitly embed every module the config needs — the default
-                # standalone set does not reliably include part_gpt/ntfs.
-                grubModules = [
-                  "part_gpt"
-                  "part_msdos"
-                  "ntfs"
-                  "ntfscomp"
-                  "fat"
-                  "search"
-                  "search_fs_file"
-                  "linux"
-                  "normal"
-                  "echo"
-                  "test"
-                  "configfile"
-                  "boot"
-                  "all_video"
-                ];
-              in
-              pkgs.runCommand "box-installer-windows"
-                { nativeBuildInputs = [ pkgs.grub2_efi ]; } ''
-                mkdir -p $out
-                grub-mkstandalone -O x86_64-efi -o $out/grubx64.efi \
-                  --modules="${nixpkgs.lib.concatStringsSep " " grubModules}" \
-                  "boot/grub/grub.cfg=${grubCfg}"
-                cp ${build.kernel}/bzImage $out/bzImage
-                cp ${build.netbootRamdisk}/initrd $out/initrd
-                touch $out/box-marker
-                cp ${./installers/windows/stage.ps1} $out/stage.ps1
-              '';
+            installer-windows = pkgs.runCommand "box-installer-windows" { } ''
+              mkdir -p $out
+              cp ${grubEfiWith "box.install-scan=1"}/grubx64.efi $out/grubx64.efi
+              cp ${netbootBuild.kernel}/bzImage $out/bzImage
+              cp ${netbootBuild.netbootRamdisk}/initrd $out/initrd
+              touch $out/box-marker
+              cp ${./installers/windows/stage.ps1} $out/stage.ps1
+            '';
+
+            # The flashable x86 image (thebox-x86): a GPT disk image whose one
+            # FAT32 partition — labeled BOX-INSTALL — carries that same GRUB
+            # and RAM installer. Write it to a USB stick, boot the machine from
+            # it, and the installer reads its orders from box-claim.txt on the
+            # same partition, written there as the image downloaded (the same
+            # stored-deflate mechanism as the Pi images; the packer in
+            # scripts/personalizable-image.py adds the placeholder). An
+            # unpersonalized copy carries only the placeholder, so it falls
+            # back to the on-box setup wizard and touches nothing by itself.
+            installer-usb = pkgs.runCommand "box-installer-usb"
+              {
+                nativeBuildInputs = [ pkgs.dosfstools pkgs.mtools pkgs.util-linux ];
+              } ''
+              mkdir -p work/box-installer work/EFI/BOOT
+              cp ${netbootBuild.kernel}/bzImage        work/box-installer/bzImage
+              cp ${netbootBuild.netbootRamdisk}/initrd work/box-installer/initrd
+              touch work/box-installer/box-marker
+              cp ${grubEfiWith ""}/grubx64.efi work/EFI/BOOT/BOOTX64.EFI
+
+              # ESP sized to the payload plus FAT overhead and the claim file
+              # the packer adds later, in whole MiB.
+              payload=$(du -sb work | cut -f1)
+              esp_mib=$(( payload / 1048576 + 65 ))
+
+              # Built as a bare partition image (a sandboxed build has no loop
+              # devices), then placed at the 1 MiB alignment boundary. The
+              # label is the one the installer already mounts orders from.
+              truncate -s "$esp_mib"M esp.img
+              mkfs.vfat -F 32 -n BOX-INSTALL esp.img
+              mcopy -s -i esp.img work/EFI work/box-installer ::/
+
+              mkdir -p $out
+              img=$out/thebox-x86.img
+              truncate -s $(( (esp_mib + 2) * 1048576 )) "$img"
+              sfdisk --quiet "$img" <<EOF
+              label: gpt
+              start=2048, size=$(( esp_mib * 2048 )), type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, name=ESP
+              EOF
+              dd if=esp.img of="$img" bs=1M seek=1 conv=notrunc status=none
+              sfdisk --verify "$img"
+            '';
 
             # The publishable thebox.build bundle: netboot artifacts, the curl|sh
             # installer with real checksums stamped in, the Windows one-liner,

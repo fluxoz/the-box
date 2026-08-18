@@ -1109,12 +1109,13 @@ footer.foot b { color: var(--dim); }
       <ol>
         <li>Pick your machine and download the image. Your orders are written into it as it downloads.</li>
         <li>Write it to the SD card or USB stick with <b>Raspberry Pi Imager</b>, <b>Etcher</b>, or <code>dd</code>. Skip Imager's customisation screen; everything is already in the image.</li>
-        <li>Put it in the machine and power on. No screen, no keyboard, no SSH — the install runs unattended.</li>
+        <li>Put it in the machine and power on (if a PC boots its old OS instead, pick the stick in the boot menu). No screen, no keyboard, no SSH — the install runs unattended.</li>
         <li>A few minutes later it is at <code>&lt;name&gt;.local</code>. Pair it with the code above.</li>
       </ol>
       <div class="deploybar" style="margin:9px 13px 13px">
         <select id="pi-model" class="mono" aria-label="Machine">
-          <option value="thebox-pi5" selected>Raspberry Pi 5</option>
+          <option value="thebox-x86" selected>PC · laptop · mini-PC (x86-64 UEFI)</option>
+          <option value="thebox-pi5">Raspberry Pi 5</option>
           <option value="thebox-pi4">Raspberry Pi 4</option>
           <option value="thebox-pi3">Raspberry Pi 3</option>
         </select>

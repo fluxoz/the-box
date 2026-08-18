@@ -222,10 +222,14 @@ def main() -> int:
                   "the Windows command carries the same rider", win_cmd[:70])
             validate_with_installer(orders, "the landing page's orders")
 
-        # The other door: the image download exists and is armed.
+        # The other door: the image download exists and is armed, and it is not
+        # a Pi-only door — any supported machine flashes.
         check(page.query_selector("#pi-go") is not None, "the flash door offers an image download")
         check(page.eval_on_selector("#pi-go", "b => !b.disabled"),
               "the image download is enabled once the form is live")
+        models = page.eval_on_selector_all("#pi-model option", "els => els.map(e => e.value)")
+        check("thebox-x86" in models and "thebox-pi5" in models,
+              "the flash door offers x86 and Pi images", ",".join(models))
 
         # --- the Configurator, which is part of this site ------------------
         page.goto(f"{base}/configurator/", wait_until="networkidle")
