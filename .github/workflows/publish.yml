@@ -420,7 +420,6 @@ jobs:
           sys=$(nix eval --raw \
             ".#nixosConfigurations.box-os-pi${{ matrix.model }}.config.system.build.toplevel")
           PIN_NAME=box-os-pi${{ matrix.model }} PIN_KEEP=3 \
-
             .github/scripts/push-closure.sh "$sys" https://nixos-raspberrypi.cachix.org
 
       - name: Attach the pi${{ matrix.model }} image to the Release
