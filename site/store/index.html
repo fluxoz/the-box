@@ -510,12 +510,12 @@
 </main>
 <script>
 // Live prices. A nightly job asks each maker's own store what the hardware
-// costs and publishes the result (pricing branch, like the landing page's
-// receipts); this fills the totals in so the page can't quietly go stale.
+// costs, commits the result to main, and the redeployed site serves it here
+// same-origin; this fills the totals in so the page can't quietly go stale.
 // The baked numbers remain as the fallback, and anything the check couldn't
 // reach keeps its static "last seen" copy.
 (function () {
-  fetch("https://raw.githubusercontent.com/fluxoz/the-box/pricing/pricing/latest.json")
+  fetch("/pricing/latest.json")
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (d) {
       if (!d || (Date.now() / 1000 - d.generated_at) > 72 * 3600) return;

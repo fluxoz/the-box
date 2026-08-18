@@ -13,6 +13,12 @@ name: Tests
 on:
   push:
     branches: ["main", "release"]
+    # The nightly data commits (checked prices, commissioning receipt) change
+    # no code — publish redeploys the site with them, but a 15-minute test run
+    # per data drop is pure heat.
+    paths-ignore:
+      - "site/pricing/latest.json"
+      - "site/receipts/latest.json"
   pull_request:
   workflow_dispatch: {}
 

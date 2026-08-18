@@ -1,6 +1,6 @@
 # Nightly commissioning: a blank VM takes the LIVE thebox.build one-liner and
-# becomes a serving Box, timed stage by stage. The receipt it emits is pushed
-# to the `receipts` branch, which the landing page reads client-side — so
+# becomes a serving Box, timed stage by stage. The receipt it emits is
+# committed to main (site/receipts/latest.json), which redeploys the site, so
 # "last verified <tonight>" on thebox.build is a fact, not copy. A red run
 # here means the funnel is broken for real people, which is exactly what a
 # nightly should catch.
@@ -12,7 +12,7 @@ on:
   workflow_dispatch: {}
 
 permissions:
-  contents: write # push the receipt branch
+  contents: write # commit the receipt to main
 
 concurrency:
   group: commissioning
@@ -47,14 +47,22 @@ jobs:
           if-no-files-found: ignore
       - name: Publish the receipt
         if: always()
+        # Committed to main, no side branch: the commit redeploys the site,
+        # which serves the receipt same-origin at /receipts/latest.json for
+        # the landing page's "last verified" line.
         run: |
           [ -f /tmp/commissioning/receipt.json ] || exit 0
+          set -euo pipefail
           git config user.name "the-box-nightly"
           git config user.email "nightly@thebox.build"
-          git checkout --orphan receipts-tmp
-          git rm -rf --quiet . || true
-          mkdir -p receipts
-          cp /tmp/commissioning/receipt.json receipts/latest.json
-          git add receipts/latest.json
+          git fetch origin main
+          git checkout -B nightly-receipt origin/main
+          cp /tmp/commissioning/receipt.json site/receipts/latest.json
+          git add site/receipts/latest.json
           git commit -m "receipt: $(date -u +%Y-%m-%dT%H:%MZ)"
-          git push -f origin receipts-tmp:receipts
+          # main can move during the 30-minute rehearsal; rebase and retry.
+          for _ in 1 2 3; do
+            git push origin nightly-receipt:main && exit 0
+            git fetch origin main && git rebase origin/main
+          done
+          git push origin nightly-receipt:main

@@ -1,0 +1,87 @@
+{
+  "generated_at": 1787086073,
+  "skus": {
+    "hp-z2-128": {
+      "live": false,
+      "in_stock": false,
+      "hardware": 2374,
+      "fee": 356,
+      "total": 2730,
+      "total_str": "from $2,730",
+      "hw_str": "hardware last seen $2,374"
+    },
+    "gmktec-evo-x2-128": {
+      "live": true,
+      "in_stock": true,
+      "hardware": 3650,
+      "fee": 547,
+      "total": 4197,
+      "total_str": "from $4,197",
+      "hw_str": "hardware $3,650 at the maker right now"
+    },
+    "minisforum-s1max": {
+      "live": true,
+      "in_stock": false,
+      "hardware": 2920,
+      "fee": 438,
+      "total": 3358,
+      "total_str": "from $3,358",
+      "hw_str": "hardware listed $2,920 at the maker (out of stock there; we buy through distribution)"
+    },
+    "gmktec-evo-x2-64": {
+      "live": true,
+      "in_stock": true,
+      "hardware": 2000,
+      "fee": 300,
+      "total": 2300,
+      "total_str": "from $2,300",
+      "hw_str": "hardware $2,000 at the maker right now"
+    },
+    "gmktec-g2-starter": {
+      "live": true,
+      "in_stock": false,
+      "hardware": 240,
+      "fee": 99,
+      "total": 339,
+      "total_str": "from $339",
+      "hw_str": "hardware listed $240 at the maker (out of stock there; we buy through distribution)"
+    },
+    "gmktec-evo-x3-128": {
+      "live": true,
+      "in_stock": true,
+      "hardware": 3800,
+      "fee": 570,
+      "total": 4370,
+      "total_str": "from $4,370",
+      "hw_str": "hardware $3,800 at the maker right now"
+    },
+    "beelink-gtr9-128": {
+      "live": true,
+      "in_stock": true,
+      "hardware": 4349,
+      "fee": 652,
+      "total": 5001,
+      "total_str": "from $5,001",
+      "hw_str": "hardware $4,349 at the maker right now"
+    },
+    "minisforum-ai-x1-pro": {
+      "live": true,
+      "in_stock": false,
+      "hardware": 1488,
+      "fee": 223,
+      "total": 1711,
+      "total_str": "from $1,711",
+      "hw_str": "hardware listed $1,488 at the maker (out of stock there; we buy through distribution)"
+    },
+    "beelink-me-mini": {
+      "live": true,
+      "in_stock": true,
+      "hardware": 409,
+      "fee": 99,
+      "total": 508,
+      "total_str": "from $508",
+      "hw_str": "hardware $409 at the maker right now"
+    }
+  },
+  "drift": []
+}

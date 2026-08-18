@@ -29,18 +29,25 @@ jobs:
       - name: Check the makers' prices
         run: python3 scripts/store-prices.py --out /tmp/pricing.json
 
-      - name: Publish to the pricing branch
+      - name: Commit the checked prices to main
+        # No side branch: everything consolidates on main. The commit triggers
+        # the site publish, which serves the fresh numbers same-origin at
+        # /pricing/latest.json.
         run: |
           set -euo pipefail
           git config user.name "the-box-nightly"
           git config user.email "nightly@thebox.build"
-          git checkout --orphan pricing-tmp
-          git rm -rf --quiet . || true
-          mkdir -p pricing
-          cp /tmp/pricing.json pricing/latest.json
-          git add pricing/latest.json
+          git fetch origin main
+          git checkout -B nightly-prices origin/main
+          cp /tmp/pricing.json site/pricing/latest.json
+          git add site/pricing/latest.json
           git commit -m "prices: $(date -u +%Y-%m-%dT%H:%MZ)"
-          git push -f origin pricing-tmp:pricing
+          # main can move while the check runs; rebase and retry rather than fail.
+          for _ in 1 2 3; do
+            git push origin nightly-prices:main && exit 0
+            git fetch origin main && git rebase origin/main
+          done
+          git push origin nightly-prices:main
 
       - name: Surface drift to a human
         run: |

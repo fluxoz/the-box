@@ -502,6 +502,13 @@
                 # The argument: why own the machine at all.
                 mkdir -p $out/why
                 cp ${./site/why/index.html}            $out/why/index.html
+                # Nightly data the pages read same-origin: the commissioning
+                # receipt (landing) and the checked prices (store). CI commits
+                # fresh copies to main, which redeploys this site — no side
+                # branches (everything consolidates on main).
+                mkdir -p $out/receipts $out/pricing
+                cp ${./site/receipts/latest.json}      $out/receipts/latest.json
+                cp ${./site/pricing/latest.json}       $out/pricing/latest.json
 
                 ( cd $out && find . -type f ! -name SHA256SUMS -print0 \
                     | sort -z | xargs -0 sha256sum > SHA256SUMS )
