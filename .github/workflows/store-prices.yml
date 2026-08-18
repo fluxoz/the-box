@@ -1,0 +1,64 @@
+# Nightly: ask each maker's own store what our machines cost right now, and
+# publish the result where the store page reads it (the `pricing` branch, the
+# same pattern as the landing page's commissioning receipts). The store's
+# totals are therefore checked against reality every night instead of rotting
+# in static HTML — which they did: the first run of this check found one
+# machine $800 cheaper than the page claimed.
+#
+# Price moves beyond taste get a human: drift findings become a GitHub issue,
+# because the Stripe deposit links can only be re-minted by a person holding
+# the key (scripts/store-stripe-setup.sh).
+name: Nightly store prices
+
+on:
+  schedule:
+    - cron: "40 8 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write # push the pricing branch
+  issues: write # surface drift
+
+jobs:
+  prices:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check the makers' prices
+        run: python3 scripts/store-prices.py --out /tmp/pricing.json
+
+      - name: Publish to the pricing branch
+        run: |
+          set -euo pipefail
+          git config user.name "the-box-nightly"
+          git config user.email "nightly@thebox.build"
+          git checkout --orphan pricing-tmp
+          git rm -rf --quiet . || true
+          mkdir -p pricing
+          cp /tmp/pricing.json pricing/latest.json
+          git add pricing/latest.json
+          git commit -m "prices: $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push -f origin pricing-tmp:pricing
+
+      - name: Surface drift to a human
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          drift=$(python3 -c "import json; print('\n'.join(json.load(open('/tmp/pricing.json'))['drift']))")
+          [ -n "$drift" ] || { echo "no drift"; exit 0; }
+          title="Store prices drifted"
+          body="The nightly price check found:
+
+\`\`\`
+$drift
+\`\`\`
+
+Update \`baked_hardware\` / \`deposit_cents\` in \`scripts/store-catalog.json\`, re-run \`scripts/store-stripe-setup.sh\` if a deposit changed (it prints the new payment-link URLs for the store page), and update the static numbers in \`site/store/index.html\`."
+          n=$(gh issue list --state open --search "in:title \"$title\"" --json number -q '.[0].number' || true)
+          if [ -n "$n" ]; then
+            gh issue comment "$n" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi

@@ -82,15 +82,23 @@ ensure() { # sku name amount_cents message
   echo "$sku $url"
 }
 
-# The fee is a flat 15 percent of the hardware, charged at order time from
-# the current price band and refundable until ship. Re-run after any band
-# move; changed amounts retire the old link and mint a fresh one.
-ensure "order-hp-z2-128"        "Inference Box order: HP Z2 Mini G1a (128GB)"       35900 "$ORDER_MSG"
-ensure "order-gmktec-evo-128"   "Inference Box order: GMKtec EVO-X2 (128GB)"        48900 "$ORDER_MSG"
-ensure "order-minisforum-s1max" "Inference Box order: Minisforum MS-S1 MAX (128GB)" 55900 "$ORDER_MSG"
-ensure "order-gmktec-evo-64"    "Inference Box order: GMKtec EVO-X2 (64GB)"         29900 "$ORDER_MSG"
-ensure "order-gmktec-g2-starter" "Starter Box order: GMKtec G2 Plus (N150)"           9900 "$ORDER_MSG"
-ensure "kit-usb"                "The Installer Kit"                                  9900 "$KIT_MSG"
+# The fee is a flat 15 percent of the hardware, charged at order time as the
+# deposit and refundable until ship. Amounts come from scripts/store-catalog.json
+# (deposit_cents), the same file the nightly price check reads — one source of
+# truth, so the minted link and the drift check can't disagree. To reprice:
+# update deposit_cents there, re-run this, paste the printed URLs into the
+# store page. Changed amounts retire the old link and mint a fresh one.
+dep() { python3 -c "import json; print(json.load(open('$(dirname "$0")/store-catalog.json'))['skus']['$1']['deposit_cents'])"; }
+ensure "order-hp-z2-128"         "Inference Box order: HP Z2 Mini G1a (128GB)"        "$(dep hp-z2-128)"           "$ORDER_MSG"
+ensure "order-gmktec-evo-128"    "Inference Box order: GMKtec EVO-X2 (128GB)"         "$(dep gmktec-evo-x2-128)"   "$ORDER_MSG"
+ensure "order-minisforum-s1max"  "Inference Box order: Minisforum MS-S1 MAX (128GB)"  "$(dep minisforum-s1max)"    "$ORDER_MSG"
+ensure "order-gmktec-evo-64"     "Inference Box order: GMKtec EVO-X2 (64GB)"          "$(dep gmktec-evo-x2-64)"    "$ORDER_MSG"
+ensure "order-gmktec-g2-starter" "Starter Box order: GMKtec G2 Plus (N150)"           "$(dep gmktec-g2-starter)"   "$ORDER_MSG"
+ensure "order-gmktec-evo-x3-128" "Inference Box order: GMKtec EVO-X3 (128GB)"         "$(dep gmktec-evo-x3-128)"   "$ORDER_MSG"
+ensure "order-beelink-gtr9-128"  "Inference Box order: Beelink GTR9 Pro (128GB)"      "$(dep beelink-gtr9-128)"    "$ORDER_MSG"
+ensure "order-minisforum-x1pro"  "Inference Box order: Minisforum AI X1 Pro (96GB)"   "$(dep minisforum-ai-x1-pro)" "$ORDER_MSG"
+ensure "order-beelink-me-mini"   "Starter Box order: Beelink ME mini (N150)"          "$(dep beelink-me-mini)"     "$ORDER_MSG"
+ensure "kit-usb"                 "The Installer Kit"                                  9900 "$KIT_MSG"
 
 # Box Cloud: a $9/mo subscription with 30 free days, so billing never starts
 # before the service is provisioned and connected. Same idempotency rules.
