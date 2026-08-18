@@ -298,6 +298,43 @@ def main() -> int:
         check("BOX_ORDERS_B64='" in cfg_win_cmd and "install.ps1" in cfg_win_cmd,
               "arming yields a Windows command with orders embedded", cfg_win_cmd[:70])
 
+        # --- the fleet panel: PXE is the network delivery of the same orders -
+        # Not a third door (the vector count above pins that); it must still
+        # emit a working depot command and a boot.ipxe that carry exactly the
+        # orders on screen, or a fleet takes different orders than the one
+        # machine would.
+        page.click("#fleet-toggle")
+        page.wait_for_selector("#pxe-cmd", timeout=10_000)
+        pxe_cmd = page.text_content("#pxe-cmd") or ""
+        check("pxe.sh" in pxe_cmd and "BOX_ORDERS_B64='" in pxe_cmd,
+              "the fleet panel yields a PXE depot command with orders embedded", pxe_cmd[:70])
+        m = re.search(r"BOX_ORDERS_B64='([A-Za-z0-9+/=]+)'", pxe_cmd)
+        fleet_orders = None
+        if m:
+            fleet_orders = json.loads(base64.b64decode(m.group(1)))
+            check(fleet_orders.get("erase_disk") is True,
+                  "the fleet rider consents to erase_disk")
+            check(fleet_orders.get("enrollment_code_hash")
+                  == hashlib.sha256(cfg_code.encode()).hexdigest(),
+                  "the fleet rider carries the hash of the code on screen")
+        with page.expect_download(timeout=15_000) as dl:
+            page.click("#dl-ipxe")
+        d = dl.value
+        check(d.suggested_filename == "boot.ipxe", "the fleet panel saves boot.ipxe",
+              f"got {d.suggested_filename}")
+        with tempfile.TemporaryDirectory() as ipxedir:
+            dest = os.path.join(ipxedir, "boot.ipxe")
+            d.save_as(dest)
+            script = open(dest).read()
+            check(script.startswith("#!ipxe"), "boot.ipxe is an iPXE script", script[:30])
+            check("chain netboot.ipxe" in script,
+                  "boot.ipxe chains the published netboot.ipxe")
+            m = re.search(r"box\.install-b64=([A-Za-z0-9+/=]+)", script)
+            check(m is not None, "boot.ipxe carries the orders on the kernel command line")
+            if m and fleet_orders is not None:
+                check(json.loads(base64.b64decode(m.group(1))) == fleet_orders,
+                      "boot.ipxe and the depot command carry the same orders")
+
         # --- the page did not quietly break --------------------------------
         check(not errors, "no uncaught errors on the page", "; ".join(errors[:2]))
 

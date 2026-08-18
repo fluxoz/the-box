@@ -102,6 +102,21 @@ or set in the Configurator, and you supply it out of band).
 Then wait for the Box to come up (step 3–4 of "Provision") and redeem your code
 for a session token. Layouts: single | mirror | pool.
 
+## A fleet: many machines at once (PXE)
+
+One set of orders provisions any number of machines. Keep `"hostname": "auto"`
+(each machine derives its own stable name) — the one code then redeems on each
+Box separately. On any Linux machine on the same LAN (this one is NOT wiped,
+it becomes the depot; needs dnsmasq + python3, installs dnsmasq itself):
+
+    curl -fsSL https://thebox.build/pxe.sh | sudo BOX_ORDERS_B64=$B64 sh
+
+Then network-boot each target machine (PXE in its boot menu). Each one is
+ERASED, installs unattended, and appears on mDNS as box-XXXXXX; discover with
+`avahi-browse -rpt _thebox._tcp`, then redeem the code per Box as above.
+Answers only netboot requests (proxy DHCP; the LAN's DHCP keeps assigning
+addresses). Ctrl-C stops the depot. Docs: /docs/fleet.html#pxe
+
 ## Manage a Box: configure, deploy, maintain
 
 Every Box runs an MCP server (JSON-RPC 2.0 over HTTP) at http://BOX:2693/mcp.

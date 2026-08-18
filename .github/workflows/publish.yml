@@ -120,7 +120,38 @@ jobs:
           cp -rL result/. pub/
           chmod -R u+w pub
           # netboot artifacts are served from the Release, not thebox.build
-          sed -i "s|@NETBOOT_BASE@|${rel}|" pub/install.sh
+          sed -i "s|@NETBOOT_BASE@|${rel}|" pub/install.sh pub/pxe.sh
+          # On anything but a tag, the artifacts at NETBOOT_BASE are the
+          # RELEASE's, not this build's: the freshly built initrd drifts from
+          # the released one on the first main push that touches the installer,
+          # and a script stamped with this build's hashes then refuses the very
+          # artifacts it downloads. That is not hypothetical — it broke every
+          # curl|sh takeover the first night it could (v0.3.43 + eb26d30, found
+          # by the nightly rehearsal). Pin instead to what the release actually
+          # serves, from its own SHA256SUMS.
+          case "${GITHUB_REF}" in
+            refs/tags/*) ;; # this build IS the release: local hashes are the truth
+            *)
+              gh release download "$tag" -p SHA256SUMS -O release-sums.txt
+              restamp() { # <var-name> <release-file> <script>
+                h=$(awk -v f="./netboot/$2" '$2 == f { print $1 }' release-sums.txt)
+                if [ -z "$h" ]; then
+                  echo "::error::release $tag SHA256SUMS has no ./netboot/$2 — cannot stamp $3 to match what it will download"
+                  exit 1
+                fi
+                sed -i "s|^$1=\".*\"|$1=\"$h\"|" "pub/$3"
+                grep -q "^$1=\"$h\"" "pub/$3" # the stamp took, or fail here
+              }
+              restamp BZIMAGE_SHA256  bzImage       install.sh
+              restamp INITRD_SHA256   initrd        install.sh
+              restamp IPXE_SHA256     netboot.ipxe  install.sh
+              restamp BZIMAGE_SHA256  bzImage       pxe.sh
+              restamp INITRD_SHA256   initrd        pxe.sh
+              restamp IPXE_SHA256     netboot.ipxe  pxe.sh
+              restamp IPXE_EFI_SHA256 ipxe.efi      pxe.sh
+              restamp UNDIONLY_SHA256 undionly.kpxe pxe.sh
+              ;;
+          esac
           # refresh checksums over the final served files
           ( cd pub && find . -type f ! -name SHA256SUMS -print0 \
               | sort -z | xargs -0 sha256sum > SHA256SUMS )
@@ -133,7 +164,10 @@ jobs:
             pub/netboot/bzImage
             pub/netboot/initrd
             pub/netboot/netboot.ipxe
+            pub/netboot/ipxe.efi
+            pub/netboot/undionly.kpxe
             pub/install.sh
+            pub/pxe.sh
             pub/SHA256SUMS
           fail_on_unmatched_files: true
 
