@@ -18,7 +18,8 @@ on:
   workflow_dispatch: {}
 
 permissions:
-  contents: write # push the pricing branch
+  contents: write # commit the checked prices to main
+  actions: write # dispatch the site publish afterwards
 
 jobs:
   prices:
@@ -30,9 +31,10 @@ jobs:
         run: python3 scripts/store-prices.py --out /tmp/pricing.json
 
       - name: Commit the checked prices to main
-        # No side branch: everything consolidates on main. The commit triggers
-        # the site publish, which serves the fresh numbers same-origin at
-        # /pricing/latest.json.
+        # No side branch: everything consolidates on main; the dispatched
+        # publish serves the fresh numbers same-origin at /pricing/latest.json.
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           git config user.name "the-box-nightly"
@@ -42,12 +44,17 @@ jobs:
           cp /tmp/pricing.json site/pricing/latest.json
           git add site/pricing/latest.json
           git commit -m "prices: $(date -u +%Y-%m-%dT%H:%MZ)"
-          # main can move while the check runs; rebase and retry rather than fail.
+          # main can move meanwhile; rebase and retry rather than fail.
+          pushed=""
           for _ in 1 2 3; do
-            git push origin nightly-prices:main && exit 0
+            if git push origin nightly-prices:main; then pushed=1; break; fi
             git fetch origin main && git rebase origin/main
           done
-          git push origin nightly-prices:main
+          [ -n "$pushed" ] || git push origin nightly-prices:main
+          # A GITHUB_TOKEN push triggers no workflows (recursion guard), so the
+          # site would never redeploy with the fresh data; dispatch the publish
+          # explicitly instead.
+          gh workflow run publish.yml --ref main
 
       - name: Surface drift to a human
         run: |

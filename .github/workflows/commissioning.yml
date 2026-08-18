@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: write # commit the receipt to main
+  actions: write # dispatch the site publish afterwards
 
 concurrency:
   group: commissioning
@@ -47,9 +48,11 @@ jobs:
           if-no-files-found: ignore
       - name: Publish the receipt
         if: always()
-        # Committed to main, no side branch: the commit redeploys the site,
-        # which serves the receipt same-origin at /receipts/latest.json for
-        # the landing page's "last verified" line.
+        # Committed to main, no side branch; the dispatched publish serves the
+        # receipt same-origin at /receipts/latest.json for the landing page's
+        # "last verified" line.
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           [ -f /tmp/commissioning/receipt.json ] || exit 0
           set -euo pipefail
@@ -60,9 +63,14 @@ jobs:
           cp /tmp/commissioning/receipt.json site/receipts/latest.json
           git add site/receipts/latest.json
           git commit -m "receipt: $(date -u +%Y-%m-%dT%H:%MZ)"
-          # main can move during the 30-minute rehearsal; rebase and retry.
+          # main can move meanwhile; rebase and retry rather than fail.
+          pushed=""
           for _ in 1 2 3; do
-            git push origin nightly-receipt:main && exit 0
+            if git push origin nightly-receipt:main; then pushed=1; break; fi
             git fetch origin main && git rebase origin/main
           done
-          git push origin nightly-receipt:main
+          [ -n "$pushed" ] || git push origin nightly-receipt:main
+          # A GITHUB_TOKEN push triggers no workflows (recursion guard), so the
+          # site would never redeploy with the fresh data; dispatch the publish
+          # explicitly instead.
+          gh workflow run publish.yml --ref main
