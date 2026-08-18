@@ -1,5 +1,5 @@
 <meta charset="utf-8">
-<title>The Box — Configurator</title>
+<title>The Box Configurator</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 /* inline SVG icons — no emoji, renders identically everywhere */
@@ -389,13 +389,13 @@ footer.foot b { color: var(--dim); }
 
 <div class="wrap">
   <header class="top">
-    <div class="brand">
+    <a class="brand" href="/" style="text-decoration:none">
       <span class="mark"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.6" y="1.6" width="12.8" height="12.8" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 2.3v11.4H3.6A1.6 1.6 0 0 1 2 12.1V3.9A1.6 1.6 0 0 1 3.6 2.3z" fill="currentColor"/></svg> THE&nbsp;<b>BOX</b></span>
-      <span class="sub">Provisioning&nbsp;Console</span>
-    </div>
+      <span class="sub">Configurator</span>
+    </a>
     <div class="top-right">
       <div class="stamp">
-        <div>FIELD OPERATION: <b>PROVISION</b></div>
+        <div>NOTHING LEAVES <b>THIS BROWSER</b></div>
         <div id="clock">--:--:-- • ---</div>
       </div>
       <button class="theme-btn" id="theme" type="button" aria-label="Toggle theme"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.6a6.4 6.4 0 0 0 0 12.8z" fill="currentColor"/></svg>&nbsp;Theme</button>
@@ -403,10 +403,10 @@ footer.foot b { color: var(--dim); }
   </header>
 
   <div class="masthead">
-    <p class="eyebrow">Unit Configuration // Pre-Deployment</p>
-    <h1>Configure a unit for field deployment.</h1>
+    <p class="eyebrow">The Configurator</p>
+    <h1>Set up your Box before it first boots.</h1>
     <p class="lede">
-      Answer a few questions and this console builds your orders into one of the
+      Answer a few questions and this page builds your orders into one of the
       two ways a machine becomes a Box: a <b>flash image</b>, or <b>one pasted
       command</b>. Everything runs locally: <b>nothing you enter leaves this browser.</b>
     </p>
@@ -433,7 +433,7 @@ footer.foot b { color: var(--dim); }
           <span class="st" id="status-text">Awaiting arm</span>
         </div>
         <div class="uplink">
-          <span class="led"></span> Uplink: <b>None — local only</b>
+          <span class="led"></span> Uplink: <b>None</b> · local only
         </div>
       </div>
     </div>
@@ -444,7 +444,7 @@ footer.foot b { color: var(--dim); }
       <section class="mod">
         <div class="h"><span class="num">01</span><span class="ttl">Identity</span><span class="hint">what it answers to</span></div>
         <div class="b">
-          <p class="field-note">The name the Box announces on your network — reach it at <code class="inline">&lt;name&gt;.local</code>.</p>
+          <p class="field-note">The name the Box announces on your network: reach it at <code class="inline">&lt;name&gt;.local</code>.</p>
           <div class="seg" role="radiogroup" aria-label="Designation mode">
             <label><input type="radio" name="namemode" value="auto" checked><span>Auto-assign</span></label>
             <label><input type="radio" name="namemode" value="custom"><span>Custom</span></label>
@@ -456,7 +456,7 @@ footer.foot b { color: var(--dim); }
               <div class="err" id="hostname-err"></div>
             </div>
           </div>
-          <p class="field-note" id="name-auto-note">Auto derives a stable per-unit name like <code class="inline">box-3f2a1b</code> — so several Boxes never collide on one network.</p>
+          <p class="field-note" id="name-auto-note">Auto derives a stable per-unit name like <code class="inline">box-3f2a1b</code>, so several Boxes never collide on one network.</p>
         </div>
       </section>
 
@@ -489,7 +489,7 @@ footer.foot b { color: var(--dim); }
       <section class="mod">
         <div class="h"><span class="num">03</span><span class="ttl">Access</span><span class="hint">who can operate it remotely</span></div>
         <div class="b">
-          <p class="field-note">SSH public keys authorized to manage the Box. Password login is disabled — keys only. Leave empty to manage from the local console and web dashboard.</p>
+          <p class="field-note">SSH public keys authorized to manage the Box. Password login is disabled: keys only. Leave empty to manage from the local console and web dashboard.</p>
           <div class="keys" id="keys"></div>
           <div>
             <label class="lbl" for="keyin">Paste a public key</label>
@@ -519,7 +519,7 @@ footer.foot b { color: var(--dim); }
               <input type="text" id="cftoken" placeholder="eyJhIjoi..." spellcheck="false">
               <div class="err" id="cf-err"></div>
             </div>
-            <p class="field-note">Bring your own tunnel: paste a token from Cloudflare Zero Trust and the Box comes online already reachable from the internet — no open ports, no traffic through us. Point the tunnel's hostname at <code class="inline">localhost:2693</code>.</p>
+            <p class="field-note">Bring your own tunnel: paste a token from Cloudflare Zero Trust and the Box comes online already reachable from the internet: no open ports, no traffic through us. Point the tunnel's hostname at <code class="inline">localhost:2693</code>.</p>
           </div>
         </div>
       </section>
@@ -535,14 +535,14 @@ footer.foot b { color: var(--dim); }
             <label><input type="radio" name="diskmode" value="custom"><span>Device</span></label>
             <label><input type="radio" name="diskmode" value="onbox"><span>Decide on box</span></label>
           </div>
-          <p class="field-note" id="disk-auto-note">Picks the largest internal (non-removable) disk. USB sticks are never touched — so the installer stick itself is safe.</p>
+          <p class="field-note" id="disk-auto-note">Picks the largest internal (non-removable) disk. USB sticks are never touched, so the installer stick itself is safe.</p>
           <div id="disk-custom" class="collapse">
             <div>
               <label class="lbl" for="diskpath">Device path</label>
               <input type="text" id="diskpath" placeholder="/dev/disk/by-id/nvme-..." spellcheck="false">
               <div class="err" id="disk-err"></div>
             </div>
-            <p class="field-note">Use a stable <code class="inline">/dev/disk/by-id/…</code> path — it survives reboots and re-cabling.</p>
+            <p class="field-note">Use a stable <code class="inline">/dev/disk/by-id/…</code> path; it survives reboots and re-cabling.</p>
           </div>
           <div>
             <button type="button" class="btn small ghost" id="adv-toggle" aria-expanded="false"><svg class="ico ico--sm caret" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M6 3.5 11 8l-5 4.5z"/></svg> Advanced options</button>
@@ -698,11 +698,11 @@ footer.foot b { color: var(--dim); }
   }));
   // disk
   const DISK_NOTES = {
-    auto: "Picks the largest internal (non-removable) disk. USB sticks are never touched — so the installer stick itself is safe.",
-    mirror: "Keeps a live copy across two matched internal disks — one disk can fail without losing data. Refuses if there aren't two similar disks.",
-    pool: "Combines every internal disk into one big volume. No redundancy — if any one disk fails, all data is lost.",
+    auto: "Picks the largest internal (non-removable) disk. USB sticks are never touched, so the installer stick itself is safe.",
+    mirror: "Keeps a live copy across two matched internal disks: one disk can fail without losing data. Refuses if there aren't two similar disks.",
+    pool: "Combines every internal disk into one big volume. No redundancy: if any one disk fails, all data is lost.",
     custom: "Install onto one specific disk.",
-    onbox: "Leave storage undecided. You'll pick the layout on the box itself — at the screen or in a browser — with the real disks in front of you. Everything else (name, Wi-Fi, keys) still rides along."
+    onbox: "Leave storage undecided. You'll pick the layout on the box itself, at the screen or in a browser, with the real disks in front of you. Everything else (name, Wi-Fi, keys) still rides along."
   };
   $$("input[name=diskmode]").forEach(r => r.addEventListener("change", () => {
     const mode = $("input[name=diskmode]:checked").value;
@@ -710,7 +710,7 @@ footer.foot b { color: var(--dim); }
     const note = $("#disk-auto-note");
     if (mode === "onbox") {
       note.innerHTML = DISK_NOTES.onbox +
-        ' <b>Your setup PIN is ' + setupPin + '</b> — you\'ll type this into the setup page on the box to prove it\'s you.';
+        ' <b>Your setup PIN is ' + setupPin + '</b>. You\'ll type this into the setup page on the box to prove it\'s you.';
     } else {
       note.textContent = DISK_NOTES[mode] || DISK_NOTES.auto;
     }
@@ -825,14 +825,14 @@ footer.foot b { color: var(--dim); }
       // to put in ~/.ssh, to recognise later, or to authorize on a second Box.
       wrap.innerHTML = `
         <div class="privkey">
-          <div class="warn"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2 1.5 13.5h13z"/><path d="M8 6.2v3.3"/><circle cx="8" cy="11.5" r=".6" fill="currentColor" stroke="none"/></svg> Private key — save it now. It is shown once, and it never leaves this browser.</div>
+          <div class="warn"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2 1.5 13.5h13z"/><path d="M8 6.2v3.3"/><circle cx="8" cy="11.5" r=".6" fill="currentColor" stroke="none"/></svg> Private key. Save it now. It is shown once, and it never leaves this browser.</div>
           <textarea class="mono" id="priv-text" readonly spellcheck="false"></textarea>
           <div class="deploybar" style="margin-top:9px">
             <button type="button" class="btn small" id="dl-both"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v8M4.5 6.5 8 10l3.5-3.5M2.5 13.5h11"/></svg> Save both keys</button>
             <button type="button" class="btn small ghost" id="dl-priv">id_ed25519</button>
             <button type="button" class="btn small ghost" id="cp-priv">Copy private</button>
           </div>
-          <div class="lbl" style="margin-top:12px">Public key — already added to this Box below</div>
+          <div class="lbl" style="margin-top:12px">Public key, already added to this Box below</div>
           <textarea class="mono" id="pub-text" readonly spellcheck="false" style="min-height:3.2em"></textarea>
           <div class="deploybar" style="margin-top:9px">
             <button type="button" class="btn small ghost" id="dl-pub">id_ed25519.pub</button>
@@ -857,9 +857,9 @@ footer.foot b { color: var(--dim); }
       });
       $("#cp-priv").addEventListener("click", () => { navigator.clipboard.writeText(priv); toast("Private key copied"); });
       $("#cp-pub").addEventListener("click", () => { navigator.clipboard.writeText(pub); toast("Public key copied"); });
-      toast("Keypair generated — locally");
+      toast("Keypair generated locally");
     } catch (e) {
-      $("#key-err").textContent = "This browser can't generate Ed25519 keys — paste an existing public key instead.";
+      $("#key-err").textContent = "This browser can't generate Ed25519 keys. Paste an existing public key instead.";
     } finally {
       btn.disabled = false; btn.querySelector(".lbl").textContent = "Generate a keypair";
     }
@@ -987,7 +987,7 @@ footer.foot b { color: var(--dim); }
     strip.classList.toggle("ready", ready);
     strip.classList.toggle("armed-only", armed && !ready);
     $("#status-text").textContent = !armed ? "Awaiting arm"
-      : (probs.length ? "Incomplete — check modules" : "Ready to deploy");
+      : (probs.length ? "Incomplete: check modules" : "Ready to deploy");
 
     $("#download").disabled = !ready;
     $("#copy").disabled = !ready;
@@ -1054,7 +1054,7 @@ footer.foot b { color: var(--dim); }
       <div class="ihead">VEC-02 · Take over a running machine</div>
       <ol>
         <li>On a running Linux machine or VPS (or an SSH session into it), paste the first command. On Windows, paste the second into an <b>elevated</b> PowerShell.</li>
-        <li>It <b>erases every disk</b> and installs Box OS — your orders are embedded, so there is nothing to download or move.</li>
+        <li>It <b>erases every disk</b> and installs Box OS. Your orders are embedded, so there is nothing to download or move.</li>
         <li>A few minutes later it comes up at <code>&lt;name&gt;.local</code>; pair it with the code above.</li>
       </ol>
       ${lastReady ? `
@@ -1115,7 +1115,7 @@ footer.foot b { color: var(--dim); }
       <ol>
         <li>Pick your machine and download the image. Your orders are written into it as it downloads.</li>
         <li>Write it to the SD card or USB stick with <b>Raspberry Pi Imager</b>, <b>Etcher</b>, or <code>dd</code>. Skip Imager's customisation screen; everything is already in the image.</li>
-        <li>Put it in the machine and power on (if a PC boots its old OS instead, pick the stick in the boot menu). No screen, no keyboard, no SSH — the install runs unattended.</li>
+        <li>Put it in the machine and power on (if a PC boots its old OS instead, pick the stick in the boot menu). No screen, no keyboard, no SSH. The install runs unattended.</li>
         <li>A few minutes later it is at <code>&lt;name&gt;.local</code>. Pair it with the code above.</li>
       </ol>
       <div class="deploybar" style="margin:9px 13px 13px">
@@ -1125,12 +1125,12 @@ footer.foot b { color: var(--dim); }
           <option value="thebox-pi4">Raspberry Pi 4</option>
           <option value="thebox-pi3">Raspberry Pi 3</option>
         </select>
-        <button type="button" class="btn small" id="pi-go" ${lastReady ? "" : "disabled"}>Download my image</button>
+        <button type="button" class="btn small" id="pi-go" ${lastReady ? "" : "disabled"}>Download</button>
         ${lastReady ? "" : '<span class="gate">Arm the unit above</span>'}
       </div>
       <div class="cav ${secret ? "cav-secret" : ""}">${secret
         ? "This image carries secrets (Wi-Fi password / tunnel token). Treat the file like a key: it installs a Box that trusts you."
-        : "The image carries no secrets — only the box name, your SSH public key if you added one, and the pairing-code hash. The code itself stays with you."}</div>`;
+        : "The image carries no secrets: only the box name, your SSH public key if you added one, and the pairing-code hash. The code itself stays with you."}</div>`;
     // A form built and submitted on click, rather than markup.
     //
     // This panel renders INSIDE the page's main <form>, and HTML forbids
@@ -1193,26 +1193,31 @@ footer.foot b { color: var(--dim); }
     const named = cfg && cfg.hostname && cfg.hostname !== "auto" && validHostname(cfg.hostname);
     const secret = carriesSecrets();
     panel.innerHTML = `
-      <p class="field-note">Run this on any Linux machine on the same network (it is <b>not</b> wiped —
-      it becomes the depot). Then network-boot each machine you want to convert: pick PXE in its boot
-      menu, walk away. Every machine that network-boots is <b>erased</b> and comes up as a Box carrying
-      these orders; the pairing code above claims each one. Stop the depot with Ctrl-C when the fleet is
-      up. <a href="/docs/fleet.html#pxe">How it works</a>.</p>
-      ${named ? '<p class="field-note" style="color:var(--critical)">Every machine would be named <b>' +
-        cfg.hostname + '</b> and collide on the network — switch Identity to <b>Auto-assign</b> so each machine names itself.</p>' : ""}
-      ${lastReady ? `
-      <div class="lbl">PXE depot · one command</div>
-      <div class="cmdbox" style="margin:4px 0 0"><code id="pxe-cmd"></code><button type="button" class="btn small ghost" id="cp-pxe">Copy</button></div>
-      <div class="deploybar" style="margin-top:10px">
-        <button type="button" class="btn small ghost" id="dl-ipxe">Save boot.ipxe</button>
-        <span class="field-note" style="margin:0">Already run PXE? Put this next to the release's
-        <code class="inline">bzImage</code>, <code class="inline">initrd</code> and
-        <code class="inline">netboot.ipxe</code> and point your boot at it.</span>
-      </div>
-      <div class="cav ${secret ? "cav-secret" : ""}" style="padding:8px 0 0">${secret
-        ? "The command and boot.ipxe carry secrets (Wi-Fi password / tunnel token) — anyone on this network who can read them can boot a machine that trusts you."
-        : "The command and boot.ipxe carry no secrets: the box name policy, your SSH public key, and the pairing-code hash."}</div>`
-      : '<div class="cav" style="padding:8px 0 0">Arm the unit and complete the modules above, and the fleet command generates here.</div>'}`;
+      <div class="instructions">
+        <div class="ihead">FLEET · Boot machines over the network (PXE)</div>
+        <ol>
+          <li>Run the command below on any Linux machine on the same network. That machine is <b>not</b> wiped; it becomes the depot, serving the installer to the others (<a href="/docs/fleet.html#pxe">how it works</a>).</li>
+          <li>Network-boot each machine you want to convert: pick PXE in its boot menu, walk away. Every machine that network-boots is <b>erased</b> and comes up as a Box carrying these orders.</li>
+          <li>The pairing code above claims each one. Stop the depot with Ctrl-C when the fleet is up.</li>
+        </ol>
+        ${named ? '<div class="cav" style="color:var(--critical)">Every machine would be named <b>' +
+          cfg.hostname + '</b> and collide on the network. Switch Identity to <b>Auto-assign</b> so each machine names itself.</div>' : ""}
+        ${lastReady ? `
+        <div style="padding:0 13px 13px">
+          <div class="lbl">PXE depot · one command</div>
+          <div class="cmdbox" style="margin:4px 0 0"><code id="pxe-cmd"></code><button type="button" class="btn small ghost" id="cp-pxe">Copy</button></div>
+          <div class="deploybar" style="margin-top:10px">
+            <button type="button" class="btn small ghost" id="dl-ipxe">Save boot.ipxe</button>
+            <span class="field-note" style="margin:0">Already run PXE? Put this next to the release's
+            <code class="inline">bzImage</code>, <code class="inline">initrd</code> and
+            <code class="inline">netboot.ipxe</code> and point your boot at it.</span>
+          </div>
+        </div>
+        <div class="cav ${secret ? "cav-secret" : ""}">${secret
+          ? "The command and boot.ipxe carry secrets (Wi-Fi password / tunnel token): anyone on this network who can read them can boot a machine that trusts you."
+          : "The command and boot.ipxe carry no secrets: the box name policy, your SSH public key, and the pairing-code hash."}</div>`
+        : '<div class="cav">Arm the unit and complete the modules above, and the fleet command generates here.</div>'}
+      </div>`;
     if (!lastReady) return;
     const b64 = btoa(unescape(encodeURIComponent(currentJSON)));
     const cmd = `curl -fsSL https://thebox.build/pxe.sh | sudo BOX_ORDERS_B64='${b64}' sh`;
@@ -1256,7 +1261,7 @@ footer.foot b { color: var(--dim); }
     if (anchor) {
       anchor.insertAdjacentHTML("beforebegin", `
         <div class="privkey" id="paircode-box">
-          <div class="warn"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="11" r="2.8"/><path d="m7 9 6-6M11.2 3.2l1.8 1.8M9.6 4.8l1.5 1.5"/></svg> Pairing code — save this. You enter it once at the box's dashboard to pair your first browser (no SSH needed).</div>
+          <div class="warn"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="11" r="2.8"/><path d="m7 9 6-6M11.2 3.2l1.8 1.8M9.6 4.8l1.5 1.5"/></svg> Pairing code. Save this. You enter it once at the box's dashboard to pair your first browser (no SSH needed).</div>
           <div class="deploybar" style="margin-top:9px">
             <code class="mono" id="paircode" style="font-size:1.05rem;letter-spacing:.14em"></code>
             <button type="button" class="btn small ghost" id="cp-code">Copy</button>
