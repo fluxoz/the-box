@@ -101,6 +101,12 @@ $SSH op@127.0.0.1 true 2>/dev/null || fail "blank-machine-ssh"
 say "blank machine up ($(( $(now) - T1 ))s)"
 
 # ---- the takeover, exactly as documented ----------------------------------
+# Deliberately lowercase hex, not the Crockford format real users now get.
+# A hex code matches under BOTH the current boxd (which hashes the canonical
+# Crockford form, then falls back to lowercase hex) and every already-released
+# one (which only knows the hex form). This rehearsal runs against the LIVE
+# site, so it has to keep working with whatever release is published right now.
+# Switch it to box-core's format once a release carrying that format is live.
 CODE=$(head -c5 /dev/urandom | od -An -tx1 | tr -d ' \n')
 HASH=$(printf %s "$CODE" | sha256sum | cut -d' ' -f1)
 KEY=$(cat vmkey.pub)

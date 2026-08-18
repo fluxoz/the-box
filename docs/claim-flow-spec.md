@@ -19,7 +19,28 @@ generic artifact's published SHA-256 still matching. A NixOS VM test
 and proves the rest: first boot adopts them, the network cannot seize it, the
 owner's code redeems, and a replay is refused.
 
-## To switch on in production
+## LIVE
+
+Image downloads are switched on. `https://thebox-images.fluxoz.workers.dev`
+serves them from the `box-images` R2 bucket, and the Configurator posts to it.
+Verified against the real published Pi 5 image: 1,963,429,384 bytes downloaded,
+decompressing to 5,771,685,888, mounting as a FAT boot partition carrying the
+caller's orders in `box-claim.txt`.
+
+Two production-only bugs were found by testing the live endpoint, both fixed:
+
+- **Silent truncation.** Piping the R2 body through a JS `TransformStream` that
+  inspected every chunk burned ~2 s of CPU on a 1.96 GB image, so Workers killed
+  the request mid-stream and the client got HTTP 200 with ~1.5 MB — a corrupt
+  image that looks like a successful download. Nothing touches the bulk bytes in
+  JS now: the artifact is spliced from two R2 ranges plus the patch, piped into a
+  `FixedLengthStream`. Local tests could never have caught this; only the real
+  edge enforces CPU limits.
+- **No Content-Length.** A response whose body is a plain JS stream has no known
+  length, so the runtime frames it chunked and silently drops the header we set —
+  no progress bar on a 2 GB download. `FixedLengthStream` fixes both at once.
+
+## How it was switched on
 
 Building, publishing and deploying are automated in `.github/workflows/publish.yml`
 and all skip cleanly when the secret is absent. Turning image downloads on is
