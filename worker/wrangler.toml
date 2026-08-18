@@ -12,6 +12,18 @@ name = "thebox-images"
 main = "src/index.js"
 compatibility_date = "2026-08-01"
 
+# NOT rate limited here, and that is a known gap rather than an oversight.
+#
+# One request streams ~2 GB out of R2 and the endpoint cannot require a
+# credential, because whoever is downloading does not have one yet. The obvious
+# answer is the Workers `ratelimits` binding, and it was tried: the binding
+# deploys, `limit()` is reached, and it returns success unconditionally — 8
+# requests against a 3-per-10s limit all passed. Rather than ship code that
+# implies a protection it does not deliver, the limiter is out and the gap is
+# written down. Fix this with a Cloudflare-side rate limiting rule (or a WAF
+# rule once these are served from a zone we control) before this endpoint is
+# advertised widely.
+
 [[r2_buckets]]
 binding = "IMAGES"
 bucket_name = "box-images"
