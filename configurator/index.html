@@ -1143,6 +1143,19 @@ footer.foot b { color: var(--dim); }
   });
 
   /* ---------- pairing code (part of the recovery kit) ---------- */
+  // 80 bits, as lowercase hex with no separators.
+  //
+  // It was 40 bits, which is not enough: only the HASH of this code travels in
+  // the orders, and those get pasted into shell commands, screenshots and
+  // support threads — 2^40 SHA-256 candidates fall to a GPU in under a minute,
+  // so publishing the hash published the code.
+  //
+  // Deliberately still hex rather than box-core's Crockford base32 format.
+  // Whatever this mints has to be redeemable by the boxd that the install
+  // medium carries, which today is the published release. That one only knows
+  // `sha256(lowercase(code))`; the current boxd tries the canonical form first
+  // and falls back to exactly that. Plain lowercase hex therefore works on
+  // both. Move to box-core's format once a release carrying it is live.
   function randHex(n) {
     return [...crypto.getRandomValues(new Uint8Array(n))].map(b => b.toString(16).padStart(2, "0")).join("");
   }
@@ -1151,7 +1164,7 @@ footer.foot b { color: var(--dim); }
     return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join("");
   }
   async function initPairingCode() {
-    enrollCode = randHex(5); // 10 hex chars
+    enrollCode = randHex(10); // 20 hex chars, 80 bits
     enrollHash = await sha256hex(enrollCode);
     const anchor = $("#privout");
     if (anchor) {

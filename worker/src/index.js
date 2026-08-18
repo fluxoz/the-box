@@ -41,6 +41,7 @@ function validateOrders(input) {
   out.enrollment_code_hash = hash;
 
   const hostname = input.hostname ?? "auto";
+  if (typeof hostname !== "string") throw new Error("hostname must be a string");
   if (hostname !== "auto" && !HOSTNAME.test(hostname)) {
     throw new Error("hostname must be a lowercase DNS label, or \"auto\"");
   }
@@ -64,10 +65,25 @@ function validateOrders(input) {
     out.ssh_authorized_keys = keys.map((k) => k.trim());
   }
 
+  // A flashed Pi is headless: if its Wi-Fi and tunnel token do not ride in the
+  // image, there is no second chance to supply them. The Configurator collects
+  // both, so dropping them here silently produced a Box that never joins the
+  // network the user configured.
+  if (input.cloudflare_tunnel_token !== undefined) {
+    const t = input.cloudflare_tunnel_token;
+    if (typeof t !== "string" || t.length > 2048 || /[\r\n\0]/.test(t)) {
+      throw new Error("cloudflare_tunnel_token must be a single line under 2048 chars");
+    }
+    out.cloudflare_tunnel_token = t.trim();
+  }
+
   if (input.wifi !== undefined) {
     const w = input.wifi;
     if (typeof w !== "object" || w === null || typeof w.ssid !== "string") {
       throw new Error("wifi must be an object with an ssid");
+    }
+    if (w.password !== undefined && typeof w.password !== "string") {
+      throw new Error("wifi.password must be a string");
     }
     if (/[\r\n\0]/.test(w.ssid) || (w.password && /[\r\n\0]/.test(w.password))) {
       throw new Error("wifi fields must be single-line");
@@ -234,6 +250,20 @@ export default {
 
     const patchStart = manifest.payload_offset;
     const total = manifest.total_length;
+
+    // The manifest carries the offsets used to splice this exact artifact. If
+    // an upload half-succeeded and the two disagree, the patch would land in
+    // the wrong place and produce an image that flashes and then fails
+    // mysteriously. Refuse instead.
+    const head = await env.IMAGES.head(`${board}.img.gz`);
+    if (!head) return new Response("image not found", { status: 404 });
+    if (head.size !== total) {
+      return new Response(
+        JSON.stringify({ error: "image and manifest disagree; this release is not servable" }),
+        { status: 503, headers: { "content-type": "application/json" } }
+      );
+    }
+
     const range = parseRange(request.headers.get("range"), total);
     const start = range ? range.start : 0;
     const end = range ? range.end : total - 1;
