@@ -210,6 +210,17 @@ def main() -> int:
         # orders an unattended installer will accept.
         linux_cmd = page.text_content("#cmd-linux") or ""
         win_cmd = page.text_content("#cmd-win") or ""
+        # Every action button answers on itself, identically. The commands sit
+        # in OS tabs, so drive whichever copy button is actually visible.
+        vis = page.eval_on_selector_all(
+            "[data-copy]",
+            "els => { const e = els.find(x => x.offsetParent !== null); return e ? e.dataset.copy : null; }",
+        )
+        check(vis is not None, "a copy button is visible on the landing page")
+        if vis:
+            page.click(f"[data-copy={vis}]")
+            check(page.eval_on_selector(f"[data-copy={vis}]", "b => b.textContent") == "copied",
+                  "landing copy buttons flip to a copied state")
         m = re.search(r"BOX_ORDERS_B64='([A-Za-z0-9+/=]+)'", linux_cmd)
         check(m is not None, "the curl command carries a base64 rider", linux_cmd[:70])
         if m:
@@ -306,6 +317,9 @@ def main() -> int:
         page.click("[data-vec=sh]")
         page.wait_for_selector("#sh-cmd", timeout=10_000)
         sh_cmd = page.text_content("#sh-cmd") or ""
+        page.click("#cp-cmd")
+        check(page.eval_on_selector("#cp-cmd", "b => b.textContent") == "Copied",
+              "configurator copy buttons flip to a Copied state")
         cfg_win_cmd = page.text_content("#win-cmd") or ""
         check("BOX_ORDERS_B64='" in sh_cmd and "install.sh" in sh_cmd,
               "arming yields a curl command with orders embedded", sh_cmd[:70])

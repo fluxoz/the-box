@@ -71,6 +71,10 @@
   .cmd button{margin-left:auto;flex:none;background:transparent;color:var(--dim);border:1px solid var(--line2);
     border-radius:6px;padding:.3rem .6rem;font-size:.75rem;cursor:pointer;}
   .cmd button:hover{color:var(--ink);border-color:var(--brass);}
+  .cmd button,.mini,.go2{transition:transform .08s ease,color .15s,border-color .15s,background .15s;}
+  .cmd button:active,.mini:active,.go2:active:not([disabled]){transform:scale(.96);}
+  .copied{border-color:var(--ok)!important;color:var(--ok)!important;animation:copiedpulse .28s ease-out;}
+  @keyframes copiedpulse{0%{transform:scale(1);}35%{transform:scale(1.06);}100%{transform:scale(1);}}
   .panel p{margin:.7rem 0 0;color:var(--dim);font-size:.9rem;}
   .panel p.note{color:var(--faint);font-size:.82rem;}
 
@@ -366,9 +370,17 @@
   const ALIAS = {linux:'curl', windows:'curl', mac:'curl', vps:'curl', usb:'flash', pi:'flash'};
   const want = ALIAS[location.hash.slice(1)] || location.hash.slice(1);
   if (want && tabs.some(t=>t.dataset.os===want)) select(want);
+  // Every action button answers on itself: brief state flip + pulse, then
+  // back. Same behavior as the Configurator's buttons.
+  function flashBtn(b,label){
+    const o=b.dataset.origLabel||(b.dataset.origLabel=b.textContent);
+    b.classList.add('copied'); b.textContent=label;
+    clearTimeout(b._flashT);
+    b._flashT=setTimeout(()=>{b.classList.remove('copied'); b.textContent=o;},1200);
+  }
   document.querySelectorAll('[data-copy]').forEach(b=>b.addEventListener('click',()=>{
     navigator.clipboard.writeText(document.getElementById(b.dataset.copy).textContent);
-    const o=b.textContent; b.textContent='copied'; setTimeout(()=>b.textContent=o,1200);
+    flashBtn(b,'copied');
   }));
 
   /* Step 1: the form. A public key in, a pairing code out, and the two
@@ -454,8 +466,7 @@
 
     $("#cp-code").addEventListener("click", e => {
       navigator.clipboard.writeText(enrollCode);
-      const b = e.currentTarget, o = b.textContent;
-      b.textContent = "copied"; setTimeout(() => b.textContent = o, 1200);
+      flashBtn(e.currentTarget, "copied");
     });
 
     // Generate: both halves shown, both saveable. A keypair where you only get
@@ -490,15 +501,16 @@
           </div>`;
         $("#priv-text").value = priv;
         $("#pub-text").value = pub;
-        $("#dl-priv").addEventListener("click", () => download("id_ed25519", priv));
-        $("#dl-pub").addEventListener("click", () => download("id_ed25519.pub", pub + "\n"));
-        $("#dl-both").addEventListener("click", () => {
+        $("#dl-priv").addEventListener("click", e => { download("id_ed25519", priv); flashBtn(e.currentTarget, "saved"); });
+        $("#dl-pub").addEventListener("click", e => { download("id_ed25519.pub", pub + "\n"); flashBtn(e.currentTarget, "saved"); });
+        $("#dl-both").addEventListener("click", e => {
+          flashBtn(e.currentTarget, "saving…");
           download("id_ed25519", priv);
           // Two saves in a row: give the first one a moment or the second is dropped.
           setTimeout(() => download("id_ed25519.pub", pub + "\n"), 350);
         });
-        $("#cp-priv").addEventListener("click", () => navigator.clipboard.writeText(priv));
-        $("#cp-pub").addEventListener("click", () => navigator.clipboard.writeText(pub));
+        $("#cp-priv").addEventListener("click", e => { navigator.clipboard.writeText(priv); flashBtn(e.currentTarget, "copied"); });
+        $("#cp-pub").addEventListener("click", e => { navigator.clipboard.writeText(pub); flashBtn(e.currentTarget, "copied"); });
       } catch (err) {
         $("#key-err").textContent = "This browser can't generate Ed25519 keys. Paste an existing public key instead.";
       } finally {
@@ -518,6 +530,7 @@
       field.type = "hidden"; field.name = "orders"; field.value = orders();
       f.appendChild(field);
       document.body.appendChild(f); f.submit(); f.remove();
+      flashBtn($("#pi-go"), "downloading…");
     });
   })();
 </script>

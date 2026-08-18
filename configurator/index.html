@@ -276,6 +276,8 @@ input.invalid, textarea.invalid { border-color: var(--critical); box-shadow: 0 0
 .btn.ghost { background: transparent; }
 .btn.small { padding: 6px 10px; font-size: 11px; }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn, .theme-btn, .keychip button { transition: transform .08s ease, color .15s, border-color .15s, background .15s; }
+.btn:active:not(:disabled), .theme-btn:active { transform: scale(.96); }
 .btn.primary {
   background: var(--brass); border-color: var(--brass); color: var(--bg); font-weight: 600;
 }
@@ -649,16 +651,18 @@ footer.foot b { color: var(--dim); }
   });
 
 
-  // The copy button answers on the button itself: a brief Copied state with a
-  // small pulse (the global reduced-motion rule strips the animation; the text
-  // swap still communicates).
-  function flashCopied(btn) {
+  // Action buttons answer on themselves: a brief state flip ("Copied",
+  // "Saved") with a small pulse, then back. One helper so every button
+  // behaves identically (the global reduced-motion rule strips the pulse;
+  // the text swap still communicates).
+  function flashBtn(btn, label) {
     const orig = btn.dataset.origLabel || (btn.dataset.origLabel = btn.textContent);
     btn.classList.add("copied");
-    btn.textContent = "Copied";
-    clearTimeout(btn._copyT);
-    btn._copyT = setTimeout(() => { btn.classList.remove("copied"); btn.textContent = orig; }, 1200);
+    btn.textContent = label;
+    clearTimeout(btn._flashT);
+    btn._flashT = setTimeout(() => { btn.classList.remove("copied"); btn.textContent = orig; }, 1200);
   }
+  const flashCopied = (btn) => flashBtn(btn, "Copied");
 
   function toast(msg) {
     const t = $("#toast"); t.textContent = msg; t.classList.add("show");
@@ -767,8 +771,8 @@ footer.foot b { color: var(--dim); }
     keys.push({ key: k, src: src || "pasted" });
     renderKeys(); render(); return true;
   }
-  $("#key-add").addEventListener("click", () => {
-    if (addKey($("#keyin").value, "pasted")) $("#keyin").value = "";
+  $("#key-add").addEventListener("click", e => {
+    if (addKey($("#keyin").value, "pasted")) { $("#keyin").value = ""; flashBtn(e.currentTarget, "Added"); }
   });
 
   /* ---------- Ed25519 keygen (fully client-side) ---------- */
@@ -844,17 +848,17 @@ footer.foot b { color: var(--dim); }
       // octet-stream, not text/plain: a browser appends .txt to an
       // extensionless filename served as text, and ssh wants id_ed25519 exactly.
       const KEY_MIME = "application/octet-stream";
-      $("#dl-priv").addEventListener("click", () => download("id_ed25519", priv, KEY_MIME));
-      $("#dl-pub").addEventListener("click", () => download("id_ed25519.pub", pub + "\n", KEY_MIME));
-      $("#dl-both").addEventListener("click", () => {
+      $("#dl-priv").addEventListener("click", e => { download("id_ed25519", priv, KEY_MIME); flashBtn(e.currentTarget, "Saved"); });
+      $("#dl-pub").addEventListener("click", e => { download("id_ed25519.pub", pub + "\n", KEY_MIME); flashBtn(e.currentTarget, "Saved"); });
+      $("#dl-both").addEventListener("click", e => {
+        flashBtn(e.currentTarget, "Saving…");
         download("id_ed25519", priv, KEY_MIME);
         // Two saves in a row: browsers serialise them, but give the first one a
         // moment or the second download can be dropped.
         setTimeout(() => download("id_ed25519.pub", pub + "\n", KEY_MIME), 350);
-        toast("Saving both keys");
       });
-      $("#cp-priv").addEventListener("click", () => { navigator.clipboard.writeText(priv); toast("Private key copied"); });
-      $("#cp-pub").addEventListener("click", () => { navigator.clipboard.writeText(pub); toast("Public key copied"); });
+      $("#cp-priv").addEventListener("click", () => { navigator.clipboard.writeText(priv); flashCopied($("#cp-priv")); });
+      $("#cp-pub").addEventListener("click", () => { navigator.clipboard.writeText(pub); flashCopied($("#cp-pub")); });
       toast("Keypair generated locally");
     } catch (e) {
       $("#key-err").textContent = "This browser can't generate Ed25519 keys. Paste an existing public key instead.";
@@ -1015,8 +1019,8 @@ footer.foot b { color: var(--dim); }
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
-  $("#download").addEventListener("click", () => { download("box-install.json", currentJSON); toast("Deployment file saved"); });
-  $("#copy").addEventListener("click", () => { navigator.clipboard.writeText(currentJSON); toast("JSON copied"); });
+  $("#download").addEventListener("click", e => { download("box-install.json", currentJSON); flashBtn(e.currentTarget, "Saved"); });
+  $("#copy").addEventListener("click", e => { navigator.clipboard.writeText(currentJSON); flashCopied(e.currentTarget); });
 
   /* ---------- vectors + instructions ---------- */
   // Two vectors, because there are two ways a machine becomes a Box: flash the
@@ -1067,8 +1071,8 @@ footer.foot b { color: var(--dim); }
     const ps = `$env:BOX_ORDERS_B64='${b64}'; irm https://thebox.build/install.ps1 | iex`;
     $("#sh-cmd").textContent = sh; // textContent avoids any HTML interpretation
     $("#win-cmd").textContent = ps;
-    $("#cp-cmd").addEventListener("click", () => { navigator.clipboard.writeText(sh); toast("Command copied"); });
-    $("#cp-win").addEventListener("click", () => { navigator.clipboard.writeText(ps); toast("Command copied"); });
+    $("#cp-cmd").addEventListener("click", () => { navigator.clipboard.writeText(sh); flashCopied($("#cp-cmd")); });
+    $("#cp-win").addEventListener("click", () => { navigator.clipboard.writeText(ps); flashCopied($("#cp-win")); });
   }
 
   // Where personalized images are served from.
@@ -1142,7 +1146,7 @@ footer.foot b { color: var(--dim); }
         document.body.appendChild(f);
         f.submit();
         f.remove();
-        toast("Building your image…");
+        flashBtn(go, "Downloading…");
       });
     }
   }
@@ -1210,14 +1214,14 @@ footer.foot b { color: var(--dim); }
     const b64 = btoa(unescape(encodeURIComponent(currentJSON)));
     const cmd = `curl -fsSL https://thebox.build/pxe.sh | sudo BOX_ORDERS_B64='${b64}' sh`;
     $("#pxe-cmd").textContent = cmd;
-    $("#cp-pxe").addEventListener("click", () => { navigator.clipboard.writeText(cmd); toast("Depot command copied"); });
+    $("#cp-pxe").addEventListener("click", () => { navigator.clipboard.writeText(cmd); flashCopied($("#cp-pxe")); });
     // For people with their own PXE server: the same orders as a tiny iPXE
     // script that chains the published netboot.ipxe (which honors ${cmdline}),
     // resolved relative to wherever they host the artifacts.
     $("#dl-ipxe").addEventListener("click", () => {
       const script = "#!ipxe\nset cmdline box.install-b64=" + b64 + "\nchain netboot.ipxe\n";
       download("boot.ipxe", script, "application/octet-stream");
-      toast("boot.ipxe saved");
+      flashBtn($("#dl-ipxe"), "Saved");
     });
   }
 
