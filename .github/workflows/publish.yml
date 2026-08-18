@@ -397,3 +397,76 @@ jobs:
             thebox-pi${{ matrix.model }}.img.gz.sha256
             thebox-pi${{ matrix.model }}.img.gz.manifest.json
           fail_on_unmatched_files: true
+
+  # The flashable x86 image (thebox-x86): the same personalizable treatment as
+  # the Pi images, for any x86-64 UEFI machine — PC, laptop, mini-PC, Intel
+  # Mac. Runs on tags like the Pi images, and on workflow_dispatch so an image
+  # fix can reach R2 (and QA) without cutting a release.
+  x86-image:
+    needs: version-guard
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: DeterminateSystems/nix-installer-action@v22
+        with:
+          determinate: false
+          extra-conf: |
+            extra-substituters = https://fluxoz.cachix.org
+            extra-trusted-public-keys = fluxoz.cachix.org-1:yzuO7pZpCoHEIT6PQiYJ1eupby/rH3Ls3Q18+VA0Krc=
+      - name: Build + compress the x86 image
+        id: build
+        run: |
+          set -euo pipefail
+          out=$(nix build .#installer-usb --no-link --print-out-paths)
+          echo "out=$out" >> "$GITHUB_OUTPUT"
+          # .xz for the plain, hash-checkable download; the image is mostly
+          # empty FAT so it shrinks a lot.
+          xz -T0 -6 -c "$out/thebox-x86.img" > thebox-x86.img.xz
+          sha256sum thebox-x86.img.xz > thebox-x86.img.xz.sha256
+          ls -la thebox-x86.img.xz*
+      - name: Pack the personalizable x86 image
+        run: |
+          set -euo pipefail
+          nix shell nixpkgs#python3 nixpkgs#mtools nixpkgs#util-linux --command \
+            python3 scripts/personalizable-image.py \
+              "${{ steps.build.outputs.out }}/thebox-x86.img" \
+              thebox-x86.img.gz thebox-x86.img.gz.manifest.json
+          sha256sum thebox-x86.img.gz > thebox-x86.img.gz.sha256
+          ls -la thebox-x86.img.gz*
+      # Publish to R2, where the Worker streams and patches it. Same rules as
+      # the Pi images: S3 multipart (not wrangler), loud failure, and only
+      # absent credentials may no-op.
+      - name: Upload the x86 image to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${ACCOUNT:-}" ]; then
+            echo "R2 credentials not set — image downloads stay switched off."
+            exit 0
+          fi
+          name="thebox-x86"
+          ep="https://$ACCOUNT.r2.cloudflarestorage.com"
+          nix shell nixpkgs#awscli2 --command aws s3 cp "$name.img.gz" \
+            "s3://box-images/$name.img.gz" --endpoint-url "$ep" --only-show-errors
+          nix shell nixpkgs#awscli2 --command aws s3 cp "$name.img.gz.manifest.json" \
+            "s3://box-images/$name.img.gz.manifest.json" --endpoint-url "$ep" --only-show-errors
+          # The manifest must describe the object that is actually there.
+          nix shell nixpkgs#awscli2 --command aws s3api head-object \
+            --bucket box-images --key "$name.img.gz" --endpoint-url "$ep" \
+            --query ContentLength --output text
+      - name: Attach the x86 image to the Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            thebox-x86.img.xz
+            thebox-x86.img.xz.sha256
+            thebox-x86.img.gz
+            thebox-x86.img.gz.sha256
+            thebox-x86.img.gz.manifest.json
+          fail_on_unmatched_files: true

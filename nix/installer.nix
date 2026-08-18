@@ -145,6 +145,25 @@ let
         if [ -f /run/box-handoff/box-install.json ]; then
           cp /run/box-handoff/box-install.json /tmp/box-install.json
           handoff=/tmp/box-install.json
+        elif [ -f /run/box-handoff/box-claim.txt ]; then
+          # The flashed-installer route (thebox-x86 image): orders were written
+          # into the image's fixed-size claim file as it downloaded — the same
+          # mechanism the Pi images use (docs/claim-flow-spec.md). NUL-padded to
+          # a constant length; still carrying the build-time magic means nobody
+          # personalized this copy, so fall through to the setup wizard.
+          candidate=$(tr -d '\000' < /run/box-handoff/box-claim.txt)
+          case "$candidate" in
+            *BOXCLAIM-PLACEHOLDER*)
+              log "installer image is not personalized — continuing to setup" ;;
+            *)
+              if printf '%s' "$candidate" | jq -e . > /dev/null 2>&1; then
+                log "using orders written into the installer image"
+                printf '%s' "$candidate" > /tmp/box-install.json
+                handoff=/tmp/box-install.json
+              else
+                log "box-claim.txt is not valid JSON — ignoring it"
+              fi ;;
+          esac
         fi
         umount /run/box-handoff || true
       fi
