@@ -147,6 +147,30 @@ jobs:
       - id: deploy
         uses: actions/deploy-pages@v5
 
+  # The Worker that personalizes image downloads: it streams the generic
+  # artifact out of R2 and swaps the claim file as the bytes go past, so no
+  # per-user image is ever built or stored. Deploying it is the last step of
+  # switching the flash door on. Skipped whole when the secret is absent, so a
+  # repo that has not switched it on still releases cleanly.
+  deploy-worker:
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Deploy the image Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "CLOUDFLARE_API_TOKEN not set — image downloads stay switched off."
+            echo "See docs/claim-flow-spec.md for what turning them on takes."
+            exit 0
+          fi
+          cd worker
+          npx --yes wrangler@latest deploy
+
   # Advance the `release` branch — the platform update channel boxes track —
   # to this tag, but only after the site/closure (build) and the aarch64 boxd
   # (cache-aarch64) are published and cached. Boxes checking the channel then

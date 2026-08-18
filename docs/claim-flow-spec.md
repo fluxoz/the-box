@@ -21,17 +21,24 @@ owner's code redeems, and a replay is refused.
 
 ## To switch on in production
 
-The code is in; these are deployment steps, not development:
+Building, publishing and deploying are automated in `.github/workflows/publish.yml`
+and all skip cleanly when the secret is absent. Turning image downloads on is
+therefore three things a human has to do once:
 
-1. Build and upload per model, after each release:
-   `nix build .#packages.aarch64-linux.pi5-image-personalizable`, then put
-   `thebox-pi5.img.gz` and its `.manifest.json` in the `box-images` R2 bucket.
-2. `cd worker && wrangler deploy`, and route `thebox.build/image/*` to it.
-3. Publish the `.img.gz.sha256` alongside the release so the generic artifact
-   stays independently checkable.
+1. **Create the R2 bucket** `box-images`, and a Cloudflare API token with R2
+   write + Workers deploy.
+2. **Add repo secrets** `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`
+   (`gh secret set CLOUDFLARE_API_TOKEN`). The next tagged release then packs
+   each Pi image, uploads it with its manifest to R2, and deploys the Worker.
+3. **Point the Configurator at the Worker**: replace `REPLACE_WITH_WORKER_ORIGIN`
+   in `configurator/index.html` with the deployed origin. Until that is set the
+   flash door says so and sends people to the curl path.
 
-Until step 2, the Configurator's flash path posts to an endpoint that is not
-there yet. The curl path is unaffected and works today.
+**Not `thebox.build/image/*`.** That domain is GitHub Pages with DNS at the
+registrar (`dns1.registrar-servers.com`), so routing a path to a Worker would
+mean moving the whole zone to Cloudflare — a live-site migration for cosmetics.
+The `*.workers.dev` origin needs no DNS change and works immediately; the
+Configurator posts a plain form, so cross-origin is not a problem.
 
 ## The goal
 
