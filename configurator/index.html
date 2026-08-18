@@ -418,24 +418,17 @@ footer.foot b { color: var(--dim); }
     <div class="manifest-col">
       <div class="manifest" aria-live="polite">
         <div class="m-head">
-          <span class="t">Unit Manifest</span>
-          <span class="id" id="m-serial">— — — —</span>
+          <span class="t">Your Box</span>
         </div>
         <div class="m-body">
-          <div class="m-row"><span class="k">Designation</span><span class="v" id="m-name">box-auto</span></div>
+          <div class="m-row"><span class="k">Name</span><span class="v" id="m-name">box-auto</span></div>
           <div class="m-row"><span class="k">Network</span><span class="v muted" id="m-net">Ethernet · DHCP</span></div>
           <div class="m-row"><span class="k">Access</span><span class="v muted" id="m-access">0 keys · console only</span></div>
           <div class="m-row"><span class="k">Exposure</span><span class="v muted" id="m-expose">Private · LAN</span></div>
-          <div class="m-row"><span class="k">Target</span><span class="v muted" id="m-disk">Auto · largest internal</span></div>
-          <div class="m-row"><span class="k">On&nbsp;Done</span><span class="v muted" id="m-finish">Reboot</span></div>
+          <div class="m-row"><span class="k">Disk</span><span class="v muted" id="m-disk">Auto · largest internal</span></div>
+          <div class="m-row"><span class="k">When&nbsp;done</span><span class="v muted" id="m-finish">Reboot</span></div>
         </div>
-        <div class="status-strip" id="status">
-          <span class="dot"></span>
-          <span class="st" id="status-text">Awaiting arm</span>
-        </div>
-        <div class="uplink">
-          <span class="led"></span> Uplink: <b>None</b> · local only
-        </div>
+
       </div>
     </div>
 
@@ -573,7 +566,7 @@ footer.foot b { color: var(--dim); }
 
       <!-- 06 ARM & DEPLOY -->
       <section class="mod critical" id="deploymod">
-        <div class="h"><span class="num">06</span><span class="ttl">Arm &amp; Deploy</span><span class="hint">point of no return</span></div>
+        <div class="h"><span class="num">06</span><span class="ttl">Confirm &amp; Deploy</span><span class="hint">point of no return</span></div>
         <div class="b">
           <label class="arm">
             <input type="checkbox" id="arm">
@@ -598,7 +591,7 @@ footer.foot b { color: var(--dim); }
           </div>
 
           <div class="deploybar">
-            <span class="gate" id="gate">Arm the unit to enable</span>
+            <span class="gate" id="gate">Confirm the erase notice to enable</span>
           </div>
 
           <div class="instructions" id="instructions"></div>
@@ -631,8 +624,6 @@ footer.foot b { color: var(--dim); }
     <span>ALL PROCESSING <b>LOCAL</b></span>
     <span>·</span>
     <span>NO ACCOUNT REQUIRED</span>
-    <span>·</span>
-    <span id="foot-loc">STATION: THIS BROWSER</span>
   </footer>
 </div>
 
@@ -922,13 +913,6 @@ footer.foot b { color: var(--dim); }
     flash(el, val);
     el.classList.toggle("muted", !!muted);
   }
-  function serial(name) {
-    // stable-ish visual serial from the current name for the manifest header
-    let s = name === "auto" ? "AUTO" : name;
-    let h = 0; for (const c of s) h = (h*31 + c.charCodeAt(0)) >>> 0;
-    return "U-" + h.toString(16).toUpperCase().padStart(6,"0").slice(0,6);
-  }
-
   function highlightJSON(obj) {
     const json = JSON.stringify(obj, null, 2);
     return json
@@ -957,7 +941,6 @@ footer.foot b { color: var(--dim); }
 
     // manifest
     setV($("#m-name"), cfg.hostname === "auto" ? "box-auto (per-unit)" : cfg.hostname, cfg.hostname === "auto");
-    $("#m-serial").textContent = serial(cfg.hostname);
     setV($("#m-net"), cfg.wifi ? `Wi-Fi · ${cfg.wifi.ssid}` : "Ethernet · DHCP", !cfg.wifi);
     setV($("#m-access"), keys.length ? `${keys.length} key${keys.length>1?"s":""} · SSH` : "0 keys · console only", !keys.length);
     setV($("#m-expose"), cfg.cloudflare_tunnel_token ? "Public · Cloudflare Tunnel" : "Private · LAN", !cfg.cloudflare_tunnel_token);
@@ -971,21 +954,16 @@ footer.foot b { color: var(--dim); }
     $("#json").innerHTML = highlightJSON(cfg);
     $("#bytes").textContent = new Blob([currentJSON]).size + " bytes";
 
-    // status + gating
+    // gating
     const probs = problems();
     const armed = $("#arm").checked;
     const ready = armed && probs.length === 0;
-    const strip = $("#status");
-    strip.classList.toggle("ready", ready);
-    strip.classList.toggle("armed-only", armed && !ready);
-    $("#status-text").textContent = !armed ? "Awaiting arm"
-      : (probs.length ? "Incomplete: check modules" : "Ready to deploy");
 
     $("#download").disabled = !ready;
     $("#copy").disabled = !ready;
     const gate = $("#gate");
     if (ready) { gate.innerHTML = '<svg class="ico ico--sm" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="8" cy="8" r="4"/></svg> Ready'; gate.style.color = "var(--ok)"; }
-    else if (!armed) { gate.textContent = "Arm the unit to enable"; gate.style.color = "var(--critical)"; }
+    else if (!armed) { gate.textContent = "Confirm the erase notice to enable"; gate.style.color = "var(--critical)"; }
     else { gate.textContent = "Complete required fields above"; gate.style.color = "var(--critical)"; }
     // The instructions render from the live config: the command vector embeds
     // the orders, the image vector states whether the download carries
@@ -997,17 +975,20 @@ footer.foot b { color: var(--dim); }
     renderFleet(); // the fleet panel embeds the same live orders
 
     // The claim link carries the code, so pairing is one click rather than
-    // sixteen typed characters. An "auto" designation names itself per unit, so
-    // there is no hostname to point at until it boots.
+    // sixteen typed characters. It only renders when a name is set: an
+    // auto-named Box has no address until it boots, and a link the user must
+    // hand-edit is worse than no link.
     const link = $("#claimlink");
     if (link && enrollCode) {
-      const host = cfg.hostname === "auto" ? null : `${cfg.hostname}.local`;
-      const url = `http://${host || "box.local"}:2693/pair?c=${encodeURIComponent(enrollCode)}`;
-      link.textContent = url;
-      link.href = url;
-      link.previousSibling.textContent = host
-        ? "Or just open this once the Box is up, and it fills the code in for you: "
-        : "Once it boots it names itself, so swap in its name: ";
+      const note = link.closest(".note");
+      if (cfg.hostname === "auto") {
+        if (note) note.style.display = "none";
+      } else {
+        if (note) note.style.display = "";
+        const url = `http://${cfg.hostname}.local:2693/pair?c=${encodeURIComponent(enrollCode)}`;
+        link.textContent = url;
+        link.href = url;
+      }
     }
   }
 
@@ -1059,7 +1040,7 @@ footer.foot b { color: var(--dim); }
       <div class="cav ${secret ? "cav-secret" : ""}">${secret
         ? "Wipes on paste, no prompt. It also carries secrets (Wi-Fi password / tunnel token), so do not paste it anywhere public."
         : "Wipes on paste, no prompt. Carries no secrets: only the box name, disk choice, your SSH public key, and the pairing-code hash."}</div>`
-      : '<div class="cav">Arm the unit and complete the modules above, and the commands generate here.</div>'}`;
+      : '<div class="cav">Confirm the erase notice and complete the modules above, and the commands generate here.</div>'}`;
     if (!lastReady) return;
     // Embed the orders in both commands — base64 (UTF-8 safe). Nothing to move.
     // BOX_YES=1: you already consented here, by arming orders that say
@@ -1118,7 +1099,7 @@ footer.foot b { color: var(--dim); }
           <option value="thebox-pi3">Raspberry Pi 3</option>
         </select>
         <button type="button" class="btn small" id="pi-go" ${lastReady ? "" : "disabled"}>Download</button>
-        ${lastReady ? "" : '<span class="gate">Arm the unit above</span>'}
+        ${lastReady ? "" : '<span class="gate">Confirm the erase notice above</span>'}
       </div>
       <div class="cav ${secret ? "cav-secret" : ""}">${secret
         ? "This image carries secrets (Wi-Fi password / tunnel token). Treat the file like a key: it installs a Box that trusts you."
@@ -1208,7 +1189,7 @@ footer.foot b { color: var(--dim); }
         <div class="cav ${secret ? "cav-secret" : ""}">${secret
           ? "The command and boot.ipxe carry secrets (Wi-Fi password / tunnel token): anyone on this network who can read them can boot a machine that trusts you."
           : "The command and boot.ipxe carry no secrets: the box name policy, your SSH public key, and the pairing-code hash."}</div>`
-        : '<div class="cav">Arm the unit and complete the modules above, and the fleet command generates here.</div>'}
+        : '<div class="cav">Confirm the erase notice and complete the modules above, and the fleet command generates here.</div>'}
       </div>`;
     if (!lastReady) return;
     const b64 = btoa(unescape(encodeURIComponent(currentJSON)));
