@@ -350,6 +350,20 @@ def main() -> int:
             " || !e.querySelector('[data-p=hw]')).map(e => e.dataset.sku)",
         )
         check(not unwired, "every machine card has live-price hooks", ",".join(unwired))
+        # Standing rule (John, 2026-08-18): every store flow runs through
+        # Stripe. A GitHub issue is never a checkout, a waitlist, or anything
+        # else a customer touches.
+        issue_links = page.eval_on_selector_all(
+            "a[href*='issues/new']", "els => els.map(e => e.href)"
+        )
+        check(not issue_links, "no store flow goes through a GitHub issue",
+              "; ".join(issue_links)[:80])
+        buy = page.eval_on_selector_all(
+            "[data-sku] a.go", "els => els.map(e => e.href)"
+        )
+        not_stripe = [u for u in buy if "buy.stripe.com" not in u]
+        check(not not_stripe, "every machine checkout is a Stripe link",
+              "; ".join(not_stripe)[:80])
 
         # --- the page did not quietly break --------------------------------
         check(not errors, "no uncaught errors on the page", "; ".join(errors[:2]))
