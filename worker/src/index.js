@@ -187,6 +187,8 @@ async function pump(bucket, key, segments, writable) {
   }
 }
 
+const UNSATISFIABLE = Symbol("unsatisfiable-range");
+
 function parseRange(header, total) {
   const m = /^bytes=(\d*)-(\d*)$/.exec(header ?? "");
   if (!m) return null;
@@ -195,9 +197,10 @@ function parseRange(header, total) {
   let start = s === "" ? total - Number(e) : Number(s);
   let end = s === "" || e === "" ? total - 1 : Number(e);
   if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+  if (start >= total) return UNSATISFIABLE;
   start = Math.max(0, start);
   end = Math.min(total - 1, end);
-  if (start > end) return null;
+  if (start > end) return UNSATISFIABLE;
   return { start, end };
 }
 
@@ -265,6 +268,15 @@ export default {
     }
 
     const range = parseRange(request.headers.get("range"), total);
+    // A Range that cannot be satisfied is an error, not an invitation to send
+    // the whole 2 GB. A resuming client asking past the end would otherwise
+    // restart the entire download without being told why.
+    if (range === UNSATISFIABLE) {
+      return new Response("range not satisfiable", {
+        status: 416,
+        headers: { "content-range": `bytes */${total}` },
+      });
+    }
     const start = range ? range.start : 0;
     const end = range ? range.end : total - 1;
     const length = end - start + 1;

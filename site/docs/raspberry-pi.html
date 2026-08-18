@@ -46,9 +46,11 @@
       <tr><td>Pi 3</td><td><a href="https://github.com/fluxoz/the-box/releases/latest/download/thebox-pi3.img.xz"><code>thebox-pi3.img.xz</code></a></td></tr>
     </tbody>
   </table>
-  <p>Each image has a matching <code>.sha256</code> next to it on the release, so you can verify the download.
-  The personalized download is that same published image with one small file swapped inside it, so what you
-  flash is the artifact you can check, not a one-off build nobody else can see.</p>
+  <p>Each image has a matching <code>.sha256</code> next to it on the release, so you can verify the download.</p>
+  <p>A personalized download is that same published image with one small settings file swapped inside it.
+  Be aware of what that means for checking it: your copy <b>will not</b> match the published checksum, because
+  your Wi-Fi, your key and your pairing code are inside it. If verifying the hash yourself matters more to you
+  than the unattended install, take the plain image from the release and set the Box up on the machine.</p>
 
   <h2 id="flash">Flash it</h2>
   <p>Easiest: <a href="https://www.raspberrypi.com/software/">Raspberry Pi Imager</a>, choose
