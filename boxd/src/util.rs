@@ -317,7 +317,9 @@ pub fn validate_outbound_url(url: &str, loopback: Loopback) -> anyhow::Result<()
             }
         };
         if forbidden {
-            bail!("{ip} is this machine or a link-local address; point this at a reachable endpoint");
+            bail!(
+                "{ip} is this machine or a link-local address; point this at a reachable endpoint"
+            );
         }
     }
     Ok(())

@@ -606,7 +606,10 @@ mod tests {
         let p = Paths::new(tmp.path().to_path_buf());
         p.ensure().unwrap();
 
-        assert!(is_claimable(&p), "a blank box with no seeded code is claimable");
+        assert!(
+            is_claimable(&p),
+            "a blank box with no seeded code is claimable"
+        );
         let token = claim(&p, "first device").unwrap().expect("claim succeeds");
         assert!(!is_claimable(&p));
         assert!(claim(&p, "again").unwrap().is_none(), "claim is once only");

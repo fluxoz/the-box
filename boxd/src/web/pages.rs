@@ -2391,7 +2391,10 @@ pub async fn devices(
 /// self-grant check passes), then drive every destructive tool with it. The
 /// same trick approves the agent's own queued actions. The asker/approver
 /// checks are necessary but not sufficient; this is the other half.
-fn agent_may_not(caller: &Option<axum::Extension<crate::web::Caller>>, what: &str) -> Option<Redirect> {
+fn agent_may_not(
+    caller: &Option<axum::Extension<crate::web::Caller>>,
+    what: &str,
+) -> Option<Redirect> {
     match caller {
         Some(axum::Extension(c)) if c.is_agent() => Some(Redirect::to(&format!(
             "/devices?err={}",

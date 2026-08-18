@@ -299,7 +299,9 @@ pub fn update_and_switch(
             Err(re) => format!("ROLLBACK ALSO FAILED ({re:#}) — this Box needs attention"),
         };
         restore_pin();
-        return Err(e.context(format!("activating the new platform ({undo}, pin restored)")));
+        return Err(e.context(format!(
+            "activating the new platform ({undo}, pin restored)"
+        )));
     }
 
     match health() {
