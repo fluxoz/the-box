@@ -609,6 +609,27 @@ mod tests {
 
     /// First-run claim is the one door that opens without a credential, so
     /// everything that means "this Box already has an operator" must close it.
+    /// The Configurator mints lowercase hex and stores `sha256(code)` in the
+    /// orders. That is a deliberate compatibility choice — the boxd on the
+    /// install medium may predate the Crockford format — so redeeming one must
+    /// keep working, and it must keep working when the person types it in a
+    /// different case.
+    #[test]
+    fn a_configurator_hex_code_still_redeems() {
+        let tmp = TempDir::new().unwrap();
+        let p = Paths::new(tmp.path().to_path_buf());
+        p.ensure().unwrap();
+
+        // 80 bits, exactly what configurator/index.html now emits.
+        let code = "a3f9c2b1d0e74f8a9c3b";
+        import_code(&p, &hash(code), "enrollment").unwrap();
+        assert!(!is_claimable(&p), "a seeded Box is owned");
+
+        let token = redeem_code(&p, "A3F9C2B1D0E74F8A9C3B", "laptop").unwrap();
+        assert!(verify(&p, &token), "case must not matter");
+        assert!(redeem_code(&p, code, "again").is_err(), "single use");
+    }
+
     /// A Box claimed before `claimed_at` existed must not fall back to
     /// "never claimed" when its last device is revoked. Every Box already in
     /// the field is in exactly that state after an upgrade.
