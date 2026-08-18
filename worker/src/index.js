@@ -21,7 +21,11 @@
  * See docs/claim-flow-spec.md.
  */
 
-const MAX_ORDERS_BYTES = 4096; // half the claim file; the rest is padding
+// The claim file is 8192 bytes and the orders get a trailing newline, so this
+// is the real ceiling rather than an arbitrary half. The old 4096 made the
+// 8-key SSH allowance below unreachable and rejected setups that would have
+// fit comfortably.
+const MAX_ORDERS_BYTES = 8191;
 const HEX64 = /^[0-9a-f]{64}$/;
 const HOSTNAME = /^[a-z0-9][a-z0-9-]{0,62}$/;
 
@@ -235,7 +239,16 @@ export default {
       if (new TextEncoder().encode(raw).length > MAX_ORDERS_BYTES) {
         throw new Error("orders too large");
       }
-      orders = validateOrders(JSON.parse(raw));
+      let parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        // Not the parser's message: V8 quotes the offending input, which would
+        // put part of the caller's orders — code hash, keys — into a response
+        // and into any log that records it.
+        throw new Error("orders are not valid JSON");
+      }
+      orders = validateOrders(parsed);
 
       const manifestObj = await env.IMAGES.get(`${board}.img.gz.manifest.json`);
       if (!manifestObj) return new Response("unknown board", { status: 404 });
