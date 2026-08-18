@@ -60,10 +60,13 @@
   or <strong>pool</strong>), confirm, and it installs. Good for a machine you're sitting at.</p>
 
   <h2 id="windows">Windows</h2>
-  <p>In an <strong>elevated</strong> PowerShell:</p>
-  <pre><code>irm https://thebox.build/install.ps1 | iex</code></pre>
+  <p>Build your command on the <a href="/">front page</a> or in the
+  <a href="/configurator/">Configurator</a>, then paste it into an <strong>elevated</strong> PowerShell.
+  It looks like this, with your orders riding base64 inside it, exactly like the Linux one-liner:</p>
+  <pre><code>$env:BOX_ORDERS_B64='&lt;yours&gt;'; irm https://thebox.build/install.ps1 | iex</code></pre>
   <p>This stages the installer's kernel and initrd onto the Windows disk, adds a one-time boot entry, and
-  reboots into the installer, which then wipes and installs. As with Linux, it takes the whole machine.</p>
+  reboots into the installer, which then wipes and installs, unattended start to finish. As with Linux,
+  it takes the whole machine. A bare <code>irm | iex</code> with no orders refuses to run.</p>
 
   <h2 id="mac">Mac</h2>
   <p>A Mac mini or an old MacBook makes a quiet, low-power Box. To the Box, a Mac that already runs Linux
