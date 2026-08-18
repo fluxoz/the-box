@@ -9,7 +9,7 @@ mod orders;
 mod plan;
 mod wizard;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
@@ -35,6 +35,16 @@ enum Cmd {
         /// Where to write the generated disko config.
         #[arg(long, default_value = "/tmp/box-disko.nix")]
         out: String,
+    },
+    /// Would an installer accept these orders and run unattended? Exits
+    /// non-zero with the reason if not.
+    ///
+    /// The installer runs this before it wipes anything, and the site's browser
+    /// test runs it on whatever the Configurator produces. Two programs on two
+    /// machines, one answer to "is this installable", so they cannot drift.
+    ValidateOrders {
+        /// Path to box-install.json (the orders / handoff).
+        orders: String,
     },
     /// Interactive console wizard: pick a disk layout on the box itself.
     Wizard {
@@ -64,6 +74,22 @@ fn main() -> Result<()> {
     match Cli::parse().cmd {
         Cmd::Probe => plan::probe_cmd(),
         Cmd::Plan { orders, out } => plan::plan_cmd(&orders, &out),
+        Cmd::ValidateOrders { orders } => {
+            let text = std::fs::read_to_string(&orders)
+                .with_context(|| format!("reading {orders}"))?;
+            let value: serde_json::Value =
+                serde_json::from_str(&text).with_context(|| format!("parsing {orders}"))?;
+            match box_core::orders::validate_for_install(&value) {
+                Ok(()) => {
+                    eprintln!("orders are installable");
+                    Ok(())
+                }
+                // A plain message, because this is read off a console by
+                // somebody standing in front of a machine that has not been
+                // touched yet.
+                Err(why) => anyhow::bail!("these orders cannot be installed: {why}"),
+            }
+        }
         Cmd::Wizard {
             base_orders,
             orders_out,
