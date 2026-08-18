@@ -9,9 +9,9 @@
 //! stored SHA-256-hashed, 0600, and never committed to git.
 
 use std::io::Read;
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use axum::http::HeaderMap;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -172,8 +172,32 @@ fn load_checked(paths: &Paths) -> Result<Store> {
 
 fn save(paths: &Paths, store: &Store) -> Result<()> {
     let file = paths.auth_file();
-    std::fs::write(&file, serde_json::to_string_pretty(store)?)
-        .with_context(|| format!("writing {}", file.display()))?;
+    // Write a temp file and rename over the target, rather than truncating it
+    // in place. This one file holds every credential on the Box, and a plain
+    // write that runs out of disk leaves it truncated — at which point
+    // `load_checked` correctly refuses to parse it and the operator is locked
+    // out of their own machine with no way back but a shell. rename(2) within
+    // a directory is atomic: either the old file or the new one, never half.
+    let tmp = file.with_extension("json.tmp");
+    let body = serde_json::to_string_pretty(store)?;
+    {
+        use std::io::Write as _;
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&tmp)
+            .with_context(|| format!("writing {}", tmp.display()))?;
+        f.write_all(body.as_bytes())
+            .with_context(|| format!("writing {}", tmp.display()))?;
+        // Durability before visibility: a rename that lands before the bytes do
+        // would publish an empty file across a power cut.
+        f.sync_all()
+            .with_context(|| format!("flushing {}", tmp.display()))?;
+    }
+    std::fs::rename(&tmp, &file)
+        .with_context(|| format!("replacing {}", file.display()))?;
     std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600))?;
     // Match the data dir's owner so a code minted by an operator running
     // `boxd auth enroll` as root over SSH is still readable by the boxd
@@ -296,9 +320,22 @@ pub fn mint_code(paths: &Paths, label: &str) -> Result<String> {
 /// generated client-side by the Configurator), so a box is pairable from first
 /// boot with the code from the user's recovery kit — no SSH.
 pub fn import_code(paths: &Paths, code_hash: &str, label: &str) -> Result<()> {
+    // Validate before recording anything. `code_was_seeded` permanently closes
+    // network claim, so accepting a hash that no code can ever match would
+    // leave a Box that nobody — including its owner — can pair with, and the
+    // only way back would be a reflash. Refusing a malformed hash keeps the
+    // Box claimable, which is recoverable.
+    let hash = code_hash.trim().to_ascii_lowercase();
+    if hash.len() != 64 || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
+        bail!(
+            "enrollment_code_hash must be a 64-character SHA-256 hex digest \
+             (got {} characters); refusing to seal this Box with a code nobody holds",
+            hash.len()
+        );
+    }
     let mut store = load(paths);
     store.codes.push(StoredCode {
-        hash: code_hash.trim().to_ascii_lowercase(),
+        hash,
         label: label.to_string(),
         expires_at: i64::MAX, // valid until first used (first boot may be much later)
     });
@@ -609,6 +646,52 @@ mod tests {
 
     /// First-run claim is the one door that opens without a credential, so
     /// everything that means "this Box already has an operator" must close it.
+    /// A hash no code can match would seal the Box forever: network claim
+    /// closed, and nothing to redeem. Refuse it while the Box is still
+    /// recoverable.
+    #[test]
+    fn a_malformed_enrollment_hash_is_refused_rather_than_sealing_the_box() {
+        let tmp = TempDir::new().unwrap();
+        let p = Paths::new(tmp.path().to_path_buf());
+        p.ensure().unwrap();
+
+        for bad in ["", "deadbeef", "zz", &"g".repeat(64), &"a".repeat(63)] {
+            assert!(
+                import_code(&p, bad, "enrollment").is_err(),
+                "must refuse {bad:?}"
+            );
+        }
+        assert!(!code_was_seeded(&p), "a refused hash must not seal the Box");
+        assert!(is_claimable(&p), "and the Box must still be recoverable");
+
+        // A real digest is accepted, and then it IS sealed.
+        import_code(&p, &hash("abc"), "enrollment").unwrap();
+        assert!(code_was_seeded(&p));
+        assert!(!is_claimable(&p));
+    }
+
+    /// auth.json holds every credential on the Box. A write that dies partway
+    /// must leave the old file, not a truncated one that locks the owner out.
+    #[test]
+    fn the_auth_store_is_replaced_atomically() {
+        let tmp = TempDir::new().unwrap();
+        let p = Paths::new(tmp.path().to_path_buf());
+        p.ensure().unwrap();
+
+        let token = mint_session(&p, "laptop").unwrap();
+        let before = std::fs::read_to_string(p.auth_file()).unwrap();
+        assert!(serde_json::from_str::<serde_json::Value>(&before).is_ok());
+
+        mint_session(&p, "phone").unwrap();
+        // No temp file left behind, and the first session still works.
+        assert!(
+            !p.auth_file().with_extension("json.tmp").exists(),
+            "the temp file must be renamed away, not left in the data dir"
+        );
+        assert!(verify(&p, &token));
+        assert_eq!(list(&p).len(), 2);
+    }
+
     /// The Configurator mints lowercase hex and stores `sha256(code)` in the
     /// orders. That is a deliberate compatibility choice — the boxd on the
     /// install medium may predate the Crockford format — so redeeming one must

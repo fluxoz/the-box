@@ -200,8 +200,17 @@ let
       # Configurator, the image download, `boxd provision`, both wizards)
       # supplies a hash, so reaching here without one means something went
       # wrong upstream. Refuse while the machine is still intact.
-      if [ -z "$(jq -r '.enrollment_code_hash // empty' "$handoff")" ]; then
-        log "these orders carry no pairing code, so this Box would boot with no owner."
+      enroll_hash=$(jq -r '.enrollment_code_hash // empty' "$handoff")
+      # Shape-check it here, while the disk is still intact. A malformed hash
+      # fails at first boot instead, by which point the machine has been wiped
+      # and the operator has a Box they cannot pair with.
+      case "$enroll_hash" in
+        *[!0-9a-fA-F]* | "" ) enroll_hash="" ;;
+        *) [ "''${#enroll_hash}" -eq 64 ] || enroll_hash="" ;;
+      esac
+      if [ -z "$enroll_hash" ]; then
+        log "these orders carry no usable pairing code (it must be a 64-character"
+        log "SHA-256 hex digest), so this Box would boot with no owner."
         log "NOTHING HAS BEEN CHANGED. Build your install at https://thebox.build/configurator/"
         log "(or run setup on the machine itself) so the Box knows who it belongs to."
         exit 1
