@@ -416,8 +416,11 @@
               # Built as a bare partition image (a sandboxed build has no loop
               # devices), then placed at the 1 MiB alignment boundary. The
               # label is the one the installer already mounts orders from.
+              # Serial and GUIDs pinned: sfdisk and mkfs otherwise mint random
+              # ones, and a single random byte shifts every offset in the
+              # packed download, making local and CI manifests incomparable.
               truncate -s "$esp_mib"M esp.img
-              mkfs.vfat -F 32 -n BOX-INSTALL esp.img
+              mkfs.vfat -F 32 -n BOX-INSTALL -i 26942694 esp.img
               mcopy -s -i esp.img work/EFI work/box-installer ::/
 
               mkdir -p $out
@@ -425,7 +428,8 @@
               truncate -s $(( (esp_mib + 2) * 1048576 )) "$img"
               sfdisk --quiet "$img" <<EOF
               label: gpt
-              start=2048, size=$(( esp_mib * 2048 )), type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, name=ESP
+              label-id: 4B0F2694-C0DE-4B0F-9000-000000002694
+              start=2048, size=$(( esp_mib * 2048 )), type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, uuid=4B0F2694-C0DE-4B0F-9000-0000000000E5, name=ESP
               EOF
               dd if=esp.img of="$img" bs=1M seek=1 conv=notrunc status=none
               sfdisk --verify "$img"
