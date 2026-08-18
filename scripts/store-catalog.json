@@ -1,0 +1,104 @@
+{
+  "comment": "One entry per machine the store sells. The nightly price check (scripts/store-prices.py) reads this, asks each maker's own store for the current price, and publishes pricing/latest.json for the store page to display. baked_hardware is the fallback (and the drift baseline); deposit_cents must equal the amount on the live Stripe payment link, which is why it is stated here rather than recomputed.",
+  "fee_rate": 0.15,
+  "fee_floor": 99,
+  "skus": {
+    "hp-z2-128": {
+      "name": "HP Z2 Mini G1a 128GB",
+      "source": {
+        "type": "manual",
+        "note": "HP sells through business distribution with no scrapable store; update baked_hardware from the distributor quote."
+      },
+      "baked_hardware": 2374,
+      "deposit_cents": 35900
+    },
+    "gmktec-evo-x2-128": {
+      "name": "GMKtec EVO-X2 128GB",
+      "source": {
+        "type": "shopify",
+        "domain": "www.gmktec.com",
+        "handle": "amd-ryzen™-ai-max-395-evo-x2-ai-mini-pc",
+        "variant": "128GB.*2TB.*US"
+      },
+      "baked_hardware": 3650,
+      "deposit_cents": 48900
+    },
+    "minisforum-s1max": {
+      "name": "Minisforum MS-S1 MAX 128GB",
+      "source": {
+        "type": "shopify",
+        "domain": "www.minisforum.com",
+        "handle": "ms-s1-max",
+        "variant": "."
+      },
+      "baked_hardware": 2920,
+      "deposit_cents": 55900
+    },
+    "gmktec-evo-x2-64": {
+      "name": "GMKtec EVO-X2 64GB",
+      "source": {
+        "type": "shopify",
+        "domain": "www.gmktec.com",
+        "handle": "amd-ryzen™-ai-max-395-evo-x2-ai-mini-pc",
+        "variant": "64GB.*1TB.*US"
+      },
+      "baked_hardware": 2000,
+      "deposit_cents": 29900
+    },
+    "gmktec-g2-starter": {
+      "name": "GMKtec G2 Plus N150",
+      "source": {
+        "type": "shopify",
+        "domain": "www.gmktec.com",
+        "handle": "gmktec-nucbox-g2-plus-mini-pc-intel®-twin-lake-n150",
+        "variant": "."
+      },
+      "baked_hardware": 240,
+      "deposit_cents": 9900
+    },
+    "gmktec-evo-x3-128": {
+      "name": "GMKtec EVO-X3 128GB",
+      "source": {
+        "type": "shopify",
+        "domain": "www.gmktec.com",
+        "handle": "gmktec-evo-x3-ai-mini-pc-amd-ryzen-ai-max-395",
+        "variant": "128GB.*2TB.*US"
+      },
+      "baked_hardware": 3800,
+      "deposit_cents": 56900
+    },
+    "beelink-gtr9-128": {
+      "name": "Beelink GTR9 Pro 128GB",
+      "source": {
+        "type": "shopify",
+        "domain": "www.bee-link.com",
+        "handle": "beelink-gtr9-pro-amd-ryzen-ai-max-395",
+        "variant": "128GB.*2TB"
+      },
+      "baked_hardware": 4349,
+      "deposit_cents": 64900
+    },
+    "minisforum-ai-x1-pro": {
+      "name": "Minisforum AI X1 Pro 96GB",
+      "source": {
+        "type": "shopify",
+        "domain": "www.minisforum.com",
+        "handle": "minisforum-ai-x1-pro",
+        "variant": "96GB.*2TB"
+      },
+      "baked_hardware": 1488,
+      "deposit_cents": 21900
+    },
+    "beelink-me-mini": {
+      "name": "Beelink ME mini N150",
+      "source": {
+        "type": "shopify",
+        "domain": "www.bee-link.com",
+        "handle": "beelink-me-mini-n150",
+        "variant": "N150.*1TB"
+      },
+      "baked_hardware": 409,
+      "deposit_cents": 9900
+    }
+  }
+}

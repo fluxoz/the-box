@@ -335,6 +335,22 @@ def main() -> int:
                 check(json.loads(base64.b64decode(m.group(1))) == fleet_orders,
                       "boot.ipxe and the depot command carry the same orders")
 
+        # --- the store: every machine card is wired for live pricing --------
+        # The nightly price check publishes totals the page fills in by
+        # data-sku; a card missing its hooks silently keeps stale numbers
+        # forever, which is the exact rot this machinery exists to stop.
+        page.goto(f"{base}/store/", wait_until="networkidle")
+        skus = page.eval_on_selector_all(
+            "[data-sku]", "els => els.map(e => e.dataset.sku)"
+        )
+        check(len(skus) >= 9, "the store offers at least nine machines", ",".join(skus))
+        unwired = page.eval_on_selector_all(
+            "[data-sku]",
+            "els => els.filter(e => !e.querySelector('[data-p=total]')"
+            " || !e.querySelector('[data-p=hw]')).map(e => e.dataset.sku)",
+        )
+        check(not unwired, "every machine card has live-price hooks", ",".join(unwired))
+
         # --- the page did not quietly break --------------------------------
         check(not errors, "no uncaught errors on the page", "; ".join(errors[:2]))
 
