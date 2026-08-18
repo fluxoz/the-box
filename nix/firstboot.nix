@@ -114,6 +114,23 @@
         chown -R boxd:boxd /var/lib/boxd
       fi
 
+      # Scrub the copy on the boot partition, now that its contents live in
+      # the Box's own state.
+      #
+      # That partition is FAT: it has no ownership and no permissions, so
+      # anyone who ever holds the card reads whatever is on it. The claim file
+      # carries the Wi-Fi PSK in cleartext and the pairing-code hash, and it has
+      # no reason to outlive first boot. Overwrite rather than delete, so the
+      # file (and its size) stay where the image put them.
+      for claim in /boot/box-claim.txt /boot/firmware/box-claim.txt; do
+        [ -f "$claim" ] || continue
+        size=$(stat -c %s "$claim" 2>/dev/null || echo 0)
+        [ "$size" -gt 0 ] || continue
+        # Same length, no content: applied, and nothing left to read.
+        head -c "$size" /dev/zero > "$claim" 2>/dev/null || true
+        sync
+      done
+
       # Applied. Later boots leave the box's own state alone.
       touch "$stamp"
     '';

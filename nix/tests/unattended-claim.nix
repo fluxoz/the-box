@@ -108,5 +108,14 @@ pkgs.testers.runNixOSTest {
 
     with subtest("the claim was written down where the owner will see it"):
         machine.succeed("journalctl -u boxd --no-pager >/dev/null")
+
+    with subtest("the boot partition no longer carries the Wi-Fi PSK or the code hash"):
+        # FAT has no permissions: anything left here is readable by whoever
+        # next holds the card.
+        machine.succeed("test -f /boot/box-claim.txt")
+        machine.fail("grep -q '${codeHash}' /boot/box-claim.txt")
+        machine.succeed(
+            "test \"$(tr -d '\\0' < /boot/box-claim.txt | wc -c)\" -eq 0"
+        )
   '';
 }

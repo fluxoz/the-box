@@ -972,7 +972,11 @@ footer.foot b { color: var(--dim); }
     if (ready) { gate.innerHTML = '<svg class="ico ico--sm" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="8" cy="8" r="4"/></svg> Ready'; gate.style.color = "var(--ok)"; }
     else if (!armed) { gate.textContent = "Arm the unit to enable"; gate.style.color = "var(--critical)"; }
     else { gate.textContent = "Complete required fields above"; gate.style.color = "var(--critical)"; }
-    if (vector === "sh") renderInstructions(); // keep the embedded-orders command fresh
+    // Both of these render from the live config: the curl vector embeds the
+    // orders, and the image vector states whether the download carries secrets.
+    // Re-render on every change or that security claim goes stale the moment
+    // someone types a Wi-Fi password after picking the vector.
+    if (vector === "sh" || vector === "pi") renderInstructions();
 
     // The claim link carries the code, so pairing is one click rather than
     // sixteen typed characters. An "auto" designation names itself per unit, so
