@@ -92,11 +92,10 @@
   machine from it. Your orders are inside, so the install runs unattended and the Box comes up already
   yours. This is also the path for an Intel Mac with no OS on it. Two more ways for special cases:</p>
   <ul>
-    <li><strong>Network boot (PXE):</strong> point the machine's PXE/iPXE at the release's
-      <code>netboot.ipxe</code> (it chain-loads the kernel + initrd). The artifacts are on the
-      <a href="https://github.com/fluxoz/the-box/releases/latest">latest GitHub release</a>. Pass orders
-      with <code>box.install-url=</code> or <code>box.install-b64=</code> on the kernel command line; a
-      fleet can serve one orders file per machine.</li>
+    <li><strong>Network boot (PXE):</strong> for many machines at once — one command turns a spare
+      Linux machine into a PXE depot serving the installer with your orders, and every machine you
+      network-boot converts itself. Build it in the <a href="/configurator/">Configurator</a>'s fleet
+      panel; details in the <a href="fleet.html#pxe">fleet guide</a>.</li>
     <li><strong>Decide on the machine:</strong> flash the plain (unpersonalized)
       <code>thebox-x86.img.xz</code> from the release — its hash is published, so you can verify it —
       and boot it. With no orders inside, it runs the setup wizard on the machine's own screen and in a

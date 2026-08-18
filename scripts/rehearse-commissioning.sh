@@ -6,7 +6,8 @@
 # the funnel is broken for real people — that is the point of running it.
 #
 # Emits: $OUT/receipt.json  {verified_at, ok, stages: {…seconds}, release}
-# Needs: qemu-system-x86_64, OVMF, genisoimage, curl, ssh-keygen, python3.
+# Needs: qemu-system-x86_64, OVMF, genisoimage (or mkisofs/xorriso), curl,
+# ssh-keygen, python3.
 # KVM is used when present; plain TCG works, slower.
 set -euo pipefail
 
@@ -31,14 +32,29 @@ declare -A STAGE
 # command line, not a single word.
 postmortem() {
   say "collecting the Box's side of the story"
+  # First: is it even the Box answering? If the BLANK machine still answers,
+  # the takeover never rebooted it, and asking the Box's root for journals
+  # produces a useless empty artifact — which is exactly what the first real
+  # failure produced (install.sh died before kexec on a checksum mismatch and
+  # its one line of explanation had gone to /dev/null). The one-liner's own
+  # output is the whole story in that case, so keep it and surface it.
   # shellcheck disable=SC2086
-  {
-    printf '\n===== memory =====\n';        $SSH root@127.0.0.1 'free -m'
-    printf '\n===== boxd unit =====\n';     $SSH root@127.0.0.1 'systemctl status boxd --no-pager -l'
-    printf '\n===== boxd log =====\n';      $SSH root@127.0.0.1 'journalctl -u boxd --no-pager -n 120'
-    printf '\n===== os-apply log =====\n';  $SSH root@127.0.0.1 'journalctl -u boxd-os-apply --no-pager -n 80'
-    printf '\n===== OOM kills =====\n';     $SSH root@127.0.0.1 'journalctl -k --no-pager | grep -iE "oom|killed process" | tail -20'
-  } > "$OUT/postmortem.log" 2>&1 || true
+  if $SSH op@127.0.0.1 true 2>/dev/null; then
+    {
+      printf 'The machine still answers as the BLANK machine: the takeover never fired.\n'
+      printf 'install.sh output:\n\n'
+      tail -40 "$OUT/takeover.log" 2>/dev/null || echo '(no takeover log captured)'
+    } > "$OUT/postmortem.log" 2>&1 || true
+  else
+    # shellcheck disable=SC2086
+    {
+      printf '\n===== memory =====\n';        $SSH root@127.0.0.1 'free -m'
+      printf '\n===== boxd unit =====\n';     $SSH root@127.0.0.1 'systemctl status boxd --no-pager -l'
+      printf '\n===== boxd log =====\n';      $SSH root@127.0.0.1 'journalctl -u boxd --no-pager -n 120'
+      printf '\n===== os-apply log =====\n';  $SSH root@127.0.0.1 'journalctl -u boxd-os-apply --no-pager -n 80'
+      printf '\n===== OOM kills =====\n';     $SSH root@127.0.0.1 'journalctl -k --no-pager | grep -iE "oom|killed process" | tail -20'
+    } > "$OUT/postmortem.log" 2>&1 || true
+  fi
   tail -60 "$OUT/postmortem.log" || true
 }
 
@@ -69,7 +85,11 @@ users:
       - $(cat vmkey.pub)
 EOF
 printf 'instance-id: commissioning\nlocal-hostname: sparepc\n' > meta-data
-genisoimage -quiet -output seed.iso -volid cidata -joliet -rock user-data meta-data
+# Whichever ISO tool the host has: genisoimage (CI), mkisofs, or xorriso.
+if   command -v genisoimage >/dev/null; then genisoimage -quiet -output seed.iso -volid cidata -joliet -rock user-data meta-data
+elif command -v mkisofs     >/dev/null; then mkisofs -quiet -output seed.iso -volid cidata -joliet -rock user-data meta-data
+else xorriso -as mkisofs -quiet -output seed.iso -volid cidata -joliet -rock user-data meta-data
+fi
 
 OVMF_CODE=""
 for c in /usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_CODE.fd "${OVMF_DIR:-}/OVMF_CODE.fd"; do
@@ -112,8 +132,11 @@ HASH=$(printf %s "$CODE" | sha256sum | cut -d' ' -f1)
 KEY=$(cat vmkey.pub)
 B64=$(printf '{ "erase_disk": true, "hostname": "auto", "ssh_authorized_keys": ["%s"], "enrollment_code_hash": "%s" }' "$KEY" "$HASH" | base64 -w0)
 say "running the live one-liner"
+# Keep the output: when the takeover dies before kexec (a checksum mismatch, a
+# fetch failure), its final line is the entire diagnosis, and discarding it
+# once turned a one-line failure into a 31-minute mystery.
 # shellcheck disable=SC2086
-timeout 900 $SSH op@127.0.0.1 "curl -fsSL $SITE/install.sh | sudo BOX_ORDERS_B64=$B64 BOX_YES=1 sh" >/dev/null 2>&1 || true
+timeout 900 $SSH op@127.0.0.1 "curl -fsSL $SITE/install.sh | sudo BOX_ORDERS_B64=$B64 BOX_YES=1 sh" > "$OUT/takeover.log" 2>&1 || true
 STAGE[takeover]=$(( $(now) - T1 )); T1=$(now)
 
 # ---- the new Box ----------------------------------------------------------

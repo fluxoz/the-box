@@ -614,6 +614,11 @@ footer.foot b { color: var(--dim); }
             <pre id="json"><span class="jk">{ }</span></pre>
           </div>
           <p class="field-note">This is <code class="inline">box-install.json</code>, the orders themselves. The image and the command carry it for you; save it only for the fleet and bare-metal paths in the <a href="/docs/install.html">docs</a>.</p>
+
+          <div>
+            <button type="button" class="btn small ghost" id="fleet-toggle" aria-expanded="false"><svg class="ico ico--sm caret" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M6 3.5 11 8l-5 4.5z"/></svg> Provisioning a fleet? Boot them over the network (PXE)</button>
+          </div>
+          <div id="fleet" class="collapse"></div>
         </div>
       </section>
     </form>
@@ -997,6 +1002,7 @@ footer.foot b { color: var(--dim); }
     // moment someone types a Wi-Fi password after picking the vector.
     lastReady = ready;
     renderInstructions();
+    renderFleet(); // the fleet panel embeds the same live orders
 
     // The claim link carries the code, so pairing is one click rather than
     // sixteen typed characters. An "auto" designation names itself per unit, so
@@ -1161,6 +1167,63 @@ footer.foot b { color: var(--dim); }
     el.addEventListener("click", pick);
     el.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
   });
+
+  /* ---------- fleet: PXE, the network delivery of the same orders ---------- */
+  // Not a third door: the fleet panel serves the SAME installer the flash
+  // image carries, delivered over the network, because someone provisioning
+  // twenty machines is not going to walk a USB stick to each one. One command
+  // turns a spare Linux machine into a depot; every machine the operator
+  // network-boots takes these orders. "auto" naming keeps twenty machines
+  // from fighting over one name, and the one pairing code claims each Box.
+  $("#fleet-toggle").addEventListener("click", () => {
+    const open = !$("#fleet").classList.contains("open");
+    show($("#fleet"), open);
+    $("#fleet-toggle").setAttribute("aria-expanded", String(open));
+    $("#fleet-toggle .caret").classList.toggle("caret--open", open);
+    renderFleet();
+  });
+  function renderFleet() {
+    const panel = $("#fleet");
+    if (!panel.classList.contains("open")) return;
+    let cfg = null;
+    try { cfg = JSON.parse(currentJSON || "{}"); } catch { cfg = {}; }
+    const named = cfg && cfg.hostname && cfg.hostname !== "auto";
+    const secret = carriesSecrets();
+    panel.innerHTML = `
+      <p class="field-note">Run this on any Linux machine on the same network (it is <b>not</b> wiped —
+      it becomes the depot). Then network-boot each machine you want to convert: pick PXE in its boot
+      menu, walk away. Every machine that network-boots is <b>erased</b> and comes up as a Box carrying
+      these orders; the pairing code above claims each one. Stop the depot with Ctrl-C when the fleet is
+      up. <a href="/docs/fleet.html#pxe">How it works</a>.</p>
+      ${named ? '<p class="field-note" style="color:var(--critical)">Every machine would be named <b>' +
+        cfg.hostname + '</b> and collide on the network — switch Identity to <b>Auto-assign</b> so each machine names itself.</p>' : ""}
+      ${lastReady ? `
+      <div class="lbl">PXE depot · one command</div>
+      <div class="cmdbox" style="margin:4px 0 0"><code id="pxe-cmd"></code><button type="button" class="btn small ghost" id="cp-pxe">Copy</button></div>
+      <div class="deploybar" style="margin-top:10px">
+        <button type="button" class="btn small ghost" id="dl-ipxe">Save boot.ipxe</button>
+        <span class="field-note" style="margin:0">Already run PXE? Put this next to the release's
+        <code class="inline">bzImage</code>, <code class="inline">initrd</code> and
+        <code class="inline">netboot.ipxe</code> and point your boot at it.</span>
+      </div>
+      <div class="cav ${secret ? "cav-secret" : ""}" style="padding:8px 0 0">${secret
+        ? "The command and boot.ipxe carry secrets (Wi-Fi password / tunnel token) — anyone on this network who can read them can boot a machine that trusts you."
+        : "The command and boot.ipxe carry no secrets: the box name policy, your SSH public key, and the pairing-code hash."}</div>`
+      : '<div class="cav" style="padding:8px 0 0">Arm the unit and complete the modules above, and the fleet command generates here.</div>'}`;
+    if (!lastReady) return;
+    const b64 = btoa(unescape(encodeURIComponent(currentJSON)));
+    const cmd = `curl -fsSL https://thebox.build/pxe.sh | sudo BOX_ORDERS_B64='${b64}' sh`;
+    $("#pxe-cmd").textContent = cmd;
+    $("#cp-pxe").addEventListener("click", () => { navigator.clipboard.writeText(cmd); toast("Depot command copied"); });
+    // For people with their own PXE server: the same orders as a tiny iPXE
+    // script that chains the published netboot.ipxe (which honors ${cmdline}),
+    // resolved relative to wherever they host the artifacts.
+    $("#dl-ipxe").addEventListener("click", () => {
+      const script = "#!ipxe\nset cmdline box.install-b64=" + b64 + "\nchain netboot.ipxe\n";
+      download("boot.ipxe", script, "application/octet-stream");
+      toast("boot.ipxe saved");
+    });
+  }
 
   /* ---------- pairing code (part of the recovery kit) ---------- */
   // 80 bits, as lowercase hex with no separators.

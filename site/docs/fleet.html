@@ -46,9 +46,38 @@
   from a Box's <strong>Devices</strong> page.</div>
 
   <h2 id="batch">Batch installs</h2>
-  <p>One generic image serves every machine, and identity arrives at first boot. So provisioning many
-  Boxes means handing each a different <a href="install.html#configurator">orders</a> file: per-machine
-  hostname, your SSH key, and a one-time pairing code. Install them the same way you install one.</p>
+  <p>One generic image serves every machine, and identity arrives at first boot as
+  <a href="install.html#configurator">orders</a>. For a fleet, build <em>one</em> set of orders with the
+  name on <strong>Auto-assign</strong>: every machine takes the same orders, derives its own stable name
+  (<code>box-3f2a1b</code>), and the one pairing code claims each Box. Three deliveries, same result:</p>
+  <ul>
+    <li><strong>Network boot (PXE)</strong> — the fastest way to do twenty machines; see below.</li>
+    <li><strong>One USB stick, many machines</strong> — a personalized flash image isn't consumed by
+      installing: boot the same stick in each machine in turn.</li>
+    <li><strong>The one-liner</strong> — machines already running Linux take the pasted
+      <code>curl | sh</code> command, e.g. over SSH in a loop.</li>
+  </ul>
+
+  <h2 id="pxe">Provision over the network (PXE)</h2>
+  <p>Build your orders in the <a href="/configurator/">Configurator</a> and open
+  <strong>Provisioning a fleet?</strong> — it emits one command:</p>
+  <pre><code>curl -fsSL https://thebox.build/pxe.sh | sudo BOX_ORDERS_B64='&lt;yours&gt;' sh</code></pre>
+  <p>Run it on any Linux machine on the same network (a laptop is fine — <em>this</em> machine is not
+  wiped, it becomes the <strong>depot</strong>). It fetches the installer once, verifies it against
+  checksums pinned in the TLS-served script, and serves it to the LAN. Then network-boot each machine
+  you want to convert — pick PXE in the boot menu, or put network first in the boot order on blank
+  machines. Each one wipes itself, installs Box OS unattended, and comes up as its own Box. Stop the
+  depot with Ctrl-C when the fleet is up.</p>
+  <div class="warn"><b>Every machine you network-boot while the depot runs is erased.</b> The depot
+  answers only machines that ask to netboot (proxy DHCP — your router keeps assigning addresses, and
+  nothing already booted from its own disk is touched), but the machine at the boot menu is past its
+  last prompt: the orders carry your consent, so the install runs to completion.</div>
+  <p class="muted">Details: the depot answers firmware PXE (BIOS and UEFI) with an
+  <a href="https://ipxe.org">iPXE</a> chainloader over TFTP; iPXE fetches the kernel and initrd from the
+  depot over HTTP with your orders riding the kernel command line, RAM-only. Each machine still fetches
+  the Box OS closure from the binary caches, so the LAN needs internet. Have PXE infrastructure already?
+  The same panel saves a <code>boot.ipxe</code>: put it beside the release's <code>bzImage</code>,
+  <code>initrd</code> and <code>netboot.ipxe</code> on your boot server and point your DHCP at it.</p>
 
   <div class="pager">
     <span><a href="connect.html">← Remote access</a></span>

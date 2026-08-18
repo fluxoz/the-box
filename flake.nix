@@ -448,16 +448,31 @@
                 cp ${netboot}/bzImage      $out/netboot/bzImage
                 cp ${netboot}/initrd       $out/netboot/initrd
                 cp ${netboot}/netboot.ipxe $out/netboot/netboot.ipxe
+                # The iPXE chainloaders pxe.sh hands to firmware PXE (BIOS and
+                # UEFI) so clients can fetch the big artifacts over HTTP
+                # instead of TFTP. Installer-independent, but published beside
+                # the other netboot artifacts so one NETBOOT_BASE serves all.
+                cp ${pkgs.ipxe}/ipxe.efi      $out/netboot/ipxe.efi
+                cp ${pkgs.ipxe}/undionly.kpxe $out/netboot/undionly.kpxe
 
-                # Stamp the real artifact hashes into the published installer so
-                # it verifies what it fetches before kexec.
-                bz=$(sha256sum $out/netboot/bzImage      | cut -d' ' -f1)
-                ir=$(sha256sum $out/netboot/initrd       | cut -d' ' -f1)
-                ip=$(sha256sum $out/netboot/netboot.ipxe | cut -d' ' -f1)
+                # Stamp the real artifact hashes into the published installers
+                # so they verify what they fetch before booting it.
+                bz=$(sha256sum $out/netboot/bzImage       | cut -d' ' -f1)
+                ir=$(sha256sum $out/netboot/initrd        | cut -d' ' -f1)
+                ip=$(sha256sum $out/netboot/netboot.ipxe  | cut -d' ' -f1)
+                ie=$(sha256sum $out/netboot/ipxe.efi      | cut -d' ' -f1)
+                un=$(sha256sum $out/netboot/undionly.kpxe | cut -d' ' -f1)
                 substitute ${./installers/linux/install.sh} $out/install.sh \
                   --replace @BZIMAGE_SHA256@ "$bz" --replace @INITRD_SHA256@ "$ir" \
                   --replace @IPXE_SHA256@ "$ip"
                 chmod +x $out/install.sh
+                # The fleet door: a one-command PXE depot serving this same
+                # installer to every machine the operator network-boots.
+                substitute ${./installers/linux/pxe.sh} $out/pxe.sh \
+                  --replace @BZIMAGE_SHA256@ "$bz" --replace @INITRD_SHA256@ "$ir" \
+                  --replace @IPXE_SHA256@ "$ip" --replace @IPXE_EFI_SHA256@ "$ie" \
+                  --replace @UNDIONLY_SHA256@ "$un"
+                chmod +x $out/pxe.sh
 
                 cp ${./installers/windows/install.ps1} $out/install.ps1
                 cp ${./installers/macos/README.md}     $out/mac.txt
