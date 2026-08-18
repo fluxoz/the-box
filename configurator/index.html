@@ -585,25 +585,25 @@ footer.foot b { color: var(--dim); }
           <div>
             <label class="lbl" style="margin-bottom:9px">Deployment vector</label>
             <div class="vectors" role="radiogroup" aria-label="Deployment vector">
-              <div class="vec active" data-vec="usb" tabindex="0" role="radio" aria-checked="true">
-                <span class="code">VEC-01</span><span class="name">USB Stick</span>
-                <span class="desc">Any machine. Flash, boot, confirm.</span>
+              <div class="vec active" data-vec="pi" tabindex="0" role="radio" aria-checked="true">
+                <span class="code">VEC-01</span><span class="name">Flash an image</span>
+                <span class="desc">Raspberry Pi. Write it, power on, done.</span>
+              </div>
+              <div class="vec" data-vec="sh" tabindex="0" role="radio" aria-checked="false">
+                <span class="code">VEC-02</span><span class="name">curl | sh</span>
+                <span class="desc">Take over a running Linux box or VPS.</span>
+              </div>
+              <div class="vec" data-vec="usb" tabindex="0" role="radio" aria-checked="false">
+                <span class="code">VEC-03</span><span class="name">USB Stick</span>
+                <span class="desc">Bare metal with no OS to take over.</span>
               </div>
               <div class="vec" data-vec="win" tabindex="0" role="radio" aria-checked="false">
-                <span class="code">VEC-02</span><span class="name">From Windows</span>
+                <span class="code">VEC-04</span><span class="name">From Windows</span>
                 <span class="desc">Convert a running PC in place.</span>
               </div>
               <div class="vec" data-vec="pxe" tabindex="0" role="radio" aria-checked="false">
-                <span class="code">VEC-03</span><span class="name">Network / PXE</span>
+                <span class="code">VEC-05</span><span class="name">Network / PXE</span>
                 <span class="desc">Fleets. Self-install over the wire.</span>
-              </div>
-              <div class="vec" data-vec="sh" tabindex="0" role="radio" aria-checked="false">
-                <span class="code">VEC-04</span><span class="name">curl | sh</span>
-                <span class="desc">Convert a running Linux box or VPS.</span>
-              </div>
-              <div class="vec" data-vec="pi" tabindex="0" role="radio" aria-checked="false">
-                <span class="code">VEC-05</span><span class="name">Raspberry Pi</span>
-                <span class="desc">Your image, flashed. Nothing else.</span>
               </div>
             </div>
           </div>
@@ -1001,10 +1001,10 @@ footer.foot b { color: var(--dim); }
   $("#copy").addEventListener("click", () => { navigator.clipboard.writeText(currentJSON); toast("JSON copied"); });
 
   /* ---------- vectors + instructions ---------- */
-  let vector = "usb";
+  let vector = "pi";
   const VEC = {
     usb: {
-      head: "VEC-01 · USB Stick — any machine",
+      head: "VEC-03 · USB Stick — bare metal",
       steps: [
         'Write the generic <b>Box installer image</b> to a USB stick (8&nbsp;GB+). One image serves every install — it is never personalized.',
         'Drop <code>box-install.json</code> onto the stick, or onto a second FAT-formatted stick labeled <code>BOX-INSTALL</code>.',
@@ -1014,7 +1014,7 @@ footer.foot b { color: var(--dim); }
       cav: "Works on any UEFI machine. This is also the recovery path if anything else goes wrong."
     },
     win: {
-      head: "VEC-02 · From Windows — convert in place",
+      head: "VEC-04 · From Windows — convert in place",
       steps: [
         'Download the <b>Box for Windows</b> payload folder.',
         'Put <code>box-install.json</code> in the same folder as <code>stage.ps1</code>.',
@@ -1024,7 +1024,7 @@ footer.foot b { color: var(--dim); }
       cav: "UEFI only, and Secure Boot must be off until we ship a signed loader. If Windows has pending updates, let them finish and run stage.ps1 once more."
     },
     pxe: {
-      head: "VEC-03 · Network / PXE — fleets",
+      head: "VEC-05 · Network / PXE — fleets",
       steps: [
         'Serve the Box <b>netboot</b> kernel and initrd from your PXE / iPXE setup (or a mirror you host).',
         'Host this <code>box-install.json</code> over HTTP and add <code>box.install-url=http://&lt;server&gt;/box-install.json</code> to the kernel command line.',
@@ -1050,7 +1050,7 @@ footer.foot b { color: var(--dim); }
     const secret = !!(cfg.cloudflare_tunnel_token || (cfg.wifi && cfg.wifi.password));
     const cmd = `curl -fsSL https://thebox.build/install.sh | sudo BOX_ORDERS_B64='${b64}' sh`;
     $("#instructions").innerHTML = `
-      <div class="ihead">VEC-04 · curl | sh — a running Linux machine or VPS</div>
+      <div class="ihead">VEC-02 · curl | sh — a running Linux machine or VPS</div>
       <ol>
         <li>On the machine you want to convert (or an SSH session into it), paste the command below.</li>
         <li>It <b>erases every disk</b> and installs Box OS — your orders are embedded, so there is nothing to download or move.</li>
@@ -1077,7 +1077,7 @@ footer.foot b { color: var(--dim); }
       return !!(c.cloudflare_tunnel_token || (c.wifi && c.wifi.password));
     })();
     $("#instructions").innerHTML = `
-      <div class="ihead">VEC-05 · Raspberry Pi — your image, flashed</div>
+      <div class="ihead">VEC-01 · Raspberry Pi — your image, flashed</div>
       <ol>
         <li>Pick your model and download the image. Your settings are written into it as it downloads.</li>
         <li>Write it to the SD card with <b>Raspberry Pi Imager</b> or <b>Etcher</b>. Do not use Imager's own customisation screen; everything is already in the image.</li>
