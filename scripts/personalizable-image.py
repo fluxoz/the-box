@@ -22,7 +22,10 @@ Node's zlib, Python's gzip, and the browser's DecompressionStream.
 See docs/claim-flow-spec.md.
 """
 
+import gzip
+import hashlib
 import json
+import shutil
 import struct
 import subprocess
 import sys
@@ -68,12 +71,65 @@ def place_placeholder(img: Path) -> None:
     tmp.unlink()
 
 
-def gz_member(data: bytes) -> bytes:
+CHUNK = 8 << 20
+
+
+def gz_member_stream(src, start: int, length: int, out) -> int:
+    """Compress [start, start+length) of `src` into `out` as one gzip member.
+
+    Streamed on purpose: a real Pi image is ~6 GB, so reading one into memory
+    (let alone slicing it into prefix/suffix copies) OOMs any CI runner. Returns
+    the number of compressed bytes written, which is what locates the next
+    member in the output.
+    """
+    written = out.write(GZ_HEADER)
     co = zlib.compressobj(9, zlib.DEFLATED, -zlib.MAX_WBITS)
-    body = co.compress(data) + co.flush()
-    return GZ_HEADER + body + struct.pack(
-        "<II", zlib.crc32(data) & 0xFFFFFFFF, len(data) & 0xFFFFFFFF
+    crc = 0
+    src.seek(start)
+    left = length
+    while left:
+        chunk = src.read(min(CHUNK, left))
+        if not chunk:
+            raise SystemExit("unexpected end of image while compressing")
+        left -= len(chunk)
+        crc = zlib.crc32(chunk, crc)
+        block = co.compress(chunk)
+        if block:
+            written += out.write(block)
+    written += out.write(co.flush())
+    written += out.write(
+        struct.pack("<II", crc & 0xFFFFFFFF, length & 0xFFFFFFFF)
     )
+    return written
+
+
+def find_magic(path: Path) -> int:
+    """Byte offset of the placeholder, scanned rather than assumed.
+
+    The offset moves on every rebuild, so a hardcoded constant would silently
+    corrupt images. Chunks overlap by len(MAGIC)-1 so a match spanning a
+    boundary is still found.
+    """
+    found = -1
+    overlap = len(MAGIC) - 1
+    with path.open("rb") as f:
+        base = 0
+        tail = b""
+        while True:
+            chunk = f.read(CHUNK)
+            if not chunk:
+                break
+            buf = tail + chunk
+            pos = buf.find(MAGIC)
+            while pos >= 0:
+                at = base - len(tail) + pos
+                if found >= 0 and at != found:
+                    raise SystemExit("error: placeholder magic is not unique")
+                found = at
+                pos = buf.find(MAGIC, pos + 1)
+            base += len(chunk)
+            tail = buf[-overlap:] if overlap else b""
+    return found
 
 
 def stored_member(payload: bytes) -> bytes:
@@ -97,44 +153,62 @@ def main() -> int:
     src, out_gz, out_manifest = (Path(a) for a in sys.argv[1:])
 
     work = out_gz.parent / (src.name + ".work")
-    work.write_bytes(src.read_bytes())
+    shutil.copyfile(src, work)
+    work.chmod(0o644)
     place_placeholder(work)
 
-    raw = work.read_bytes()
-    at = raw.find(MAGIC)
+    at = find_magic(work)
     if at < 0:
         print("error: placeholder magic not found after mcopy", file=sys.stderr)
         return 1
-    if raw.find(MAGIC, at + 1) >= 0:
-        print("error: placeholder magic is not unique", file=sys.stderr)
-        return 1
 
-    # Scan for the magic rather than trusting a fixed offset: it moves on every
-    # rebuild, and a stale constant would corrupt images silently.
-    prefix, placeholder, suffix = raw[:at], raw[at : at + CLAIM_LEN], raw[at + CLAIM_LEN :]
-    m1, m2, m3 = gz_member(prefix), stored_member(placeholder), gz_member(suffix)
-    blob = m1 + m2 + m3
-    out_gz.write_bytes(blob)
+    total_raw = work.stat().st_size
+    with work.open("rb") as f, out_gz.open("wb") as out:
+        m1_len = gz_member_stream(f, 0, at, out)
+        f.seek(at)
+        placeholder = f.read(CLAIM_LEN)
+        out.write(stored_member(placeholder))
+        gz_member_stream(f, at + CLAIM_LEN, total_raw - at - CLAIM_LEN, out)
     work.unlink()
 
-    payload_offset = len(m1) + 15  # 10-byte header + 5-byte stored block header
+    payload_offset = m1_len + 15  # 10-byte header + 5-byte stored block header
+    digest = hashlib.sha256()
+    with out_gz.open("rb") as f:
+        for block in iter(lambda: f.read(CHUNK), b""):
+            digest.update(block)
+
     manifest = {
         "claim_file": CLAIM_NAME,
         "payload_offset": payload_offset,
         "payload_length": CLAIM_LEN,
         "crc_offset": payload_offset + CLAIM_LEN,
-        "total_length": len(blob),
-        "uncompressed_length": len(raw),
-        "sha256_generic": __import__("hashlib").sha256(blob).hexdigest(),
+        "total_length": out_gz.stat().st_size,
+        "uncompressed_length": total_raw,
+        "sha256_generic": digest.hexdigest(),
     }
     out_manifest.write_text(json.dumps(manifest, indent=2) + "\n")
 
     # Prove it before shipping it: the artifact must decompress to exactly the
-    # image we started from.
-    import gzip as _gzip
+    # image we started from, and the placeholder must be where the manifest
+    # says. Streamed, so this stays honest on a 6 GB image.
+    with gzip.open(out_gz, "rb") as gz:
+        seen = 0
+        magic_ok = False
+        while True:
+            block = gz.read(CHUNK)
+            if not block:
+                break
+            if seen <= at < seen + len(block):
+                magic_ok = block[at - seen : at - seen + len(MAGIC)] == MAGIC
+            seen += len(block)
+    if seen != total_raw:
+        print(f"error: round-trip length {seen} != {total_raw}", file=sys.stderr)
+        return 1
+    if not magic_ok:
+        print("error: placeholder not at the recorded offset", file=sys.stderr)
+        return 1
 
-    assert _gzip.decompress(blob) == raw, "round-trip failed"
-    print(f"ok: {out_gz.name} ({len(blob)} bytes), payload at {payload_offset}")
+    print(f"ok: {out_gz.name} ({manifest['total_length']} bytes), payload at {payload_offset}")
     return 0
 
 

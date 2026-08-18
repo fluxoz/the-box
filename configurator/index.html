@@ -1068,7 +1068,26 @@ footer.foot b { color: var(--dim); }
     $("#cp-cmd").addEventListener("click", () => { navigator.clipboard.writeText(cmd); toast("Command copied"); });
   }
 
+  // Where personalized images are served from.
+  //
+  // NOT thebox.build: that is GitHub Pages with DNS at the registrar, so it
+  // cannot route a path to a Cloudflare Worker without moving the whole domain
+  // to Cloudflare. The workers.dev hostname needs no DNS change and works
+  // today; a cross-origin form POST is fine, because it is a plain download.
+  // Set this once the Worker is deployed (see worker/wrangler.toml).
+  const IMAGE_ENDPOINT = "REPLACE_WITH_WORKER_ORIGIN";
+  const imagesReady = !IMAGE_ENDPOINT.startsWith("REPLACE_WITH");
+
   function renderPiVector() {
+    if (!imagesReady) {
+      $("#instructions").innerHTML = `
+        <div class="ihead">VEC-01 · Raspberry Pi — your image, flashed</div>
+        <p class="note">Personalized image downloads are not switched on yet. Until they are, use
+        <b>VEC-02 · curl | sh</b> on a spare PC or VPS, which carries the same pairing code and SSH key
+        and installs unattended. Your pairing code above is already valid either way.</p>
+        <div class="cav">Nothing here is broken; this door just is not open yet.</div>`;
+      return;
+    }
     // A native form post, not fetch: the browser streams a multi-gigabyte
     // download straight to disk with its own progress bar and resume, instead
     // of buffering it into a Blob in this tab.
@@ -1088,7 +1107,7 @@ footer.foot b { color: var(--dim); }
         <li>Put the card in the Pi and power it on. No screen, no keyboard, no SSH.</li>
         <li>A few minutes later it is at <code>&lt;name&gt;.local</code>. Pair it with the code above.</li>
       </ol>
-      <form id="pi-form" method="POST" action="https://thebox.build/image/thebox-pi5">
+      <form id="pi-form" method="POST" action="${IMAGE_ENDPOINT}/image/thebox-pi5">
         <input type="hidden" name="orders" id="pi-orders">
         <div class="deploybar" style="margin-top:9px">
           <select id="pi-model" class="mono" aria-label="Raspberry Pi model">
@@ -1106,7 +1125,7 @@ footer.foot b { color: var(--dim); }
     // Set the orders at submit time so late edits are always included.
     form.addEventListener("submit", () => {
       $("#pi-orders").value = currentJSON;
-      form.action = `https://thebox.build/image/${model.value}`;
+      form.action = `${IMAGE_ENDPOINT}/image/${model.value}`;
       toast("Building your image…");
     });
   }
