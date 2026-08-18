@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>The Box Store</title>
 <meta name="description" content="Mini PCs for running AI at home, delivered ready to go: Box OS installed, your exact unit benchmarked, white-glove setup and support included.">
+<link rel="stylesheet" href="/site.css">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="The Box">
@@ -31,7 +32,7 @@
     background-size:44px 44px;opacity:.16;
     -webkit-mask-image:radial-gradient(ellipse 130% 80% at 50% 0%,#000 24%,transparent 76%);
     mask-image:radial-gradient(ellipse 130% 80% at 50% 0%,#000 24%,transparent 76%);}
-  main{position:relative;z-index:1;max-width:1020px;margin:0 auto;padding:8vh 1.25rem 6rem;}
+  main{position:relative;z-index:1;max-width:1020px;margin:0 auto;padding:3rem 1.25rem 6rem;}
   .topbar{display:flex;align-items:baseline;gap:.6rem;}
   .brand{display:flex;align-items:center;gap:.5rem;font-weight:800;letter-spacing:.14em;font-size:1.05rem;}
   .brand .mk{width:1.35em;height:1.35em;flex:none;}
@@ -119,11 +120,19 @@
 </style>
 </head>
 <body>
-<main>
-  <div class="topbar">
-    <div class="brand"><svg class="mk" viewBox="0 0 48 48" aria-hidden="true"><path d="M24 7 L39 15 V33 L24 41 L9 33 V15 Z"/><path d="M24 24 L9 15 M24 24 L39 15 M24 24 V41"/></svg>THE <b style="color:var(--brass2)">BOX</b> <span class="sub">store</span></div>
-    <nav><a href="/">Home</a> <a href="/why/">Why</a> <a href="/docs/">Docs</a> <a href="https://github.com/fluxoz/the-box">GitHub</a></nav>
+<header class="sitehead">
+  <div class="sitehead-in">
+    <a class="sh-brand" href="/"><svg class="mk" viewBox="0 0 48 48" aria-hidden="true"><path d="M24 7 L39 15 V33 L24 41 L9 33 V15 Z"/><path d="M24 24 L9 15 M24 24 L39 15 M24 24 V41"/></svg>THE&nbsp;<b>BOX</b><span class="sh-sub">store</span></a>
+    <nav class="sh-nav">
+      <a href="/configurator/">Configurator</a>
+      <a href="/store/" aria-current="true">Store</a>
+      <a href="/why/">Why</a>
+      <a href="/docs/">Docs</a>
+      <a href="https://github.com/fluxoz/the-box">GitHub</a>
+    </nav>
   </div>
+</header>
+<main>
 
   <h1>Machines for running AI at home. <b>Ready to go.</b></h1>
   <p class="lede">Every machine here arrives as a working Box, not a parts delivery: Box OS

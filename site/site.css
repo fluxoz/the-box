@@ -1,0 +1,90 @@
+/* The one header every thebox.build page wears.
+ *
+ * This file exists because five pages grew five headers: different widths,
+ * different brands, different navs, different heights. The chrome is shared
+ * here so it structurally cannot drift; each page keeps its own content
+ * measure below the band. The markup contract lives in every page:
+ *
+ *   <header class="sitehead"><div class="sitehead-in">
+ *     <a class="sh-brand" href="/"><svg …>…</svg>THE <b>BOX</b><span class="sh-sub">SECTION</span></a>
+ *     <nav class="sh-nav">Configurator · Store · Why · Docs · GitHub</nav>
+ *   </div></header>
+ *
+ * Colors are self-contained (pages define their own token names), with the
+ * standard Brass Hands values in both schemes, plus the Configurator's manual
+ * data-theme override. The !importants defeat each page's global `a` rules.
+ */
+
+.sitehead {
+  --sh-line: #322b1f;
+  --sh-ink: #ece5d5;
+  --sh-dim: #948a68;
+  --sh-brass: #ddb15c;
+  position: relative;
+  z-index: 5;
+  border-bottom: 1px solid var(--sh-line);
+}
+@media (prefers-color-scheme: light) {
+  .sitehead { --sh-line: #cbc4b3; --sh-ink: #1f1b14; --sh-dim: #6c6455; --sh-brass: #916d2f; }
+}
+:root[data-theme="light"] .sitehead { --sh-line: #cbc4b3; --sh-ink: #1f1b14; --sh-dim: #6c6455; --sh-brass: #916d2f; }
+:root[data-theme="dark"] .sitehead { --sh-line: #322b1f; --sh-ink: #ece5d5; --sh-dim: #948a68; --sh-brass: #ddb15c; }
+
+.sitehead-in {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: .95rem 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+  flex-wrap: wrap;
+}
+.sh-brand {
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+  font-weight: 700;
+  font-size: .98rem;
+  letter-spacing: .12em;
+  color: var(--sh-ink) !important;
+  text-decoration: none !important;
+  border-bottom: 0 !important;
+  white-space: nowrap;
+}
+.sh-brand b { color: var(--sh-brass); }
+.sh-brand .mk { width: 1.3em; height: 1.3em; flex: none; }
+.sh-brand .mk path {
+  stroke: var(--sh-brass);
+  stroke-width: 2.8;
+  fill: none;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.sh-sub {
+  font-weight: 600;
+  color: var(--sh-dim);
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  font-size: .64rem;
+  margin-left: .2rem;
+}
+.sh-nav {
+  margin-left: auto;
+  display: flex;
+  gap: 1.15rem;
+  flex-wrap: wrap;
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: .78rem;
+  letter-spacing: .05em;
+}
+.sh-nav a {
+  color: var(--sh-dim) !important;
+  text-decoration: none !important;
+  border-bottom: 1px solid transparent !important;
+  padding-bottom: 1px;
+}
+.sh-nav a:hover { color: var(--sh-brass) !important; border-bottom-color: var(--sh-brass) !important; }
+.sh-nav a[aria-current] { color: var(--sh-brass) !important; border-bottom-color: var(--sh-brass) !important; }
+/* Room for a page control (the Configurator's theme toggle) after the nav. */
+.sitehead-in > .theme-btn { margin-left: .2rem; }

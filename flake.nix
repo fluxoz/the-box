@@ -478,6 +478,7 @@
                 cp ${./installers/macos/README.md}     $out/mac.txt
                 cp ${./site/index.html}                $out/index.html
                 cp ${./site/docs.css}                  $out/docs.css
+                cp ${./site/site.css}                  $out/site.css
                 # Brand + social preview assets.
                 cp ${./site/favicon.svg}               $out/favicon.svg
                 cp ${./site/logo.svg}                  $out/logo.svg
