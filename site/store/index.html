@@ -50,12 +50,15 @@
   h2{font-size:1.45rem;margin:.1rem 0 1rem;letter-spacing:-.01em;text-wrap:balance;}
   .sectionnote{color:var(--dim);font-size:.95rem;max-width:70ch;margin:0 0 1.2rem;}
 
-  /* the pricing rule, compact */
-  .rule{display:flex;gap:1rem;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line2);
-    border-radius:10px;padding:.9rem 1.1rem;box-shadow:inset 3px 0 0 var(--brass);}
-  .rule div{flex:1 1 240px;font-size:.9rem;color:var(--dim);}
+  /* the pricing rule: three steps, one included line */
+  .rule{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem 1.4rem;background:var(--panel);
+    border:1px solid var(--line2);border-radius:10px;padding:1rem 1.15rem;box-shadow:inset 3px 0 0 var(--brass);}
+  @media (max-width:720px){.rule{grid-template-columns:1fr;}}
+  .rule div{font-size:.9rem;color:var(--dim);}
   .rule b{color:var(--ink);font-weight:600;display:block;font-size:.95rem;}
   .rule .n{font-family:var(--mono);color:var(--brass2);font-weight:700;margin-right:.4rem;}
+  .rule .incl{grid-column:1/-1;border-top:1px dashed var(--line);padding-top:.75rem;}
+  .rule .incl b{display:inline;margin-right:.35rem;}
 
   /* product grid */
   .prodgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1.1rem;margin:1.1rem 0 0;}
@@ -131,10 +134,10 @@
   your projects deploy to the same day.</p>
 
   <div class="rule">
-    <div><span class="n">1</span><b>Reserve with the deposit on the card.</b> It counts toward the total, and it is refundable until your machine ships. We email your quote within a business day, with the hardware invoice; it locks your price for seven days.</div>
-    <div><span class="n">2</span><b>We build your Box.</b> The hardware comes to our bench first: Box OS installed, your exact unit benchmarked against its rating, its access keys loaded onto the USB in the box.</div>
-    <div><span class="n">3</span><b>It ships ready to go, with its numbers.</b> If it does not hit its rating in your hands within 30 days, we refund the deposit in full and arrange the return. Hardware warranty from the manufacturer; we stay on email until it works.</div>
-    <div><span class="n">4</span><b>Included:</b> a year of Box Cloud from the day it opens (remote access, offsite backup, downtime alerts), and priority support after that. No subscription ever required.</div>
+    <div><span class="n">1</span><b>Reserve with the deposit.</b> It counts toward the total and refunds until your machine ships. Your quote arrives within a business day, hardware invoice attached, price locked for seven days.</div>
+    <div><span class="n">2</span><b>We build your Box.</b> The hardware comes to our bench: Box OS installed, your exact unit benchmarked against its rating, access keys on the USB in the box.</div>
+    <div><span class="n">3</span><b>It ships ready to go.</b> Its numbers ride along; if it misses its rating in your hands within 30 days, full deposit refund and we arrange the return. We stay on email until it works.</div>
+    <div class="incl"><b>Included:</b> a year of Box Cloud (remote access, offsite backup, downtime alerts), priority support after, and the manufacturer's hardware warranty. No subscription ever required.</div>
   </div>
 
   <p class="eyebrow">The machines</p>
