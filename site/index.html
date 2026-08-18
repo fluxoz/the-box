@@ -269,7 +269,7 @@
     night's run, not by us.</p>
   </div>
   <script>
-  fetch('https://raw.githubusercontent.com/fluxoz/the-box/receipts/receipts/latest.json')
+  fetch('/receipts/latest.json')
     .then(function(r){ return r.ok ? r.json() : null; })
     .then(function(rc){
       if (!rc || !rc.ok) return;
