@@ -14,7 +14,24 @@ and Pi guide rewritten around both flows.
 
 Verified end to end: image build → placeholder → three-member gzip → patched
 download → decompress → **mounted FAT filesystem carrying the orders**, with the
-generic artifact's published SHA-256 still matching.
+generic artifact's published SHA-256 still matching. A NixOS VM test
+(`nix/tests/unattended-claim.nix`) boots a Box with orders on its boot partition
+and proves the rest: first boot adopts them, the network cannot seize it, the
+owner's code redeems, and a replay is refused.
+
+## To switch on in production
+
+The code is in; these are deployment steps, not development:
+
+1. Build and upload per model, after each release:
+   `nix build .#packages.aarch64-linux.pi5-image-personalizable`, then put
+   `thebox-pi5.img.gz` and its `.manifest.json` in the `box-images` R2 bucket.
+2. `cd worker && wrangler deploy`, and route `thebox.build/image/*` to it.
+3. Publish the `.img.gz.sha256` alongside the release so the generic artifact
+   stays independently checkable.
+
+Until step 2, the Configurator's flash path posts to an endpoint that is not
+there yet. The curl path is unaffected and works today.
 
 ## The goal
 
