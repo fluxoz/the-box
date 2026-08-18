@@ -258,6 +258,45 @@ jobs:
           sha256sum "thebox-pi${{ matrix.model }}.img.xz" > "thebox-pi${{ matrix.model }}.img.xz.sha256"
           ls -la thebox-pi${{ matrix.model }}.img.xz*
 
+      # The same image, packed so a download can be personalized in flight: a
+      # fixed-size claim file on the FAT boot partition, carried in its own
+      # STORED deflate block. Reuses the image built above rather than building
+      # anything. See docs/claim-flow-spec.md.
+      - name: Pack the pi${{ matrix.model }} personalizable image
+        run: |
+          set -euo pipefail
+          img=$(echo "${{ steps.build.outputs.out }}"/sd-image/*.img)
+          cp "$img" ./raw.img && chmod +w ./raw.img
+          name="thebox-pi${{ matrix.model }}"
+          nix shell nixpkgs#python3 nixpkgs#mtools nixpkgs#util-linux --command \
+            python3 scripts/personalizable-image.py \
+              ./raw.img "$name.img.gz" "$name.img.gz.manifest.json"
+          rm -f ./raw.img
+          # Hash the artifact we just produced, so the generic image stays
+          # independently checkable even though downloads are personalized.
+          sha256sum "$name.img.gz" > "$name.img.gz.sha256"
+          ls -la "$name.img.gz"*
+
+      # Publish to R2, where the Worker streams and patches it. Skipped
+      # entirely when the secret is absent, so the release still succeeds on a
+      # repo that has not switched image downloads on yet.
+      - name: Upload the pi${{ matrix.model }} image to R2
+        continue-on-error: true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "CLOUDFLARE_API_TOKEN not set — skipping R2 upload."
+            exit 0
+          fi
+          name="thebox-pi${{ matrix.model }}"
+          npx --yes wrangler@latest r2 object put "box-images/$name.img.gz" \
+            --file "$name.img.gz" --remote
+          npx --yes wrangler@latest r2 object put "box-images/$name.img.gz.manifest.json" \
+            --file "$name.img.gz.manifest.json" --remote
+
       # Push the system toplevel so a Pi running `boxd channel update` DOWNLOADS
       # this release instead of compiling Rust on a Raspberry Pi. (CI itself
       # gains nothing from it: the closure contains boxd, so its hash changes
@@ -295,4 +334,7 @@ jobs:
           files: |
             thebox-pi${{ matrix.model }}.img.xz
             thebox-pi${{ matrix.model }}.img.xz.sha256
+            thebox-pi${{ matrix.model }}.img.gz
+            thebox-pi${{ matrix.model }}.img.gz.sha256
+            thebox-pi${{ matrix.model }}.img.gz.manifest.json
           fail_on_unmatched_files: true
