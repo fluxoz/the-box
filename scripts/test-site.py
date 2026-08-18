@@ -27,7 +27,10 @@ Usage: test-site.py <site-dir>
 
 import http.server
 import functools
+import json
 import os
+import subprocess
+import tempfile
 import socketserver
 import sys
 import threading
@@ -131,6 +134,55 @@ def main() -> int:
         orders = page.evaluate("() => document.body.innerText")
         check("ssh_authorized_keys" in orders, "the public key reaches the orders")
         check("enrollment_code_hash" in orders, "the pairing hash reaches the orders")
+
+        # --- a detailed setup must survive into installable orders ---------
+        #
+        # This page exists to configure an unattended install, so the thing that
+        # matters is not that it renders: it is that what it emits is something
+        # a machine with nobody in front of it will actually accept. The same
+        # validator the installer runs before it wipes a disk is run here on
+        # whatever the page just produced.
+        # The name field only appears once you choose to set one, which is
+        # itself part of what this page configures.
+        # A styled radio: the visible <span> takes the click, so drive the
+        # label a person would actually press.
+        page.click("label:has(input[name=namemode][value=custom])")
+        page.fill("#hostname", "kitchen")
+        page.dispatch_event("#hostname", "input")
+        orders_text = page.evaluate(
+            "() => document.querySelector('#json')?.innerText"
+            " || document.querySelector('#jsonout')?.innerText || ''"
+        )
+        if not orders_text.strip():
+            orders_text = page.evaluate("() => (window.currentJSON || '')")
+        parsed = None
+        try:
+            parsed = json.loads(orders_text)
+        except Exception:
+            pass
+        check(parsed is not None, "the page exposes the orders it built", orders_text[:60])
+
+        if parsed is not None:
+            check(parsed.get("hostname") == "kitchen", "a configured hostname reaches the orders",
+                  repr(parsed.get("hostname")))
+            check(bool(parsed.get("ssh_authorized_keys")), "the generated key reaches the orders")
+            check(len(str(parsed.get("enrollment_code_hash", ""))) == 64,
+                  "the orders carry a full pairing hash")
+
+            validator = os.environ.get("BOX_INSTALLER_BIN")
+            if validator:
+                # The installer forces consent itself; the page never sets it.
+                parsed.setdefault("erase_disk", True)
+                with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+                    json.dump(parsed, f)
+                    path = f.name
+                r = subprocess.run([validator, "validate-orders", path],
+                                   capture_output=True, text=True)
+                check(r.returncode == 0,
+                      "the installer would accept what this page produced",
+                      (r.stderr or r.stdout).strip()[:110])
+            else:
+                print("  skip BOX_INSTALLER_BIN not set — orders not checked against the installer")
 
         # --- the files a person ends up with -------------------------------
         # Named exactly, because ssh looks for id_ed25519 and nothing else.

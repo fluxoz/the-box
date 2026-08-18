@@ -71,8 +71,12 @@ jobs:
           python=$(nix build --impure --no-link --print-out-paths --expr \
             'let pkgs = import (builtins.getFlake "nixpkgs") {system="x86_64-linux";};
              in pkgs.python313.withPackages (ps: [ ps.playwright ])')
-          CHROMIUM_BIN="$chromium" "$python/bin/python3" \
-            scripts/test-site.py "$site"
+          # The same binary the installer runs before it wipes a disk, so the
+          # orders this page can produce are checked against what a real
+          # unattended install will accept.
+          installer=$(nix build .#box-installer --no-link --print-out-paths)/bin/box-installer
+          CHROMIUM_BIN="$chromium" BOX_INSTALLER_BIN="$installer" \
+            "$python/bin/python3" scripts/test-site.py "$site"
 
       - name: cargo clippy
         run: nix develop -c cargo clippy --workspace --all-targets -- -D warnings
