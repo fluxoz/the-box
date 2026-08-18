@@ -568,13 +568,12 @@ footer.foot b { color: var(--dim); }
       <section class="mod critical" id="deploymod">
         <div class="h"><span class="num">06</span><span class="ttl">Confirm &amp; Deploy</span><span class="hint">point of no return</span></div>
         <div class="b">
-          <label class="arm">
-            <input type="checkbox" id="arm">
+          <div class="arm" role="note">
             <span class="txt">
-              <b>I understand this ERASES the target disk.</b><br>
-              <span class="sub">Every file on the selected disk is permanently destroyed and replaced with Box OS. The installer does nothing until it sees this consent in the deployment file.</span>
+              <b>This ERASES the target disk.</b><br>
+              <span class="sub">Every file on the selected disk is permanently destroyed and replaced with Box OS. That consent rides inside the orders below, and the installer refuses to run without it.</span>
             </span>
-          </label>
+          </div>
 
           <div>
             <label class="lbl" style="margin-bottom:9px">Deployment vector</label>
@@ -591,7 +590,7 @@ footer.foot b { color: var(--dim); }
           </div>
 
           <div class="deploybar">
-            <span class="gate" id="gate">Confirm the erase notice to enable</span>
+            <span class="gate" id="gate">Complete required fields above</span>
           </div>
 
           <div class="instructions" id="instructions"></div>
@@ -713,7 +712,6 @@ footer.foot b { color: var(--dim); }
     $("#"+id).addEventListener("input", render));
   $$("input[name=finish]").forEach(r => r.addEventListener("change", render));
   $("#force").addEventListener("change", render);
-  $("#arm").addEventListener("change", render);
 
   /* ---------- validation ---------- */
   function validHostname(h) {
@@ -954,16 +952,16 @@ footer.foot b { color: var(--dim); }
     $("#json").innerHTML = highlightJSON(cfg);
     $("#bytes").textContent = new Blob([currentJSON]).size + " bytes";
 
-    // gating
+    // gating: complete form = live outputs. The erase consent always rides in
+    // the orders; a checkbox in front of the commands was theater, and the
+    // landing page never had one.
     const probs = problems();
-    const armed = $("#arm").checked;
-    const ready = armed && probs.length === 0;
+    const ready = probs.length === 0;
 
     $("#download").disabled = !ready;
     $("#copy").disabled = !ready;
     const gate = $("#gate");
     if (ready) { gate.innerHTML = '<svg class="ico ico--sm" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="8" cy="8" r="4"/></svg> Ready'; gate.style.color = "var(--ok)"; }
-    else if (!armed) { gate.textContent = "Confirm the erase notice to enable"; gate.style.color = "var(--critical)"; }
     else { gate.textContent = "Complete required fields above"; gate.style.color = "var(--critical)"; }
     // The instructions render from the live config: the command vector embeds
     // the orders, the image vector states whether the download carries
@@ -1040,7 +1038,7 @@ footer.foot b { color: var(--dim); }
       <div class="cav ${secret ? "cav-secret" : ""}">${secret
         ? "Wipes on paste, no prompt. It also carries secrets (Wi-Fi password / tunnel token), so do not paste it anywhere public."
         : "Wipes on paste, no prompt. Carries no secrets: only the box name, disk choice, your SSH public key, and the pairing-code hash."}</div>`
-      : '<div class="cav">Confirm the erase notice and complete the modules above, and the commands generate here.</div>'}`;
+      : '<div class="cav">Complete the modules above, and the commands generate here.</div>'}`;
     if (!lastReady) return;
     // Embed the orders in both commands — base64 (UTF-8 safe). Nothing to move.
     // BOX_YES=1: you already consented here, by arming orders that say
@@ -1099,7 +1097,7 @@ footer.foot b { color: var(--dim); }
           <option value="thebox-pi3">Raspberry Pi 3</option>
         </select>
         <button type="button" class="btn small" id="pi-go" ${lastReady ? "" : "disabled"}>Download</button>
-        ${lastReady ? "" : '<span class="gate">Confirm the erase notice above</span>'}
+        ${lastReady ? "" : '<span class="gate">Complete the modules above</span>'}
       </div>
       <div class="cav ${secret ? "cav-secret" : ""}">${secret
         ? "This image carries secrets (Wi-Fi password / tunnel token). Treat the file like a key: it installs a Box that trusts you."
@@ -1189,7 +1187,7 @@ footer.foot b { color: var(--dim); }
         <div class="cav ${secret ? "cav-secret" : ""}">${secret
           ? "The command and boot.ipxe carry secrets (Wi-Fi password / tunnel token): anyone on this network who can read them can boot a machine that trusts you."
           : "The command and boot.ipxe carry no secrets: the box name policy, your SSH public key, and the pairing-code hash."}</div>`
-        : '<div class="cav">Confirm the erase notice and complete the modules above, and the fleet command generates here.</div>'}
+        : '<div class="cav">Complete the modules above, and the fleet command generates here.</div>'}
       </div>`;
     if (!lastReady) return;
     const b64 = btoa(unescape(encodeURIComponent(currentJSON)));
