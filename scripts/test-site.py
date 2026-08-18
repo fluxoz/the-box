@@ -236,8 +236,12 @@ def main() -> int:
 
         cfg_code, _cfg_pub = credential_checks(page, "configurator")
 
-        link = page.get_attribute("#claimlink", "href") or ""
-        check(cfg_code and cfg_code in link, "the claim link carries that code", link[:60])
+        # Auto-named Boxes have no address until they boot, so no claim link
+        # renders (a link the user must hand-edit is worse than none).
+        hidden = page.eval_on_selector(
+            "#claimlink", "el => el.closest('.note').style.display === 'none'"
+        )
+        check(hidden, "no claim link is shown for an auto-named Box")
 
         # The public half is useless unless the Box actually trusts it.
         orders_view = page.evaluate("() => document.body.innerText")
@@ -258,6 +262,9 @@ def main() -> int:
         page.click("label:has(input[name=namemode][value=custom])")
         page.fill("#hostname", "kitchen")
         page.dispatch_event("#hostname", "input")
+        link = page.get_attribute("#claimlink", "href") or ""
+        check(cfg_code and cfg_code in link and "kitchen.local" in link,
+              "naming the Box produces a claim link with its code", link[:60])
         orders_text = page.evaluate(
             "() => document.querySelector('#json')?.innerText"
             " || document.querySelector('#jsonout')?.innerText || ''"
