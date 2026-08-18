@@ -108,12 +108,29 @@ pub fn run(
 
     match outcome? {
         Outcome::Committed(layout) => {
-            let effective = orders::effective_orders(&app.base, &layout);
+            let mut effective = orders::effective_orders(&app.base, &layout);
+            // No install path may produce a Box without an owner. If the
+            // operator brought no code, mint one and put it on the screen they
+            // are standing in front of — this is the last moment they have one.
+            let minted = orders::ensure_enrollment(&mut effective)?;
             std::fs::write(orders_out, serde_json::to_string_pretty(&effective)?)
                 .with_context(|| format!("writing effective orders to {orders_out}"))?;
             std::fs::write(disko_out, disko::render(&layout))
                 .with_context(|| format!("writing disko config to {disko_out}"))?;
             eprintln!("Storage layout confirmed:\n{}", plan::plan_summary(&layout));
+            if let Some(code) = minted {
+                eprintln!(
+                    "\n  ┌─────────────────────────────────────────────┐\n  \
+                     │  PAIRING CODE — write this down now         │\n  \
+                     │                                             │\n  \
+                     │      {code}                  │\n  \
+                     │                                             │\n  \
+                     │  You enter it once at the box's dashboard   │\n  \
+                     │  to pair your first browser. It is shown    │\n  \
+                     │  only here, and it never expires.           │\n  \
+                     └─────────────────────────────────────────────┘\n"
+                );
+            }
             Ok(())
         }
         Outcome::CommittedElsewhere => {

@@ -187,6 +187,10 @@ pub fn run_report(paths: &Paths) -> Result<Report> {
                 a.arguments.clone(),
                 &summary,
                 "resident",
+                // Not a session id — the caretaker holds no session, so no
+                // signed-in device can ever collide with it and approve as
+                // "itself". Any operator can approve what the resident asks.
+                "resident",
             );
         }
     }

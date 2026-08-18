@@ -44,8 +44,10 @@ pub async fn handle(
             // No session extension means an unauthenticated path let this through
             // (tests drive the router directly); treat it as a non-autonomous
             // stranger so the destructive gate still holds.
+            id: String::new(),
             label: "unknown".into(),
             autonomous: false,
+            provenance: crate::auth::Provenance::Operator,
         });
     // Notifications (no id) need no response body.
     let Some(id) = message.get("id").cloned() else {
@@ -674,7 +676,14 @@ async fn call_tool(
 
     if NEEDS_APPROVAL.contains(&name.as_str()) && !caller.autonomous {
         let summary = destructive_summary(&name, &args);
-        let action = crate::approvals::request(&state.paths, &name, args, &summary, &caller.label)
+        let action = crate::approvals::request(
+            &state.paths,
+            &name,
+            args,
+            &summary,
+            &caller.label,
+            &caller.id,
+        )
             .map_err(|e| (-32603, format!("{e:#}")))?;
         let body = json!({
             "pending_approval": action.id,
@@ -846,6 +855,10 @@ pub(crate) async fn execute_as(
                     return Ok(json!({ "router": "fallback stood down" }));
                 }
                 let base_url = base_url.context("base_url is required to enable the fallback")?;
+                // The fallback is by definition somewhere else: local models
+                // already win when present, so a loopback or LAN address here
+                // is either a mistake or an attempt to aim the Box at itself.
+                crate::util::validate_outbound_url(&base_url, crate::util::Loopback::Deny)?;
                 if let Some(k) = api_key {
                     crate::secrets::set(&state.paths, crate::router::FALLBACK_KEY_SECRET, &k)?;
                 }
@@ -886,6 +899,10 @@ pub(crate) async fn execute_as(
                     return Ok(json!({ "resident": "stood down" }));
                 }
                 let base_url = base_url.context("base_url is required to enable the resident")?;
+                // The resident's brain may legitimately be this Box's own /v1
+                // once a model is pulled, so loopback is allowed here — but the
+                // scheme still has to be a URL rather than a curl option.
+                crate::util::validate_outbound_url(&base_url, crate::util::Loopback::Allow)?;
                 let model = model.context("model is required to enable the resident")?;
                 if let Some(k) = api_key {
                     crate::secrets::set(&state.paths, crate::resident::API_KEY_SECRET, &k)?;
@@ -1816,7 +1833,7 @@ async fn run_locked(
 ) -> anyhow::Result<Value> {
     let state = state.clone();
     blocking(move || {
-        let _guard = state.apply_lock.lock().unwrap();
+        let _guard = state.apply_lock.lock().unwrap_or_else(|e| e.into_inner());
         f(&state)
     })
     .await

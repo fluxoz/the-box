@@ -11,8 +11,8 @@ use std::sync::{Arc, Mutex};
 
 use axum::{
     extract::{ConnectInfo, Request, State},
-    http::{header, StatusCode},
-    middleware::{from_fn_with_state, Next},
+    http::{header, HeaderValue, StatusCode},
+    middleware::{from_fn, from_fn_with_state, Next},
     response::{IntoResponse, Redirect, Response},
     routing::{get, post},
     Router,
@@ -40,6 +40,12 @@ pub struct AppState {
     pub ceremonies: Arc<crate::webauthn::Ceremonies>,
     /// Serializes apply/deploy/rollback so concurrent requests cannot race
     /// on the generation-src directory or profile numbering.
+    ///
+    /// Always taken with `unwrap_or_else(|e| e.into_inner())`, never `unwrap()`.
+    /// The guarded value is `()` — there is no invariant a panic could leave
+    /// half-applied — but a poisoned lock would make every later deploy AND
+    /// every rollback fail forever, taking the escape hatch down with the
+    /// thing it exists to escape from.
     pub apply_lock: Mutex<()>,
 }
 
@@ -93,7 +99,7 @@ pub async fn blocking_sync(
             .collect();
         let mut synced = Vec::new();
         for name in matching {
-            let _guard = state.apply_lock.lock().unwrap();
+            let _guard = state.apply_lock.lock().unwrap_or_else(|e| e.into_inner());
             crate::pull::sync_recorded(
                 &state.paths,
                 state.builder.as_ref(),
@@ -110,11 +116,24 @@ pub async fn blocking_sync(
 
 /// Who is making this request, resolved by the auth middleware from the
 /// session the token belongs to. The destructive-op gate reads `autonomous`;
-/// approval records read `label` so the human sees who asked.
+/// approval records read `label` so the human sees who asked; `id` is what
+/// keeps a session from being both halves of the trust ceremony — granting
+/// itself autonomy, or approving its own request.
 #[derive(Clone, Debug)]
 pub struct Caller {
+    pub id: String,
     pub label: String,
     pub autonomous: bool,
+    /// Operator or agent. An agent may run infrastructure; it may not enlarge
+    /// anyone's authority, because an agent that can mint a second session and
+    /// bless it is both halves of the approval ceremony.
+    pub provenance: crate::auth::Provenance,
+}
+
+impl Caller {
+    pub fn is_agent(&self) -> bool {
+        self.provenance == crate::auth::Provenance::Agent
+    }
 }
 
 pub fn router(state: SharedState) -> Router {
@@ -193,6 +212,37 @@ pub fn router(state: SharedState) -> Router {
         // site traffic first, so auth only ever guards management requests).
         .layer(from_fn_with_state(state.clone(), require_auth))
         .layer(from_fn_with_state(state, sites::host_dispatch))
+        // Outermost, so it covers every response including errors and served
+        // sites.
+        .layer(from_fn(security_headers))
+}
+
+/// Headers every response carries.
+///
+/// `frame-ancestors 'none'` is the load-bearing one: the CSRF defence compares
+/// Origin against Host, which a clickjacked console passes with flying colours
+/// because the POST really does come from the console's own origin. Framing is
+/// the bypass, so framing is refused.
+///
+/// This deliberately sets no `default-src`. The console inlines its stylesheet
+/// and script, so a content policy would need `'unsafe-inline'` and buy nothing
+/// until those move to their own files; `form-action` and `base-uri` are the
+/// parts that work regardless.
+async fn security_headers(request: Request, next: Next) -> Response {
+    let mut response = next.run(request).await;
+    let h = response.headers_mut();
+    h.insert(
+        "content-security-policy",
+        HeaderValue::from_static("frame-ancestors 'none'; base-uri 'none'; form-action 'self'"),
+    );
+    // Belt and braces for browsers that predate frame-ancestors.
+    h.insert("x-frame-options", HeaderValue::from_static("DENY"));
+    // An uploaded file must never be re-interpreted as script because a
+    // browser sniffed the bytes and disagreed with the declared type.
+    h.insert("x-content-type-options", HeaderValue::from_static("nosniff"));
+    // Box hostnames and service paths are not the wider internet's business.
+    h.insert("referrer-policy", HeaderValue::from_static("no-referrer"));
+    response
 }
 
 /// Gate management behind operator auth: coarse-public paths pass; everything
@@ -205,6 +255,18 @@ async fn require_auth(
     next: Next,
 ) -> Response {
     let path = request.uri().path();
+    // BEFORE the public-path branch, not after. `/pair/claim` and
+    // `/pair/redeem` are public because a Box with no operator yet cannot ask
+    // for a credential — but "no credential needed" is not "any website may
+    // POST here". Without this, a page the operator merely visits could burn
+    // the one-shot first-run claim on every unclaimed Box it can reach.
+    if crate::auth::cross_site_write(request.method().as_str(), request.headers()) {
+        return (
+            StatusCode::FORBIDDEN,
+            axum::Json(serde_json::json!({ "error": "cross-site request refused" })),
+        )
+            .into_response();
+    }
     if crate::auth::is_public_path(path) {
         // `/sites/<name>/` is credential-free on your own network — that is
         // what the console promises. It is NOT credential-free through the
@@ -229,17 +291,6 @@ async fn require_auth(
         return next.run(request).await;
     }
     let headers = request.headers();
-    // Before any authorization: a write that a browser started on another site
-    // is refused outright. Loopback access needs no credential, so without this
-    // any page the operator visits could drive the console (see
-    // auth::cross_site_write).
-    if crate::auth::cross_site_write(request.method().as_str(), headers) {
-        return (
-            StatusCode::FORBIDDEN,
-            axum::Json(serde_json::json!({ "error": "cross-site request refused" })),
-        )
-            .into_response();
-    }
     // Authority comes from holding a session, never from where the connection
     // came from. Loopback used to be treated as proof of ownership ("if you can
     // reach it you already own the box"), but every service the Box runs can
@@ -254,8 +305,10 @@ async fn require_auth(
         // read this; everything else ignores it.
         let mut request = request;
         request.extensions_mut().insert(Caller {
+            id: session.id,
             label: session.label,
             autonomous: session.autonomous,
+            provenance: session.provenance,
         });
         return next.run(request).await;
     }
@@ -332,7 +385,7 @@ pub fn preview_open(
     if head_branch.is_empty() {
         anyhow::bail!("pull request event carried no head branch");
     }
-    let _guard = state.apply_lock.lock().unwrap();
+    let _guard = state.apply_lock.lock().unwrap_or_else(|e| e.into_inner());
     let config = crate::config::BoxConfig::load(&state.paths)?;
     let zone = config.ingress.as_ref().and_then(|i| i.zone.clone());
     let parents: Vec<crate::config::ServiceConfig> = config
@@ -445,7 +498,7 @@ pub fn preview_close(
     repo: &str,
     number: u64,
 ) -> anyhow::Result<serde_json::Value> {
-    let _guard = state.apply_lock.lock().unwrap();
+    let _guard = state.apply_lock.lock().unwrap_or_else(|e| e.into_inner());
     let config = crate::config::BoxConfig::load(&state.paths)?;
     let suffix = format!("-pr{number}");
     let doomed: Vec<String> = config

@@ -190,9 +190,14 @@ fn the_one_liner_claims_a_fresh_box_and_wires_the_agent() {
         .output()
         .unwrap();
     let text = String::from_utf8_lossy(&out.stdout).to_string();
+    // Codes are Crockford base32, grouped: XXXX-XXXX-XXXX-XXXX.
     let code = text
         .split_whitespace()
-        .find(|w| w.len() == 10 && w.chars().all(|c| c.is_ascii_hexdigit()))
+        .find(|w| {
+            w.len() == 19
+                && w.matches('-').count() == 3
+                && w.chars().all(|c| c == '-' || c.is_ascii_alphanumeric())
+        })
         .unwrap_or_else(|| panic!("no code in `auth enroll` output: {text}"))
         .to_string();
 

@@ -4,7 +4,7 @@
 # Run from the bench workstation against a freshly installed Box on the LAN
 # (boot the unit from the installer USB with its orders first). The pass:
 #
-#   1. wait for the newborn's health
+#   1. wait for the fresh unit's health
 #   2. redeem its enrollment code for a bench session
 #   3. deploy the tier's rated model (llama.cpp Vulkan) and wait for it
 #   4. benchmark the exact unit: best-of-3 tokens/sec through /v1
@@ -40,7 +40,7 @@ OUT="${OUT:-./bench-$SERIAL}"; mkdir -p "$OUT"
 BASE="http://$HOST:2693"
 say() { printf '[bench] %s\n' "$*" | tee -a "$OUT/bench.log"; }
 
-# 1. the newborn answers
+# 1. the fresh unit answers
 say "waiting for $HOST"
 for _ in $(seq 1 60); do
   curl -fsS -m 4 "$BASE/api/v1/health" >/dev/null 2>&1 && break; sleep 5

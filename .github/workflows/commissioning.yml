@@ -1,10 +1,10 @@
-# The nightly birth: a blank VM takes the LIVE thebox.build one-liner and
+# Nightly commissioning: a blank VM takes the LIVE thebox.build one-liner and
 # becomes a serving Box, timed stage by stage. The receipt it emits is pushed
 # to the `receipts` branch, which the landing page reads client-side — so
 # "last verified <tonight>" on thebox.build is a fact, not copy. A red run
 # here means the funnel is broken for real people, which is exactly what a
 # nightly should catch.
-name: Nightly birth
+name: Nightly commissioning
 
 on:
   schedule:
@@ -15,11 +15,11 @@ permissions:
   contents: write # push the receipt branch
 
 concurrency:
-  group: birth
+  group: commissioning
   cancel-in-progress: false
 
 jobs:
-  birth:
+  commission:
     runs-on: ubuntu-latest
     timeout-minutes: 50
     steps:
@@ -33,21 +33,28 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"'             | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Rehearse the birth against the live site
+      - name: Rehearse commissioning against the live site
         run: |
-          mkdir -p /tmp/birth
-          OUT=/tmp/birth bash scripts/rehearse-birth.sh
-          cat /tmp/birth/receipt.json
+          mkdir -p /tmp/commissioning
+          OUT=/tmp/commissioning bash scripts/rehearse-commissioning.sh
+          cat /tmp/commissioning/receipt.json
+      - name: Keep the post-mortem (only written when a stage failed)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: postmortem
+          path: /tmp/commissioning/postmortem.log
+          if-no-files-found: ignore
       - name: Publish the receipt
         if: always()
         run: |
-          [ -f /tmp/birth/receipt.json ] || exit 0
+          [ -f /tmp/commissioning/receipt.json ] || exit 0
           git config user.name "the-box-nightly"
           git config user.email "nightly@thebox.build"
           git checkout --orphan receipts-tmp
           git rm -rf --quiet . || true
           mkdir -p receipts
-          cp /tmp/birth/receipt.json receipts/latest.json
+          cp /tmp/commissioning/receipt.json receipts/latest.json
           git add receipts/latest.json
           git commit -m "receipt: $(date -u +%Y-%m-%dT%H:%MZ)"
           git push -f origin receipts-tmp:receipts

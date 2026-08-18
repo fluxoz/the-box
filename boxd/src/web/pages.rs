@@ -60,6 +60,11 @@ const THEME_SVG: &str = r##"<svg class="ico" viewBox="0 0 16 16" aria-hidden="tr
 pub struct Flash {
     ok: Option<String>,
     err: Option<String>,
+    /// A pairing code carried in the link from the recovery kit, so claiming is
+    /// one click instead of sixteen typed characters. Prefills the field; it is
+    /// still the redeem POST that authenticates.
+    #[serde(default)]
+    c: Option<String>,
 }
 
 fn layout(title: &str, flash: &Flash, body: Markup) -> Html<String> {
@@ -766,7 +771,7 @@ pub async fn create_service(
     let jobs = state.jobs.clone();
     let id = jobs.start("deploy", format!("Deploying {name}"), "/", move |p| {
         p.phase("waiting for other changes to finish");
-        let _guard = state.apply_lock.lock().unwrap();
+        let _guard = state.apply_lock.lock().unwrap_or_else(|e| e.into_inner());
         p.phase(format!("building generation for {name}"));
         let info = ops::deploy(&state.paths, state.builder.as_ref(), request)?;
         p.phase("activated");
@@ -790,7 +795,7 @@ pub async fn delete_service(
             .clone()
             .start("delete", format!("Removing {name}"), "/", move |p| {
                 p.phase("waiting for other changes to finish");
-                let _guard = state.apply_lock.lock().unwrap();
+                let _guard = state.apply_lock.lock().unwrap_or_else(|e| e.into_inner());
                 p.phase(format!("rebuilding without {name}"));
                 let info = ops::delete_service(&state.paths, state.builder.as_ref(), &name)?;
                 Ok(format!(
@@ -1293,8 +1298,16 @@ pub async fn backup(State(state): State<SharedState>, Query(flash): Query<Flash>
 /// the TLS-terminated tunnel. Everywhere else we point at the CLI instead of
 /// inviting someone to put their key on the wire in the clear.
 fn key_entry_is_safe(peer: std::net::SocketAddr, headers: &HeaderMap) -> bool {
-    crate::auth::is_trusted_local(peer.ip().is_loopback(), headers)
-        || crate::auth::is_proxied(headers)
+    // "Proxied" alone only means somebody set a forwarding header — which any
+    // client can do, and which a plain-HTTP reverse proxy also does. What makes
+    // the tunnel safe for a private key is that it terminates TLS, so ask for
+    // the header that says so, exactly as the passkey path does.
+    let proxied_over_tls = crate::auth::is_proxied(headers)
+        && headers
+            .get("x-forwarded-proto")
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|p| p.eq_ignore_ascii_case("https"));
+    crate::auth::is_trusted_local(peer.ip().is_loopback(), headers) || proxied_over_tls
 }
 
 // Named "recreate", not "restore": the Backup page already restores FILES from
@@ -1420,7 +1433,7 @@ pub async fn recreate_run(
             move |p| {
                 let key = crate::util::TransientSecret::new("restore-identity", &identity)?;
                 p.phase("waiting for other changes to finish");
-                let _guard = state.apply_lock.lock().unwrap();
+                let _guard = state.apply_lock.lock().unwrap_or_else(|e| e.into_inner());
                 p.phase("cloning config and secrets");
                 let info = ops::restore(&state.paths, state.builder.as_ref(), &repo, key.path())?;
                 p.phase("re-keyed secrets, generation built");
@@ -1607,7 +1620,7 @@ pub async fn restore_backup(
             "/backup",
             move |p| {
                 p.phase("waiting for other changes to finish");
-                let _guard = state.apply_lock.lock().unwrap();
+                let _guard = state.apply_lock.lock().unwrap_or_else(|e| e.into_inner());
                 let config = BoxConfig::load(&state.paths)?;
                 let bc = config
                     .backup
@@ -2005,7 +2018,7 @@ pub async fn system_apply(State(state): State<SharedState>) -> Redirect {
             "/",
             move |p| {
                 p.phase("waiting for other changes to finish");
-                let _guard = state.apply_lock.lock().unwrap();
+                let _guard = state.apply_lock.lock().unwrap_or_else(|e| e.into_inner());
                 p.phase("building and switching the system");
                 match ostier::request_apply(&state.paths) {
                     ostier::ApplyOutcome::Applied => {
@@ -2095,6 +2108,7 @@ pub async fn pair(
     // able to seize an unclaimed Box).
     let claimable = crate::auth::is_claimable(&state.paths) && !crate::auth::is_proxied(&headers);
     let has_keys = crate::auth::has_security_keys(&state.paths);
+    let seeded = crate::auth::code_was_seeded(&state.paths);
     let page = html! {
         (DOCTYPE)
         html lang="en" {
@@ -2121,7 +2135,7 @@ pub async fn pair(
                             div style="text-align:center;margin-bottom:1.4rem" {
                                 (PreEscaped(identity_mark_svg(&format!("{name}:{}", machine_id.trim()))))
                             }
-                            h2 style="text-align:center" { "A Box is born." }
+                            h2 style="text-align:center" { "This machine is a Box now." }
                             p style="text-align:center;font-size:1.25rem;margin:.2rem 0 .1rem" {
                                 b { (name) }
                             }
@@ -2147,7 +2161,9 @@ pub async fn pair(
                                     label {
                                         "Pairing code"
                                         input type="text" name="code" required
-                                            placeholder="abcd1234ef" autocomplete="one-time-code";
+                                            value=[flash.c.as_deref()]
+                                            placeholder="XXXX-XXXX-XXXX-XXXX"
+                                            autocomplete="one-time-code";
                                     }
                                     button.btn type="submit" { "Pair" }
                                 }
@@ -2158,6 +2174,20 @@ pub async fn pair(
                                 "Management on this Box answers to you. Enter your one-time pairing "
                                 "code, from your setup recovery kit, or from “Add device” on a device "
                                 "that is already paired."
+                            }
+                            // A Box whose install medium named an owner is
+                            // never claimable by asking over the network, so
+                            // somebody arriving here without a code needs to
+                            // know where the code lives rather than being told
+                            // a flat no.
+                            @if seeded {
+                                p.muted {
+                                    "This Box was set up with a pairing code, so it already knows who "
+                                    "it belongs to and cannot be claimed by whoever asks first. The "
+                                    "code is in the recovery kit you downloaded when you built it. "
+                                    "Lost it? Sign in at the machine itself and run "
+                                    code { "boxd auth enroll" } " for a new one."
+                                }
                             }
                             // Only where a key can actually work: this Box is
                             // claimed and has one enrolled.
@@ -2172,7 +2202,9 @@ pub async fn pair(
                                 label {
                                     "Pairing code"
                                     input type="text" name="code" required autofocus
-                                        placeholder="abcd1234ef" autocomplete="one-time-code webauthn";
+                                        value=[flash.c.as_deref()]
+                                        placeholder="XXXX-XXXX-XXXX-XXXX"
+                                        autocomplete="one-time-code webauthn";
                                 }
                                 button.btn type="submit" { "Pair" }
                             }
@@ -2197,7 +2229,11 @@ pub async fn pair(
 /// First-run claim: mint the first operator session for an unclaimed Box, from
 /// a direct LAN/loopback connection only. Once claimed, this is a no-op and
 /// callers fall back to code entry.
-pub async fn pair_claim(State(state): State<SharedState>, headers: HeaderMap) -> Response {
+pub async fn pair_claim(
+    State(state): State<SharedState>,
+    axum::extract::ConnectInfo(peer): axum::extract::ConnectInfo<std::net::SocketAddr>,
+    headers: HeaderMap,
+) -> Response {
     if crate::auth::is_proxied(&headers) {
         return Redirect::to("/pair?err=This+Box+can+only+be+claimed+from+your+local+network")
             .into_response();
@@ -2208,6 +2244,17 @@ pub async fn pair_claim(State(state): State<SharedState>, headers: HeaderMap) ->
         .is_some_and(|a| a.contains("application/json"));
     match crate::auth::claim(&state.paths, "first device") {
         Ok(Some(token)) => {
+            // The receipt. Any first-use trust model needs the owner to be able
+            // to find out that somebody else got there first, so the moment is
+            // written down where they will see it rather than passing silently.
+            crate::journal::record(
+                &state.paths,
+                "claim",
+                format!(
+                    "this Box was claimed from {} and now answers to that device",
+                    peer.ip()
+                ),
+            );
             if wants_json {
                 axum::Json(serde_json::json!({ "token": token, "label": "first device" }))
                     .into_response()
@@ -2337,24 +2384,53 @@ pub async fn devices(
 ///
 /// This renders the page rather than redirecting, so the credential never
 /// travels in a URL and never lands in browser history.
+/// Routes that hand out or enlarge authority are the operator's alone.
+///
+/// Without this an agent needs three requests to free itself: mint a second
+/// session here, grant THAT session autonomy (it is not itself, so the
+/// self-grant check passes), then drive every destructive tool with it. The
+/// same trick approves the agent's own queued actions. The asker/approver
+/// checks are necessary but not sufficient; this is the other half.
+fn agent_may_not(caller: &Option<axum::Extension<crate::web::Caller>>, what: &str) -> Option<Redirect> {
+    match caller {
+        Some(axum::Extension(c)) if c.is_agent() => Some(Redirect::to(&format!(
+            "/devices?err={}",
+            urlencoding::encode(&format!(
+                "An agent session may not {what}. Do this from your own signed-in device."
+            ))
+        ))),
+        _ => None,
+    }
+}
+
 pub async fn create_agent_connection(
     State(state): State<SharedState>,
+    caller: Option<axum::Extension<crate::web::Caller>>,
     headers: HeaderMap,
-) -> Html<String> {
-    match crate::auth::mint_session(&state.paths, "agent") {
+) -> Response {
+    if let Some(c) = caller.as_ref().filter(|axum::Extension(c)| c.is_agent()) {
+        let _ = c;
+        return Redirect::to(
+            "/devices?err=An+agent+session+may+not+create+another+connection.+Do+this+from+your+own+signed-in+device.",
+        )
+        .into_response();
+    }
+    match crate::auth::mint_session_as(&state.paths, "agent", crate::auth::Provenance::Agent) {
         Ok(token) => {
             let flash = Flash {
                 ok: Some("Agent connection created — copy it now, it is shown once.".into()),
                 err: None,
+                ..Default::default()
             };
-            devices_page(&state, &headers, &flash, Some(token))
+            devices_page(&state, &headers, &flash, Some(token)).into_response()
         }
         Err(err) => {
             let flash = Flash {
                 ok: None,
                 err: Some(format!("{err:#}")),
+                ..Default::default()
             };
-            devices_page(&state, &headers, &flash, None)
+            devices_page(&state, &headers, &flash, None).into_response()
         }
     }
 }
@@ -2620,7 +2696,13 @@ fn mcp_json(url: &str, token: &str) -> String {
     maud::PreEscaped(text).0
 }
 
-pub async fn add_device(State(state): State<SharedState>) -> Redirect {
+pub async fn add_device(
+    State(state): State<SharedState>,
+    caller: Option<axum::Extension<crate::web::Caller>>,
+) -> Redirect {
+    if let Some(r) = agent_may_not(&caller, "create a pairing code") {
+        return r;
+    }
     match crate::auth::mint_code(&state.paths, "device") {
         Ok(code) => Redirect::to(&format!(
             "/devices?ok={}",
@@ -2809,7 +2891,7 @@ pub async fn service_sync_now(
     let n = name.clone();
     let state2 = state.clone();
     let outcome = tokio::task::spawn_blocking(move || {
-        let _guard = state2.apply_lock.lock().unwrap();
+        let _guard = state2.apply_lock.lock().unwrap_or_else(|e| e.into_inner());
         crate::pull::sync_recorded(
             &state2.paths,
             state2.builder.as_ref(),
@@ -2932,6 +3014,7 @@ pub async fn mint_ai_key(
             &Flash {
                 ok: None,
                 err: Some(format!("{e:#}")),
+                ..Default::default()
             },
             None,
             None,
@@ -2950,7 +3033,16 @@ pub async fn revoke_ai_key(State(state): State<SharedState>, Path(id): Path<Stri
     }
 }
 
-pub async fn revoke_device(State(state): State<SharedState>, Path(id): Path<String>) -> Redirect {
+pub async fn revoke_device(
+    State(state): State<SharedState>,
+    caller: Option<axum::Extension<crate::web::Caller>>,
+    Path(id): Path<String>,
+) -> Redirect {
+    // Otherwise a compromised agent locks the operator out of their own Box by
+    // revoking every device in a loop.
+    if let Some(r) = agent_may_not(&caller, "revoke devices") {
+        return r;
+    }
     match crate::auth::revoke(&state.paths, &id) {
         Ok(true) => Redirect::to("/devices?ok=Device+revoked"),
         Ok(false) => Redirect::to("/devices?err=No+such+device"),
@@ -2971,10 +3063,28 @@ pub struct AutonomyForm {
 /// device list where the session's label and age are in view.
 pub async fn set_device_autonomy(
     State(state): State<SharedState>,
+    caller: Option<axum::Extension<crate::web::Caller>>,
     Path(id): Path<String>,
     Form(f): Form<AutonomyForm>,
 ) -> Redirect {
+    if let Some(r) = agent_may_not(&caller, "grant autonomy") {
+        return r;
+    }
     let on = f.on == "true";
+    // Granting autonomy is the operator's act, and a leash you can unclip
+    // yourself is not a leash: an agent session that could flip this bit would
+    // simply grant itself the destructive-op leave the approval queue exists to
+    // withhold. Handing it to ANOTHER session is still allowed — that is how an
+    // operator lets an agent run unattended.
+    if on {
+        if let Some(axum::Extension(c)) = &caller {
+            if c.id == id {
+                return Redirect::to(
+                    "/devices?err=A+session+cannot+grant+itself+autonomy.+Use+another+signed-in+device.",
+                );
+            }
+        }
+    }
     match crate::auth::set_autonomous(&state.paths, &id, on) {
         Ok(true) if on => Redirect::to(
             "/devices?ok=This+session+may+now+run+destructive+operations+without+asking",
@@ -3068,12 +3178,29 @@ pub async fn approvals(
     layout("Approvals", &flash, body)
 }
 
-pub async fn approve_action(State(state): State<SharedState>, Path(id): Path<String>) -> Redirect {
+pub async fn approve_action(
+    State(state): State<SharedState>,
+    caller: Option<axum::Extension<crate::web::Caller>>,
+    Path(id): Path<String>,
+) -> Redirect {
+    if let Some(r) = agent_may_not(&caller, "approve actions") {
+        return r;
+    }
     let Some(action) = crate::approvals::get(&state.paths, &id) else {
         return Redirect::to("/approvals?err=No+such+pending+action");
     };
     if action.state != crate::approvals::State::Pending {
         return Redirect::to("/approvals?err=Already+decided");
+    }
+    // The asker cannot be the approver. Otherwise the queue is theater: an
+    // agent queues the wipe it is not allowed to run, then POSTs its own
+    // approval and runs it anyway.
+    if let Some(axum::Extension(c)) = &caller {
+        if !c.id.is_empty() && c.id == action.requested_by_id {
+            return Redirect::to(
+                "/approvals?err=This+action+was+requested+by+this+same+session.+Approve+it+from+the+operator's+device.",
+            );
+        }
     }
     // The tap IS the consent: run the exact call the agent made, through the
     // same code path it would have taken, and record what happened.
@@ -3110,7 +3237,17 @@ pub async fn approve_action(State(state): State<SharedState>, Path(id): Path<Str
     }
 }
 
-pub async fn deny_action(State(state): State<SharedState>, Path(id): Path<String>) -> Redirect {
+pub async fn deny_action(
+    State(state): State<SharedState>,
+    caller: Option<axum::Extension<crate::web::Caller>>,
+    Path(id): Path<String>,
+) -> Redirect {
+    // Denial is not destructive, but it IS the operator's veto: an agent that
+    // can deny can bin the caretaker's remediation, and the journal would file
+    // it as "you denied".
+    if let Some(r) = agent_may_not(&caller, "decide approvals") {
+        return r;
+    }
     if let Some(a) = crate::approvals::get(&state.paths, &id) {
         crate::journal::record(
             &state.paths,
@@ -3226,7 +3363,7 @@ pub async fn rollback(State(state): State<SharedState>, Path(number): Path<u64>)
         "/generations",
         move |p| {
             p.phase("waiting for other changes to finish");
-            let _guard = state.apply_lock.lock().unwrap();
+            let _guard = state.apply_lock.lock().unwrap_or_else(|e| e.into_inner());
             p.phase(format!("switching to generation #{number}"));
             let info = ops::rollback(&state.paths, number)?;
             Ok(format!("Rolled back to generation #{}", info.number))

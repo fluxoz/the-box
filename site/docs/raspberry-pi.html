@@ -32,8 +32,12 @@
   which the Pi can't do). Flashing is the Pi's normal path, and it's fully supported.</div>
 
   <h2 id="download">Download the image</h2>
-  <p>Grab the image for your model from the
-  <a href="https://github.com/fluxoz/the-box/releases/latest">latest release</a>:</p>
+  <p><b>Recommended: <a href="/configurator/">build your image in the Configurator</a>.</b> You get the same
+  image everyone else does, with your Wi-Fi, your pairing code and (if you want one) your SSH key written
+  into it as it downloads. Flash it, power the Pi on, and you are done: no screen, no keyboard, no SSH, and
+  nothing to claim over the network, because the Pi already knows it belongs to you.</p>
+  <p>If you would rather have the plain image and set it up on the machine itself, grab it for your model
+  from the <a href="https://github.com/fluxoz/the-box/releases/latest">latest release</a>:</p>
   <table class="tbl">
     <thead><tr><th>Model</th><th>Image</th></tr></thead>
     <tbody>
@@ -42,12 +46,16 @@
       <tr><td>Pi 3</td><td><a href="https://github.com/fluxoz/the-box/releases/latest/download/thebox-pi3.img.xz"><code>thebox-pi3.img.xz</code></a></td></tr>
     </tbody>
   </table>
-  <p>Each image has a matching <code>.sha256</code> next to it on the release, so you can verify the download.</p>
+  <p>Each image has a matching <code>.sha256</code> next to it on the release, so you can verify the download.
+  The personalized download is that same published image with one small file swapped inside it, so what you
+  flash is the artifact you can check, not a one-off build nobody else can see.</p>
 
   <h2 id="flash">Flash it</h2>
   <p>Easiest: <a href="https://www.raspberrypi.com/software/">Raspberry Pi Imager</a>, choose
-  <em>Use custom image</em>, pick the <code>.img.xz</code>, select the SD card, and write. It handles the
+  <em>Use custom image</em>, pick the file you downloaded, select the SD card, and write. It handles the
   decompression.</p>
+  <p class="note">Skip Imager's own customisation screen. If you built your image in the Configurator your
+  settings are already inside it, and anything you add there is a second, separate set of settings.</p>
   <p>Or from a terminal:</p>
   <pre><code>xz -dc thebox-pi5.img.xz | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync</code></pre>
   <div class="warn"><b>Check <code>/dev/sdX</code>.</b> Point it at the SD card, not a system disk, because
@@ -55,8 +63,9 @@
 
   <h2 id="boot">Boot &amp; pair</h2>
   <p>Put the card in the Pi and power on. On first boot it expands the filesystem to fill the card and comes
-  up as a Box on your LAN at <code>box.local:2693</code>. From there it's the same as any Box:
-  <a href="first-steps.html">pair your browser and go</a>.</p>
+  up as a Box on your LAN at <code>box.local:2693</code>. If you built the image in the Configurator, open the
+  claim link from your recovery kit and it fills your pairing code in for you. Otherwise it is the same as any
+  Box: <a href="first-steps.html">pair your browser and go</a>.</p>
 
   <h2 id="build">Build it yourself (advanced)</h2>
   <p>Prefer to build from source, or want to change the config first? With

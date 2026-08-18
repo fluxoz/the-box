@@ -225,3 +225,163 @@ mod hmac_tests {
         assert!(!constant_time_eq_hex(&mac, "short"));
     }
 }
+
+/// Whether an outbound base URL may point at this machine or its private
+/// network. The resident's brain is documented as possibly being the Box's own
+/// `/v1`, so that path passes `Loopback::Allow`; a cloud fallback or a control
+/// plane has no business there and passes `Loopback::Deny`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Loopback {
+    Allow,
+    Deny,
+}
+
+/// Gate a URL that boxd will hand to `curl`.
+///
+/// Two distinct problems, both real:
+///
+/// 1. **Argument injection.** `curl` treats a leading `-` as an option, not a
+///    URL, and `-K<path>` makes it read that path as a config file — which can
+///    set `url`, `output` or `upload-file`. boxd runs as the user that owns the
+///    0700 secret store, so a stored base URL of `-K/some/file` was arbitrary
+///    file read and write. Call sites also pass `--` before positionals now;
+///    this is the other half of that fix.
+/// 2. **SSRF.** boxd sits on a home network and returns upstream bodies to the
+///    caller, so an unvalidated base URL turns it into a probe for the router's
+///    admin page, a cloud metadata endpoint, or its own API on loopback.
+///
+/// Deliberately strict: an explicit `http`/`https` scheme, no credentials in
+/// the authority, no control characters, and — unless loopback is allowed — no
+/// address literal pointing at this machine or a private network. Name-based
+/// hosts that resolve to a private address are NOT caught here; that needs
+/// resolve-then-pin at connect time, which curl cannot express.
+pub fn validate_outbound_url(url: &str, loopback: Loopback) -> anyhow::Result<()> {
+    use anyhow::bail;
+
+    if url.chars().any(|c| c.is_control() || c.is_whitespace()) {
+        bail!("URL must not contain spaces or control characters");
+    }
+    let rest = match url.split_once("://") {
+        Some((scheme, rest)) if scheme.eq_ignore_ascii_case("http") => rest,
+        Some((scheme, rest)) if scheme.eq_ignore_ascii_case("https") => rest,
+        _ => bail!("URL must start with http:// or https:// (got {url:?})"),
+    };
+    // Authority ends at the first path/query/fragment delimiter.
+    let authority = rest
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or_default()
+        .to_string();
+    if authority.is_empty() {
+        bail!("URL has no host");
+    }
+    // `https://good.example@evil.example/` reads as good.example to a human and
+    // resolves to evil.example. Refuse the ambiguity outright.
+    if authority.contains('@') {
+        bail!("URL must not embed credentials");
+    }
+    // Strip the port. IPv6 literals are bracketed, so find the closing bracket
+    // first and only then look for a colon.
+    let host = match authority.rfind(']') {
+        Some(end) => &authority[..=end],
+        None => authority.split(':').next().unwrap_or_default(),
+    };
+    let host = host.trim_start_matches('[').trim_end_matches(']');
+    if host.is_empty() {
+        bail!("URL has no host");
+    }
+    if loopback == Loopback::Allow {
+        return Ok(());
+    }
+    if host.eq_ignore_ascii_case("localhost") || host.to_ascii_lowercase().ends_with(".localhost") {
+        bail!("{host} points at this machine; use a reachable endpoint");
+    }
+    // NOTE ON SCOPE: private LAN ranges are deliberately allowed. This is a
+    // self-hosting product — pointing the Box at a beefier GPU machine or a
+    // self-hosted GitLab on the same network is a first-class use case, not an
+    // attack. What is refused is what is never legitimate: this machine itself,
+    // and the link-local range that carries cloud metadata services.
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        let forbidden = match ip {
+            std::net::IpAddr::V4(v4) => {
+                v4.is_loopback() || v4.is_link_local() || v4.is_unspecified()
+            }
+            std::net::IpAddr::V6(v6) => {
+                v6.is_loopback()
+                    || v6.is_unspecified()
+                    // fe80::/10 link-local.
+                    || (v6.segments()[0] & 0xffc0) == 0xfe80
+                    || v6
+                        .to_ipv4_mapped()
+                        .is_some_and(|v4| v4.is_loopback() || v4.is_link_local())
+            }
+        };
+        if forbidden {
+            bail!("{ip} is this machine or a link-local address; point this at a reachable endpoint");
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod url_tests {
+    use super::*;
+
+    #[test]
+    fn outbound_urls_are_gated() {
+        // The verified exploit: curl reads -K<path> as a config file.
+        for bad in [
+            "-K/var/lib/boxd/x",
+            "--config /tmp/x",
+            "file:///etc/shadow",
+            "gopher://x/",
+            "ftp://x/",
+            "api.openai.com/v1",
+            "",
+            "http://",
+            "https://good.example@evil.example/v1",
+            "https://evil.example/\nx",
+            "https://evil.example/ x",
+        ] {
+            assert!(
+                validate_outbound_url(bad, Loopback::Deny).is_err(),
+                "must refuse {bad:?}"
+            );
+        }
+
+        // SSRF targets: this machine, the LAN, the metadata endpoint.
+        for bad in [
+            "http://127.0.0.1:2693/v1",
+            "http://localhost/v1",
+            "http://[::1]/v1",
+            "http://169.254.169.254/latest/meta-data",
+            "http://0.0.0.0/",
+        ] {
+            assert!(
+                validate_outbound_url(bad, Loopback::Deny).is_err(),
+                "must refuse SSRF target {bad:?}"
+            );
+        }
+
+        // Real endpoints still work.
+        for good in [
+            "https://api.anthropic.com/v1",
+            "https://api.x.ai/v1",
+            "http://api.example.com:8080/v1",
+            "https://gitlab.example.com",
+            "https://[2606:4700::1111]/v1",
+            // Self-hosting is the point of this product: a model server or a
+            // forge on your own network is legitimate, not an attack.
+            "http://192.168.1.50:8000/v1",
+            "https://gitlab.lan:8443",
+        ] {
+            validate_outbound_url(good, Loopback::Deny)
+                .unwrap_or_else(|e| panic!("must accept {good:?}: {e}"));
+        }
+
+        // The resident may legitimately use the Box's own endpoint.
+        validate_outbound_url("http://127.0.0.1:2693/v1", Loopback::Allow).unwrap();
+        // ...but never a scheme curl could turn into a file operation.
+        assert!(validate_outbound_url("-K/tmp/x", Loopback::Allow).is_err());
+    }
+}

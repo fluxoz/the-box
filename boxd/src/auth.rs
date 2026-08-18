@@ -23,6 +23,27 @@ use crate::paths::Paths;
 const CODE_TTL_SECS: i64 = 15 * 60;
 const COOKIE: &str = "box_session";
 
+/// Where a session came from, and therefore what it is allowed to be.
+///
+/// The approval ceremony only means something if the two halves are different
+/// people. An agent that can mint a second session and bless it is both halves,
+/// so the distinction has to be recorded when the session is created — it
+/// cannot be inferred later from a token that looks like every other token.
+///
+/// Defaults to `Operator` so sessions written before this existed keep working:
+/// they were the operator's.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Provenance {
+    /// A human proved possession: the first-run claim, a passkey, a pairing
+    /// code they typed, or the CLI (which needs a shell on the box).
+    #[default]
+    Operator,
+    /// Handed to a program by the console's "Connect an agent" card. May run
+    /// infrastructure; may not enlarge its own authority.
+    Agent,
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 struct StoredSession {
     id: String,
@@ -34,6 +55,8 @@ struct StoredSession {
     /// the operator turns it on per-session, eyes open, in the device list.
     #[serde(default)]
     autonomous: bool,
+    #[serde(default)]
+    provenance: Provenance,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -59,6 +82,18 @@ struct Store {
     /// browser offer them together.
     #[serde(default)]
     operator_id: Option<String>,
+    /// When this Box was claimed, as a fact rather than an inference.
+    ///
+    /// Claimed-ness used to be derived from "the store is empty", which meant
+    /// revoking your last device silently reopened first-run claim to anyone on
+    /// the LAN. A Box is claimed once, and stays claimed.
+    #[serde(default)]
+    claimed_at: Option<i64>,
+    /// True when an enrollment code was seeded by the install medium (orders,
+    /// or /boot/box-claim.txt). A Box that was never given one must not be
+    /// claimable over the network at all — see `is_claimable`.
+    #[serde(default)]
+    code_was_seeded: bool,
 }
 
 /// A session as shown in the "Paired devices" list — never includes the hash.
@@ -68,6 +103,7 @@ pub struct SessionInfo {
     pub label: String,
     pub created_at: i64,
     pub autonomous: bool,
+    pub provenance: Provenance,
 }
 
 fn hash(s: &str) -> String {
@@ -85,6 +121,11 @@ pub(crate) fn random_hex(n: usize) -> Result<String> {
         .context("reading /dev/urandom")?;
     Ok(buf.iter().map(|b| format!("{b:02x}")).collect())
 }
+
+/// The pairing-code format lives in box-core, because the browser installer,
+/// the console installer and this daemon all have to agree byte-for-byte on
+/// what gets hashed. Re-exported here so call sites read naturally.
+pub(crate) use box_core::pairing::{generate as random_code, normalize as normalize_code};
 
 fn now() -> i64 {
     Utc::now().timestamp()
@@ -131,9 +172,10 @@ fn save(paths: &Paths, store: &Store) -> Result<()> {
     Ok(())
 }
 
-/// Mint a session directly (used for the loopback path and for agents via the
-/// CLI). Returns the plaintext token — only its hash is stored.
-pub fn mint_session(paths: &Paths, label: &str) -> Result<String> {
+/// Mint a session directly. Returns the plaintext token — only its hash is
+/// stored. `provenance` decides whether the holder may enlarge anyone's
+/// authority; see [`Provenance`].
+pub fn mint_session_as(paths: &Paths, label: &str, provenance: Provenance) -> Result<String> {
     let token = random_hex(32)?;
     let mut store = load(paths);
     store.sessions.push(StoredSession {
@@ -142,9 +184,16 @@ pub fn mint_session(paths: &Paths, label: &str) -> Result<String> {
         hash: hash(&token),
         created_at: now(),
         autonomous: false,
+        provenance,
     });
     save(paths, &store)?;
     Ok(token)
+}
+
+/// Mint an operator session. The CLI needs a shell on the box, and the first-run
+/// claim and passkey paths are human-proved, so those are operators.
+pub fn mint_session(paths: &Paths, label: &str) -> Result<String> {
+    mint_session_as(paths, label, Provenance::Operator)
 }
 
 /// Is this token a live session?
@@ -162,6 +211,7 @@ pub fn list(paths: &Paths) -> Vec<SessionInfo> {
             label: s.label,
             created_at: s.created_at,
             autonomous: s.autonomous,
+            provenance: s.provenance,
         })
         .collect()
 }
@@ -179,6 +229,7 @@ pub fn session_for(paths: &Paths, token: &str) -> Option<SessionInfo> {
             label: s.label,
             created_at: s.created_at,
             autonomous: s.autonomous,
+            provenance: s.provenance,
         })
 }
 
@@ -212,12 +263,14 @@ pub fn revoke(paths: &Paths, id: &str) -> Result<bool> {
 
 /// Mint a one-time pairing/enrollment code (returns plaintext; stores hash).
 pub fn mint_code(paths: &Paths, label: &str) -> Result<String> {
-    let code = random_hex(5)?; // 10 hex chars, ~40 bits, single-use, short-lived
+    let code = random_code()?; // 80 bits, single-use, short-lived
     let mut store = load(paths);
     let t = now();
     store.codes.retain(|c| c.expires_at > t); // prune expired
     store.codes.push(StoredCode {
-        hash: hash(&code),
+        // Hash the canonical form, so a code typed with dashes, in lower case,
+        // or with an O for a zero still matches.
+        hash: hash(&normalize_code(&code)),
         label: label.to_string(),
         expires_at: t + CODE_TTL_SECS,
     });
@@ -236,20 +289,32 @@ pub fn import_code(paths: &Paths, code_hash: &str, label: &str) -> Result<()> {
         label: label.to_string(),
         expires_at: i64::MAX, // valid until first used (first boot may be much later)
     });
+    // The install medium gave this Box an owner before it ever booted. That is
+    // what makes network claim unnecessary — and therefore refusable.
+    store.code_was_seeded = true;
     save(paths, &store)?;
     Ok(())
+}
+
+/// Has this Box been given an owner by its install medium?
+pub fn code_was_seeded(paths: &Paths) -> bool {
+    load(paths).code_was_seeded
 }
 
 /// Redeem a one-time code for a new session. The code is consumed whether or
 /// not it was still valid, so it can't be replayed.
 pub fn redeem_code(paths: &Paths, code: &str, session_label: &str) -> Result<String> {
-    let h = hash(code.trim().to_ascii_lowercase().as_str());
+    // New codes are Crockford base32 and are hashed in canonical form; codes
+    // minted before that change were lowercase hex. Accept either, so a
+    // recovery kit printed last month still works.
+    let h = hash(&normalize_code(code));
+    let legacy_h = hash(code.trim().to_ascii_lowercase().as_str());
     let mut store = load(paths);
     let t = now();
     let pos = store
         .codes
         .iter()
-        .position(|c| c.hash == h && c.expires_at > t)
+        .position(|c| (c.hash == h || c.hash == legacy_h) && c.expires_at > t)
         .context("invalid or expired code")?;
     store.codes.remove(pos);
     let token = random_hex(32)?;
@@ -259,7 +324,12 @@ pub fn redeem_code(paths: &Paths, code: &str, session_label: &str) -> Result<Str
         hash: hash(&token),
         created_at: t,
         autonomous: false,
+        // A code the operator typed on a device they hold.
+        provenance: Provenance::Operator,
     });
+    if store.claimed_at.is_none() {
+        store.claimed_at = Some(t);
+    }
     save(paths, &store)?;
     Ok(token)
 }
@@ -268,15 +338,24 @@ pub fn redeem_code(paths: &Paths, code: &str, session_label: &str) -> Result<Str
 /// freshly flashed Box (no Configurator recovery kit) is claimable; a Box set
 /// up with orders (which seed an enrollment code) or already paired is not.
 pub fn is_claimable(paths: &Paths) -> bool {
-    // An enrolled security key is an operator credential just like a session:
-    // if one exists, this Box has been claimed. Ignoring them meant revoking
-    // the last session re-opened first-run claim to anyone on the LAN, even
-    // though the real operator could still sign in with their key.
     // An unreadable store counts as claimed — see `load_checked`.
-    match load_checked(paths) {
-        Ok(store) => store.sessions.is_empty() && store.codes.is_empty() && store.keys.is_empty(),
-        Err(_) => false,
+    let Ok(store) = load_checked(paths) else {
+        return false;
+    };
+    // Claimed is a FACT, recorded once, not a shape the store happens to have.
+    // Inferring it from emptiness meant revoking your last device reopened
+    // first-run claim to anyone on the LAN.
+    if store.claimed_at.is_some() {
+        return false;
     }
+    // A Box whose install medium seeded an owner is never claimed by asking
+    // over the network: the person holding the code redeems it instead. This
+    // is what closes the mDNS race, where a script announcing itself on the
+    // LAN beats a human walking to a browser every time.
+    if store.code_was_seeded {
+        return false;
+    }
+    store.sessions.is_empty() && store.codes.is_empty() && store.keys.is_empty()
 }
 
 /// Whether any security key is enrolled — the sign-in affordance is only
@@ -295,7 +374,12 @@ pub fn claim(paths: &Paths, label: &str) -> Result<Option<String>> {
     // exists but won't parse must abort the claim rather than overwrite the
     // real operator's sessions and keys with a fresh one.
     let mut store = load_checked(paths)?;
-    if !store.sessions.is_empty() || !store.codes.is_empty() || !store.keys.is_empty() {
+    if store.claimed_at.is_some()
+        || store.code_was_seeded
+        || !store.sessions.is_empty()
+        || !store.codes.is_empty()
+        || !store.keys.is_empty()
+    {
         return Ok(None);
     }
     let token = random_hex(32)?;
@@ -305,7 +389,10 @@ pub fn claim(paths: &Paths, label: &str) -> Result<Option<String>> {
         hash: hash(&token),
         created_at: now(),
         autonomous: false,
+        // Human-proved: the first-run claim, or a passkey ceremony.
+        provenance: Provenance::Operator,
     });
+    store.claimed_at = Some(now());
     save(paths, &store)?;
     Ok(Some(token))
 }
@@ -488,6 +575,8 @@ pub fn session_from_key(paths: &Paths, cred_id: &[u8], label: &str) -> Result<St
         hash: hash(&token),
         created_at: now(),
         autonomous: false,
+        // Human-proved: the first-run claim, or a passkey ceremony.
+        provenance: Provenance::Operator,
     });
     save(paths, &store)?;
     Ok(token)
@@ -507,6 +596,56 @@ mod tests {
 
     /// First-run claim is the one door that opens without a credential, so
     /// everything that means "this Box already has an operator" must close it.
+    /// Claimed is a fact, not a shape. Revoking every device used to empty the
+    /// store, which flipped `is_claimable` back to true and reopened first-run
+    /// claim to anyone who could reach the box — while the real owner was
+    /// locked out.
+    #[test]
+    fn revoking_everything_does_not_reopen_the_door() {
+        let tmp = TempDir::new().unwrap();
+        let p = Paths::new(tmp.path().to_path_buf());
+        p.ensure().unwrap();
+
+        assert!(is_claimable(&p), "a blank box with no seeded code is claimable");
+        let token = claim(&p, "first device").unwrap().expect("claim succeeds");
+        assert!(!is_claimable(&p));
+        assert!(claim(&p, "again").unwrap().is_none(), "claim is once only");
+
+        // The operator revokes every device they have.
+        let id = session_for(&p, &token).unwrap().id;
+        revoke(&p, &id).unwrap();
+        assert!(list(&p).is_empty(), "no sessions remain");
+        assert!(
+            !is_claimable(&p),
+            "an empty store must NOT mean an unowned box"
+        );
+        assert!(claim(&p, "attacker").unwrap().is_none());
+    }
+
+    /// A Box whose install medium named an owner is never claimed by asking
+    /// over the network. This is what takes the mDNS race off the table: a
+    /// script that spots the box the instant it boots has nothing to win.
+    #[test]
+    fn a_seeded_box_is_never_claimable_over_the_network() {
+        let tmp = TempDir::new().unwrap();
+        let p = Paths::new(tmp.path().to_path_buf());
+        p.ensure().unwrap();
+
+        let code = random_code().unwrap();
+        import_code(&p, &hash(&normalize_code(&code)), "enrollment").unwrap();
+        assert!(code_was_seeded(&p));
+        assert!(!is_claimable(&p), "seeded means owned");
+        assert!(claim(&p, "attacker").unwrap().is_none());
+
+        // The person holding the code still gets in, and typing it carelessly
+        // still works.
+        let token = redeem_code(&p, &code.to_lowercase(), "phone").unwrap();
+        assert!(verify(&p, &token));
+        // Burned: single use.
+        assert!(redeem_code(&p, &code, "again").is_err());
+        assert!(!is_claimable(&p));
+    }
+
     #[test]
     fn claim_closes_for_every_kind_of_credential() {
         // A fresh Box is claimable exactly once.

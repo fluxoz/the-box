@@ -5,6 +5,12 @@
 # come from the host layer.
 { config, lib, pkgs, ... }:
 {
+  # Every Box applies its install-time handoff, whichever route installed it.
+  # The flashed images compose this layer directly and never see box-os.nix, so
+  # the bootstrap has to live at this level or the flashed route has no way to
+  # learn who owns it.
+  imports = [ ./firstboot.nix ];
+
   # A default so the appliance image boots as "box.local"; per-box host configs
   # override it with their own name.
   networking.hostName = lib.mkDefault "box";

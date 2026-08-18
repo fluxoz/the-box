@@ -601,6 +601,10 @@ footer.foot b { color: var(--dim); }
                 <span class="code">VEC-04</span><span class="name">curl | sh</span>
                 <span class="desc">Convert a running Linux box or VPS.</span>
               </div>
+              <div class="vec" data-vec="pi" tabindex="0" role="radio" aria-checked="false">
+                <span class="code">VEC-05</span><span class="name">Raspberry Pi</span>
+                <span class="desc">Your image, flashed. Nothing else.</span>
+              </div>
             </div>
           </div>
 
@@ -870,7 +874,12 @@ footer.foot b { color: var(--dim); }
     // Only the hash of the pairing code rides in the orders; the code itself
     // stays with the operator (recovery kit). Firstboot seeds it so the box is
     // pairable from first boot without SSH.
-    if (enrollHash) cfg.enrollment_code_hash = enrollHash;
+    //
+    // Never conditional: a Box that boots without one has no owner, and the
+    // only way left to claim it is over the network, first-come — a race a
+    // script wins against a human every time. The installer refuses orders
+    // that lack it.
+    cfg.enrollment_code_hash = enrollHash;
     return cfg;
   }
 
@@ -964,6 +973,20 @@ footer.foot b { color: var(--dim); }
     else if (!armed) { gate.textContent = "Arm the unit to enable"; gate.style.color = "var(--critical)"; }
     else { gate.textContent = "Complete required fields above"; gate.style.color = "var(--critical)"; }
     if (vector === "sh") renderInstructions(); // keep the embedded-orders command fresh
+
+    // The claim link carries the code, so pairing is one click rather than
+    // sixteen typed characters. An "auto" designation names itself per unit, so
+    // there is no hostname to point at until it boots.
+    const link = $("#claimlink");
+    if (link && enrollCode) {
+      const host = cfg.hostname === "auto" ? null : `${cfg.hostname}.local`;
+      const url = `http://${host || "box.local"}:2693/pair?c=${encodeURIComponent(enrollCode)}`;
+      link.textContent = url;
+      link.href = url;
+      link.previousSibling.textContent = host
+        ? "Or just open this once the Box is up, and it fills the code in for you: "
+        : "Once it boots it names itself, so swap in its name: ";
+    }
   }
 
   /* ---------- download / copy ---------- */
@@ -1013,6 +1036,7 @@ footer.foot b { color: var(--dim); }
   };
   function renderInstructions() {
     if (vector === "sh") { renderShVector(); return; }
+    if (vector === "pi") { renderPiVector(); return; }
     const v = VEC[vector];
     $("#instructions").innerHTML =
       `<div class="ihead">${v.head}</div>
@@ -1038,6 +1062,49 @@ footer.foot b { color: var(--dim); }
         : "Carries no secrets — only the box name, disk choice, your SSH public key, and the pairing-code hash."}</div>`;
     $("#sh-cmd").textContent = cmd; // textContent avoids any HTML interpretation
     $("#cp-cmd").addEventListener("click", () => { navigator.clipboard.writeText(cmd); toast("Command copied"); });
+  }
+
+  function renderPiVector() {
+    // A native form post, not fetch: the browser streams a multi-gigabyte
+    // download straight to disk with its own progress bar and resume, instead
+    // of buffering it into a Blob in this tab.
+    //
+    // Everyone downloads the same image. The server swaps one small file
+    // inside it as the bytes go past, so the Pi boots already knowing who owns
+    // it and there is nothing to claim over the network.
+    const secret = (() => {
+      const c = JSON.parse(currentJSON);
+      return !!(c.cloudflare_tunnel_token || (c.wifi && c.wifi.password));
+    })();
+    $("#instructions").innerHTML = `
+      <div class="ihead">VEC-05 · Raspberry Pi — your image, flashed</div>
+      <ol>
+        <li>Pick your model and download the image. Your settings are written into it as it downloads.</li>
+        <li>Write it to the SD card with <b>Raspberry Pi Imager</b> or <b>Etcher</b>. Do not use Imager's own customisation screen; everything is already in the image.</li>
+        <li>Put the card in the Pi and power it on. No screen, no keyboard, no SSH.</li>
+        <li>A few minutes later it is at <code>&lt;name&gt;.local</code>. Pair it with the code above.</li>
+      </ol>
+      <form id="pi-form" method="POST" action="https://thebox.build/image/thebox-pi5">
+        <input type="hidden" name="orders" id="pi-orders">
+        <div class="deploybar" style="margin-top:9px">
+          <select id="pi-model" class="mono" aria-label="Raspberry Pi model">
+            <option value="thebox-pi5" selected>Raspberry Pi 5</option>
+            <option value="thebox-pi4">Raspberry Pi 4</option>
+            <option value="thebox-pi3">Raspberry Pi 3</option>
+          </select>
+          <button type="submit" class="btn small">Download my image</button>
+        </div>
+      </form>
+      <div class="cav ${secret ? "cav-secret" : ""}">${secret
+        ? "This image carries secrets (Wi-Fi password / tunnel token). Treat the file like a key: it installs a Box that trusts you."
+        : "The image carries no secrets — only the box name, your SSH public key if you added one, and the pairing-code hash. The code itself stays with you."}</div>`;
+    const form = $("#pi-form"), model = $("#pi-model");
+    // Set the orders at submit time so late edits are always included.
+    form.addEventListener("submit", () => {
+      $("#pi-orders").value = currentJSON;
+      form.action = `https://thebox.build/image/${model.value}`;
+      toast("Building your image…");
+    });
   }
   $$(".vec").forEach(el => {
     const pick = () => {
@@ -1068,6 +1135,10 @@ footer.foot b { color: var(--dim); }
           <div class="deploybar" style="margin-top:9px">
             <code class="mono" id="paircode" style="font-size:1.05rem;letter-spacing:.14em"></code>
             <button type="button" class="btn small ghost" id="cp-code">Copy</button>
+          </div>
+          <div class="note" style="margin-top:7px">
+            Or just open this once the Box is up, and it fills the code in for you:
+            <a id="claimlink" class="mono" href="#" rel="noreferrer"></a>
           </div>
         </div>`);
       $("#paircode").textContent = enrollCode;

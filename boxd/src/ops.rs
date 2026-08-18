@@ -350,6 +350,26 @@ pub fn deploy(
         req.params = params;
     }
 
+    // Some params are syntax, not data: they land in generated Nix unquoted,
+    // where escaping cannot help. Only the platform may write those.
+    //
+    // Stripped rather than refused, and stripped AFTER the preset merge (a
+    // preset carries params of its own, so checking before it would look at the
+    // wrong object). Refusing would turn any config that already carries one
+    // into a service that can never be redeployed — publish and repo-sync both
+    // replay stored params through here — and nixgen re-derives the real value
+    // from disk on every render anyway, so dropping it loses nothing.
+    if let Some(obj) = req.params.as_object_mut() {
+        for key in templates::RESERVED_PARAMS {
+            if obj.remove(*key).is_some() {
+                tracing::warn!(
+                    service = %req.name,
+                    "ignoring {key}: that param is set by the platform, not by callers"
+                );
+            }
+        }
+    }
+
     let template = templates::get(&req.template)
         .with_context(|| format!("unknown template {:?}", req.template))?;
     template.validate(&req.params)?;
@@ -844,6 +864,44 @@ mod tests {
             }],
             ..Default::default()
         }
+    }
+
+    /// `secret_env_file` becomes an unquoted Nix path in a module that gets
+    /// built and activated as root. Only nixgen may set it, so a caller's copy
+    /// is dropped before it can be stored and later rendered.
+    #[test]
+    fn deploy_strips_platform_only_params() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let paths = Paths::new(tmp.path().to_path_buf());
+        paths.ensure().unwrap();
+        let builder = crate::store::local::LocalBuilder::new(&paths);
+
+        deploy(
+            &paths,
+            &builder,
+            DeployRequest {
+                name: "web".into(),
+                template: "static-site".into(),
+                params: json!({
+                    "index_html": "hi",
+                    "secret_env_file": "null; }; systemd.services.pwn = {}; x = { y = null",
+                }),
+                domain: None,
+                public: None,
+                port: None,
+            },
+        )
+        .expect("a poisoned param is dropped, not a hard failure");
+
+        // The dangerous value must not survive into the stored config, which is
+        // what every later render (including the root OS-tier one) reads.
+        let config = BoxConfig::load(&paths).unwrap();
+        let svc = config.find("web").expect("service was created");
+        assert!(
+            svc.params.get("secret_env_file").is_none(),
+            "the platform-only param must not be stored: {:?}",
+            svc.params
+        );
     }
 
     /// Nobody should have to invent a root password to run a database, and a

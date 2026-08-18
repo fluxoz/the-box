@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# The birth rehearsal: a blank machine takes the LIVE thebox.build one-liner
-# and becomes a serving Box, with a stopwatch on every stage. This is the
-# same walk a stranger's machine takes, run by CI nightly, and the timings it
-# emits are the receipts the landing page shows. A rehearsal that fails means
+# The commissioning rehearsal: a blank machine takes the LIVE thebox.build
+# one-liner and becomes a serving Box, with a stopwatch on every stage. It is
+# the same walk a stranger's machine takes, run by CI nightly, and the timings
+# it emits are the receipts the landing page shows. A rehearsal that fails means
 # the funnel is broken for real people — that is the point of running it.
 #
 # Emits: $OUT/receipt.json  {verified_at, ok, stages: {…seconds}, release}
@@ -17,13 +17,35 @@ SITE="${SITE:-https://thebox.build}"
 mkdir -p "$WORK" "$OUT"
 cd "$WORK"
 
-say() { printf '[birth] %s\n' "$*"; }
+say() { printf '[commission] %s\n' "$*"; }
 now() { date +%s; }
 T0=$(now)
 declare -A STAGE
 
+# A red run has to say WHY. The Box is inside the VM, so its side of the story
+# dies with the VM unless we go and get it: without this a failed stage reads
+# only as "empty reply from server", which is indistinguishable between a
+# crash, an out-of-memory kill, and a rebuild that dropped the connection.
+# The takeover replaces the Debian user with the Box, which carries our key for
+# root — that is who we ask. shellcheck disable=SC2086 throughout: $SSH is a
+# command line, not a single word.
+postmortem() {
+  say "collecting the Box's side of the story"
+  # shellcheck disable=SC2086
+  {
+    printf '\n===== memory =====\n';        $SSH root@127.0.0.1 'free -m'
+    printf '\n===== boxd unit =====\n';     $SSH root@127.0.0.1 'systemctl status boxd --no-pager -l'
+    printf '\n===== boxd log =====\n';      $SSH root@127.0.0.1 'journalctl -u boxd --no-pager -n 120'
+    printf '\n===== os-apply log =====\n';  $SSH root@127.0.0.1 'journalctl -u boxd-os-apply --no-pager -n 80'
+    printf '\n===== OOM kills =====\n';     $SSH root@127.0.0.1 'journalctl -k --no-pager | grep -iE "oom|killed process" | tail -20'
+  } > "$OUT/postmortem.log" 2>&1 || true
+  tail -60 "$OUT/postmortem.log" || true
+}
+
 fail() {
   say "FAILED at $1"
+  # Only once the Box exists is there anything to ask it.
+  case "$1" in image-download|no-ovmf|blank-machine-ssh) ;; *) postmortem ;; esac
   python3 - "$OUT/receipt.json" "$1" <<'PY'
 import json, sys, time
 json.dump({"verified_at": int(time.time()), "ok": False, "failed_at": sys.argv[2]},
@@ -46,7 +68,7 @@ users:
     ssh_authorized_keys:
       - $(cat vmkey.pub)
 EOF
-printf 'instance-id: birth\nlocal-hostname: sparepc\n' > meta-data
+printf 'instance-id: commissioning\nlocal-hostname: sparepc\n' > meta-data
 genisoimage -quiet -output seed.iso -volid cidata -joliet -rock user-data meta-data
 
 OVMF_CODE=""
@@ -88,22 +110,22 @@ say "running the live one-liner"
 timeout 900 $SSH op@127.0.0.1 "curl -fsSL $SITE/install.sh | sudo BOX_ORDERS_B64=$B64 BOX_YES=1 sh" >/dev/null 2>&1 || true
 STAGE[takeover]=$(( $(now) - T1 )); T1=$(now)
 
-# ---- the newborn ----------------------------------------------------------
+# ---- the new Box ----------------------------------------------------------
 HEALTH=""
 for _ in $(seq 1 180); do
   HEALTH=$(curl -fsS -m 4 http://127.0.0.1:2695/api/v1/health 2>/dev/null || true)
   printf '%s' "$HEALTH" | grep -q '"health"' && break
   sleep 10
 done
-printf '%s' "$HEALTH" | grep -q '"health"' || fail "newborn-never-answered"
+printf '%s' "$HEALTH" | grep -q '"health"' || fail "box-never-answered"
 RELEASE=$(printf '%s' "$HEALTH" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')
 STAGE[install_to_health]=$(( $(now) - T1 )); T1=$(now)
-say "newborn Box up on $RELEASE"
+say "new Box up on $RELEASE"
 
 # ---- pair and deploy, like a stranger's agent -----------------------------
 TOKEN=$(curl -fsS -m 10 -X POST http://127.0.0.1:2695/pair/redeem \
   -H 'accept: application/json' -H 'content-type: application/json' \
-  -d "{\"code\":\"$CODE\",\"label\":\"birth-rehearsal\"}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])') || fail "pairing"
+  -d "{\"code\":\"$CODE\",\"label\":\"commissioning-rehearsal\"}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])') || fail "pairing"
 curl -fsS -m 180 -X POST http://127.0.0.1:2695/mcp \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"deploy_static_site","arguments":{"name":"hello","index_html":"<h1>verified tonight</h1>"}}}' \

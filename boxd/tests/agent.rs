@@ -228,15 +228,18 @@ async fn post_claim(app: &Router, proxied: bool) -> (StatusCode, Option<String>,
 async fn first_run_claim_flow() {
     let (_tmp, paths, app) = app();
 
-    // Fresh box on the LAN: /pair is the birth certificate — the moment the
-    // machine earned by wiping its old life. Mark, name, claim, next step.
+    // Fresh box on the LAN: /pair is where the machine introduces itself —
+    // the moment it earned by wiping its old life. Mark, name, claim, next step.
     let (s, body) = get_pair(&app, false).await;
     assert_eq!(s, StatusCode::OK);
     assert!(
         body.contains("Claim this Box"),
         "fresh box should offer claim"
     );
-    assert!(body.contains("A Box is born"), "the moment gets its due");
+    assert!(
+        body.contains("This machine is a Box now"),
+        "the moment gets its due"
+    );
     assert!(
         body.contains("identity mark"),
         "every Box draws its own mark"
@@ -276,4 +279,71 @@ async fn first_run_claim_flow() {
     assert!(body.contains("Pair this device"));
     let (_s, loc, _c) = post_claim(&app, false).await;
     assert!(loc.unwrap().contains("already+claimed"));
+}
+
+/// The recovery kit hands out a link, not sixteen characters to transcribe.
+/// `/pair?c=<code>` must put the code in the field so pairing is one click,
+/// and a Box whose install medium already named an owner must say where the
+/// code lives instead of offering itself to whoever asks first.
+#[tokio::test]
+async fn the_claim_link_prefills_and_a_seeded_box_refuses_to_be_claimed() {
+    let (tmp, paths, app) = app();
+    let _ = &tmp;
+
+    // A blank Box still offers first-run claim on the LAN.
+    let (_, body) = get_pair(&app, false).await;
+    assert!(body.contains("Claim this Box"), "blank box offers claim");
+
+    // Give it an owner the way an install medium does.
+    let code = boxd::auth::mint_code(&paths, "enrollment").unwrap();
+    boxd::auth::import_code(&paths, &box_core::pairing::hash(&code), "enrollment").unwrap();
+
+    let (_, body) = get_pair(&app, false).await;
+    assert!(
+        !body.contains("Claim this Box"),
+        "a Box that already knows its owner must not be claimable over the network"
+    );
+    assert!(
+        body.contains("already knows who"),
+        "and it should say where the code lives: {body}"
+    );
+
+    // POSTing the claim anyway gets nowhere.
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::post("/pair/claim")
+                .extension(remote())
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::SEE_OTHER);
+    assert!(
+        boxd::auth::list(&paths).is_empty(),
+        "no session may be minted for a seeded Box"
+    );
+
+    // The link from the recovery kit fills the field in.
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::get(format!("/pair?c={code}"))
+                .extension(remote())
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    let body = String::from_utf8_lossy(&bytes).to_string();
+    assert!(
+        body.contains(&format!("value=\"{code}\"")),
+        "the code from the link should be prefilled: {body}"
+    );
+
+    // And it still redeems, which is what actually authenticates.
+    let token = boxd::auth::redeem_code(&paths, &code, "laptop").unwrap();
+    assert!(boxd::auth::verify(&paths, &token));
 }

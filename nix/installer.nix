@@ -190,6 +190,23 @@ let
         exit 1
       fi
 
+      # Consent says we may wipe this machine; this says who owns what we build.
+      #
+      # An unattended install runs with nobody watching, so minting a code here
+      # would produce one nobody ever sees. A Box with no owner has only one way
+      # left to be claimed — over the network, first-come — and it announces
+      # itself on mDNS the moment it boots, which is a race a script wins
+      # against a human every time. Every real producer of orders (the
+      # Configurator, the image download, `boxd provision`, both wizards)
+      # supplies a hash, so reaching here without one means something went
+      # wrong upstream. Refuse while the machine is still intact.
+      if [ -z "$(jq -r '.enrollment_code_hash // empty' "$handoff")" ]; then
+        log "these orders carry no pairing code, so this Box would boot with no owner."
+        log "NOTHING HAS BEEN CHANGED. Build your install at https://thebox.build/configurator/"
+        log "(or run setup on the machine itself) so the Box knows who it belongs to."
+        exit 1
+      fi
+
       # Box OS boots via UEFI (systemd-boot). On a legacy-BIOS machine every
       # step below would succeed right up to installing the bootloader, which
       # means the disk is already gone by the time we find out — a machine wiped
