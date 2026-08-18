@@ -186,17 +186,43 @@ def main() -> int:
 
         # --- the files a person ends up with -------------------------------
         # Named exactly, because ssh looks for id_ed25519 and nothing else.
-        saved = {}
-        for button, expected in (("#dl-priv", "id_ed25519"), ("#dl-pub", "id_ed25519.pub")):
-            with page.expect_download(timeout=15_000) as dl:
-                page.click(button)
-            d = dl.value
-            saved[expected] = d.suggested_filename
-            check(
-                d.suggested_filename == expected,
-                f"saving {button} yields {expected}",
-                f"got {d.suggested_filename}",
-            )
+        saved: dict[str, str] = {}
+        with tempfile.TemporaryDirectory() as keydir:
+            for button, expected in (("#dl-priv", "id_ed25519"), ("#dl-pub", "id_ed25519.pub")):
+                with page.expect_download(timeout=15_000) as dl:
+                    page.click(button)
+                d = dl.value
+                check(
+                    d.suggested_filename == expected,
+                    f"saving {button} yields {expected}",
+                    f"got {d.suggested_filename}",
+                )
+                dest = os.path.join(keydir, expected)
+                d.save_as(dest)
+                saved[expected] = dest
+
+            # The two halves must actually be a PAIR. Asserting the public key
+            # merely starts with "ssh-ed25519" would pass just as happily on a
+            # key belonging to somebody else, which is the failure that would
+            # matter: you would authorize one key on the Box and hold another.
+            # So derive the public half from the private one and compare.
+            priv_path = saved.get("id_ed25519")
+            pub_path = saved.get("id_ed25519.pub")
+            if priv_path and pub_path:
+                os.chmod(priv_path, 0o600)
+                r = subprocess.run(
+                    ["ssh-keygen", "-y", "-f", priv_path],
+                    capture_output=True, text=True,
+                )
+                if r.returncode != 0:
+                    check(False, "the saved private key is one ssh can read",
+                          r.stderr.strip()[:110])
+                else:
+                    derived = r.stdout.split()[:2]
+                    stated = open(pub_path).read().split()[:2]
+                    check(derived == stated,
+                          "the saved keys are actually a pair",
+                          f"private derives {' '.join(derived)[:44]}…")
 
         # --- the page did not quietly break --------------------------------
         check(not errors, "no uncaught errors on the page", "; ".join(errors[:2]))

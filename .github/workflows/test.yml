@@ -75,7 +75,10 @@ jobs:
           # orders this page can produce are checked against what a real
           # unattended install will accept.
           installer=$(nix build .#box-installer --no-link --print-out-paths)/bin/box-installer
-          CHROMIUM_BIN="$chromium" BOX_INSTALLER_BIN="$installer" \
+          # openssh: the test derives the public key from the downloaded
+          # private one to prove the two halves are genuinely a pair.
+          ssh=$(nix build nixpkgs#openssh --no-link --print-out-paths)/bin
+          PATH="$ssh:$PATH" CHROMIUM_BIN="$chromium" BOX_INSTALLER_BIN="$installer" \
             "$python/bin/python3" scripts/test-site.py "$site"
 
       - name: cargo clippy
