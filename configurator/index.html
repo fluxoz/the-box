@@ -1048,7 +1048,11 @@ footer.foot b { color: var(--dim); }
     const b64 = btoa(unescape(encodeURIComponent(currentJSON)));
     const cfg = JSON.parse(currentJSON);
     const secret = !!(cfg.cloudflare_tunnel_token || (cfg.wifi && cfg.wifi.password));
-    const cmd = `curl -fsSL https://thebox.build/install.sh | sudo BOX_ORDERS_B64='${b64}' sh`;
+    // BOX_YES=1: you already consented here, by building orders that say
+    // erase_disk and pasting the command they produced. Without it the install
+    // stops at a "type ERASE" prompt, which is not unattended. The caveat below
+    // says plainly that this wipes on paste, because that is now the truth.
+    const cmd = `curl -fsSL https://thebox.build/install.sh | sudo BOX_YES=1 BOX_ORDERS_B64='${b64}' sh`;
     $("#instructions").innerHTML = `
       <div class="ihead">VEC-02 · curl | sh — a running Linux machine or VPS</div>
       <ol>
@@ -1058,8 +1062,8 @@ footer.foot b { color: var(--dim); }
       </ol>
       <div class="cmdbox"><code id="sh-cmd"></code><button type="button" class="btn small ghost" id="cp-cmd">Copy</button></div>
       <div class="cav ${secret ? "cav-secret" : ""}">${secret
-        ? "This command carries secrets (Wi-Fi password / tunnel token) — do not paste it anywhere public."
-        : "Carries no secrets — only the box name, disk choice, your SSH public key, and the pairing-code hash."}</div>`;
+        ? "Wipes on paste, no prompt. It also carries secrets (Wi-Fi password / tunnel token), so do not paste it anywhere public."
+        : "Wipes on paste, no prompt. Carries no secrets: only the box name, disk choice, your SSH public key, and the pairing-code hash."}</div>`;
     $("#sh-cmd").textContent = cmd; // textContent avoids any HTML interpretation
     $("#cp-cmd").addEventListener("click", () => { navigator.clipboard.writeText(cmd); toast("Command copied"); });
   }
