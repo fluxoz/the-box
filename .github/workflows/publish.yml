@@ -172,7 +172,9 @@ jobs:
   # switching the flash door on. Skipped whole when the secret is absent, so a
   # repo that has not switched it on still releases cleanly.
   deploy-worker:
-    if: startsWith(github.ref, 'refs/tags/')
+    # Tags, plus manual dispatch so a Worker fix can reach QA without cutting
+    # a release (same reasoning as x86-image).
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     # Never ship the Worker for a release that failed its own version guard.
     needs: [version-guard]
     runs-on: ubuntu-latest

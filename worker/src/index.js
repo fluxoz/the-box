@@ -95,6 +95,69 @@ function validateOrders(input) {
     out.wifi = w.password ? { ssid: w.ssid, password: w.password } : { ssid: w.ssid };
   }
 
+  // The installer-image fields. A Pi image ignores all of these (the flashed
+  // card IS the OS), but thebox-x86 boots an installer that wipes an internal
+  // disk — and it refuses orders that do not carry explicit consent, so
+  // dropping erase_disk here turned a personalized x86 stick into one that
+  // boots and then declines to install.
+  if (input.erase_disk === true) out.erase_disk = true;
+
+  if (input.disk !== undefined) {
+    const d = input.disk;
+    if (typeof d !== "string" || d.length > 256 || /[\r\n\0]/.test(d)) {
+      throw new Error("disk must be a single-line string");
+    }
+    out.disk = d.trim();
+  }
+
+  if (input.storage !== undefined) {
+    const s = input.storage;
+    if (typeof s !== "object" || s === null || Array.isArray(s)) {
+      throw new Error("storage must be an object");
+    }
+    if (!["single", "mirror", "pool", "ask"].includes(s.layout)) {
+      throw new Error("storage.layout must be single, mirror, pool, or ask");
+    }
+    const storage = { layout: s.layout };
+    if (s.devices !== undefined) {
+      if (
+        !Array.isArray(s.devices) ||
+        s.devices.length > 16 ||
+        s.devices.some((p) => typeof p !== "string" || p.length > 256 || /[\r\n\0]/.test(p))
+      ) {
+        throw new Error("storage.devices must be at most 16 single-line paths");
+      }
+      storage.devices = s.devices;
+    }
+    out.storage = storage;
+  }
+
+  // The decide-on-box PIN: proves the person at the wizard is the one who
+  // built this image.
+  if (input.setup_pin !== undefined) {
+    if (typeof input.setup_pin !== "string" || !/^[0-9]{4,8}$/.test(input.setup_pin)) {
+      throw new Error("setup_pin must be 4-8 digits");
+    }
+    out.setup_pin = input.setup_pin;
+  }
+
+  if (input.min_disk_gb !== undefined) {
+    const n = input.min_disk_gb;
+    if (!Number.isInteger(n) || n < 1 || n > 100000) {
+      throw new Error("min_disk_gb must be an integer between 1 and 100000");
+    }
+    out.min_disk_gb = n;
+  }
+
+  if (input.force === true) out.force = true;
+
+  if (input.finish !== undefined) {
+    if (!["reboot", "poweroff", "none"].includes(input.finish)) {
+      throw new Error("finish must be reboot, poweroff, or none");
+    }
+    out.finish = input.finish;
+  }
+
   return out;
 }
 
