@@ -111,27 +111,64 @@ function crc32(bytes) {
 }
 
 /**
- * Overwrite [patchStart, patchStart+patch.length) as bytes stream past.
- * `streamStart` is the absolute offset of the first byte we will emit, so this
- * works for a Range request as well as a whole-file download.
+ * Emit [start, end] of the personalized artifact, without a JS transform.
+ *
+ * The first version piped the whole R2 body through a TransformStream that
+ * inspected every chunk. That works locally and dies in production: a 1.96 GB
+ * image burned ~2 s of CPU and Workers killed the request mid-stream, so the
+ * client got HTTP 200 and a silently TRUNCATED image. A truncated OS image is
+ * the worst failure available here, because it looks like a successful download.
+ *
+ * So nothing touches the bulk bytes in JS any more. The artifact is spliced
+ * from three pieces — the R2 range before the claim file, the patch itself, and
+ * the R2 range after it — and each R2 body is piped straight into a
+ * FixedLengthStream, an identity stream implemented in the runtime. CPU stays
+ * flat regardless of image size.
+ *
+ * FixedLengthStream also restores Content-Length: a response whose body is a
+ * plain JS stream has no known length, so the runtime frames it chunked and
+ * discards any content-length header we set. Declaring the length here is what
+ * puts a real progress bar on a multi-gigabyte download.
  */
-function patchingStream(patch, patchStart, streamStart) {
-  let pos = streamStart;
-  return new TransformStream({
-    transform(chunk, controller) {
-      const start = pos;
-      const end = pos + chunk.length;
-      pos = end;
-      const from = Math.max(start, patchStart);
-      const to = Math.min(end, patchStart + patch.length);
-      if (from < to) {
-        // Copy before mutating: the chunk may be backed by a shared buffer.
-        chunk = new Uint8Array(chunk);
-        chunk.set(patch.subarray(from - patchStart, to - patchStart), from - start);
+function segmentsFor(start, end, patch, patchStart) {
+  const patchEnd = patchStart + patch.length; // exclusive
+  const segments = [];
+  const clip = (a, b) => [Math.max(a, start), Math.min(b, end + 1)];
+
+  const [h0, h1] = clip(0, patchStart);
+  if (h0 < h1) segments.push({ offset: h0, length: h1 - h0 });
+
+  const [p0, p1] = clip(patchStart, patchEnd);
+  if (p0 < p1) segments.push({ bytes: patch.subarray(p0 - patchStart, p1 - patchStart) });
+
+  const [t0, t1] = clip(patchEnd, Infinity);
+  if (t0 < t1 && Number.isFinite(t1)) segments.push({ offset: t0, length: t1 - t0 });
+
+  return segments;
+}
+
+async function pump(bucket, key, segments, writable) {
+  try {
+    for (const seg of segments) {
+      if (seg.bytes) {
+        const writer = writable.getWriter();
+        await writer.write(seg.bytes);
+        writer.releaseLock();
+        continue;
       }
-      controller.enqueue(chunk);
-    },
-  });
+      const part = await bucket.get(key, {
+        range: { offset: seg.offset, length: seg.length },
+      });
+      if (!part) throw new Error(`missing range ${seg.offset}+${seg.length}`);
+      // preventClose: the next segment still has to go down the same pipe.
+      await part.body.pipeTo(writable, { preventClose: true });
+    }
+    await writable.close();
+  } catch (e) {
+    // Abort rather than close: a half-written body must look broken to the
+    // client, not like a complete (short) image.
+    await writable.abort(e).catch(() => {});
+  }
 }
 
 function parseRange(header, total) {
@@ -159,6 +196,8 @@ export default {
     const board = match[1];
 
     let orders;
+    let manifest;
+    let patch;
     try {
       // Two shapes. A JSON body is what an agent or script sends. A form post
       // is what the Configurator sends, because a native form download streams
@@ -171,8 +210,20 @@ export default {
       } else {
         raw = await request.text();
       }
-      if (raw.length > MAX_ORDERS_BYTES) throw new Error("orders too large");
+      // Measure UTF-8 bytes, not UTF-16 units: the claim file is sized in
+      // bytes, so a body of multi-byte characters can pass a length check and
+      // still overflow the payload.
+      if (new TextEncoder().encode(raw).length > MAX_ORDERS_BYTES) {
+        throw new Error("orders too large");
+      }
       orders = validateOrders(JSON.parse(raw));
+
+      const manifestObj = await env.IMAGES.get(`${board}.img.gz.manifest.json`);
+      if (!manifestObj) return new Response("unknown board", { status: 404 });
+      manifest = await manifestObj.json();
+      // Inside the try on purpose: this throws when the orders do not fit, and
+      // that is the caller's mistake (400), not a Worker crash (500).
+      patch = buildPatch(orders, manifest.payload_length);
     } catch (e) {
       // Never echo the body back: it carries the code hash and public keys.
       return new Response(JSON.stringify({ error: String(e.message || e) }), {
@@ -181,23 +232,19 @@ export default {
       });
     }
 
-    const manifestObj = await env.IMAGES.get(`${board}.img.gz.manifest.json`);
-    if (!manifestObj) return new Response("unknown board", { status: 404 });
-    const manifest = await manifestObj.json();
-
-    const patch = buildPatch(orders, manifest.payload_length);
     const patchStart = manifest.payload_offset;
     const total = manifest.total_length;
-
     const range = parseRange(request.headers.get("range"), total);
-    const obj = await env.IMAGES.get(
-      `${board}.img.gz`,
-      range ? { range: { offset: range.start, length: range.end - range.start + 1 } } : undefined
-    );
-    if (!obj) return new Response("image not found", { status: 404 });
+    const start = range ? range.start : 0;
+    const end = range ? range.end : total - 1;
+    const length = end - start + 1;
 
-    const streamStart = range ? range.start : 0;
-    const body = obj.body.pipeThrough(patchingStream(patch, patchStart, streamStart));
+    // Declared length => the runtime frames the response with a real
+    // Content-Length, and the bytes are spliced without JS touching them.
+    const { readable, writable } = new FixedLengthStream(length);
+    const segments = segmentsFor(start, end, patch, patchStart);
+    // Deliberately not awaited: the body streams while this fills it.
+    pump(env.IMAGES, `${board}.img.gz`, segments, writable);
 
     const headers = {
       "content-type": "application/gzip",
@@ -207,12 +254,9 @@ export default {
       "x-content-type-options": "nosniff",
     };
     if (range) {
-      headers["content-length"] = String(range.end - range.start + 1);
-      headers["content-range"] = `bytes ${range.start}-${range.end}/${total}`;
-      return new Response(body, { status: 206, headers });
+      headers["content-range"] = `bytes ${start}-${end}/${total}`;
+      return new Response(readable, { status: 206, headers });
     }
-    // Length-preserving patch, so this is the generic artifact's own length.
-    headers["content-length"] = String(total);
-    return new Response(body, { status: 200, headers });
+    return new Response(readable, { status: 200, headers });
   },
 };

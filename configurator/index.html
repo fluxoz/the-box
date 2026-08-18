@@ -1072,10 +1072,9 @@ footer.foot b { color: var(--dim); }
   //
   // NOT thebox.build: that is GitHub Pages with DNS at the registrar, so it
   // cannot route a path to a Cloudflare Worker without moving the whole domain
-  // to Cloudflare. The workers.dev hostname needs no DNS change and works
-  // today; a cross-origin form POST is fine, because it is a plain download.
-  // Set this once the Worker is deployed (see worker/wrangler.toml).
-  const IMAGE_ENDPOINT = "REPLACE_WITH_WORKER_ORIGIN";
+  // to Cloudflare. The workers.dev hostname needs no DNS change; a cross-origin
+  // form POST is fine here, because it is a plain download.
+  const IMAGE_ENDPOINT = "https://thebox-images.fluxoz.workers.dev";
   const imagesReady = !IMAGE_ENDPOINT.startsWith("REPLACE_WITH");
 
   function renderPiVector() {
