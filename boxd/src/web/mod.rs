@@ -239,7 +239,10 @@ async fn security_headers(request: Request, next: Next) -> Response {
     h.insert("x-frame-options", HeaderValue::from_static("DENY"));
     // An uploaded file must never be re-interpreted as script because a
     // browser sniffed the bytes and disagreed with the declared type.
-    h.insert("x-content-type-options", HeaderValue::from_static("nosniff"));
+    h.insert(
+        "x-content-type-options",
+        HeaderValue::from_static("nosniff"),
+    );
     // Box hostnames and service paths are not the wider internet's business.
     h.insert("referrer-policy", HeaderValue::from_static("no-referrer"));
     response

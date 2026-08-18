@@ -690,14 +690,18 @@ mod tests {
         // decrypted credentials to web.
         let other = json!({ "image": "nginx:1.27", "secret_env_file": "./db-env.age" });
         assert!(
-            !Container.nix_module("web", &other).contains("secretEnvFile"),
+            !Container
+                .nix_module("web", &other)
+                .contains("secretEnvFile"),
             "a service must not borrow another service's secret file"
         );
 
         // The real thing nixgen writes still renders.
         let good = json!({ "image": "nginx:1.27", "secret_env_file": "./web-env.age" });
         assert!(
-            Container.nix_module("web", &good).contains("secretEnvFile = ./web-env.age;"),
+            Container
+                .nix_module("web", &good)
+                .contains("secretEnvFile = ./web-env.age;"),
             "the platform's own value must still work"
         );
     }

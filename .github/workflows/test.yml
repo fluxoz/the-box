@@ -86,6 +86,7 @@ jobs:
             restore \
             fleet-discovery \
             installer-beacon \
+            unattended-claim \
             pi-update-parity
           do
             echo "::group::$check"

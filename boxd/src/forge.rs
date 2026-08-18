@@ -85,7 +85,8 @@ pub fn configure(
         // may not be moved out from under a token that already exists —
         // disconnect first, which deletes the token.
         crate::util::validate_outbound_url(url, crate::util::Loopback::Deny)?;
-        if crate::secrets::exists(paths, &token_secret(id)) && entry.base_url.as_deref() != Some(url.as_str())
+        if crate::secrets::exists(paths, &token_secret(id))
+            && entry.base_url.as_deref() != Some(url.as_str())
         {
             bail!(
                 "{id} already holds a connected token — disconnect it before changing base_url, \

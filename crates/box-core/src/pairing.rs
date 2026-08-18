@@ -80,7 +80,8 @@ mod tests {
         assert_eq!(code.len(), 19, "16 symbols + 3 dashes: {code}");
         assert_eq!(code.matches('-').count(), 3);
         assert!(
-            code.chars().all(|c| c == '-' || CROCKFORD.contains(&(c as u8))),
+            code.chars()
+                .all(|c| c == '-' || CROCKFORD.contains(&(c as u8))),
             "unexpected symbol in {code}"
         );
         // Never emits the confusable letters, so reading one aloud is safe.

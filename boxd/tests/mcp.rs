@@ -846,8 +846,8 @@ async fn pull_request_preview_lives_and_dies_with_the_pr() {
 async fn destructive_ops_wait_for_the_human_tap() {
     let (_tmp, app, token) = app();
     // The human's own signed-in device.
-    let operator = boxd::auth::mint_session(&Paths::new(_tmp.path().to_path_buf()), "operator")
-        .unwrap();
+    let operator =
+        boxd::auth::mint_session(&Paths::new(_tmp.path().to_path_buf()), "operator").unwrap();
     let text = |v: &Value| {
         v["result"]["content"][0]["text"]
             .as_str()
@@ -1676,7 +1676,8 @@ async fn an_agent_session_cannot_escalate_through_a_second_session() {
     let (_tmp, app, _operator) = app();
     let paths = Paths::new(_tmp.path().to_path_buf());
     // What the console's "Connect an agent" card hands out.
-    let agent = boxd::auth::mint_session_as(&paths, "agent", boxd::auth::Provenance::Agent).unwrap();
+    let agent =
+        boxd::auth::mint_session_as(&paths, "agent", boxd::auth::Provenance::Agent).unwrap();
 
     let post = |path: String, token: String, body: &'static str| {
         let app = app.clone();
@@ -1748,11 +1749,12 @@ async fn an_agent_session_cannot_escalate_through_a_second_session() {
     .await;
     assert_eq!(deploy["result"]["isError"], false, "{deploy}");
     let del = call_tool(&app, &agent, "delete_service", json!({ "name": "blog" })).await;
-    let body: Value = serde_json::from_str(
-        del["result"]["content"][0]["text"].as_str().unwrap(),
-    )
-    .unwrap();
-    let id = body["pending_approval"].as_str().expect("queued").to_string();
+    let body: Value =
+        serde_json::from_str(del["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+    let id = body["pending_approval"]
+        .as_str()
+        .expect("queued")
+        .to_string();
 
     // ...and it cannot decide them, in either direction.
     post(format!("/approvals/{id}/approve"), agent.clone(), "").await;

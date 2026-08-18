@@ -10,9 +10,9 @@
 pub mod disko;
 pub mod model;
 pub mod orders;
+pub mod pairing;
 pub mod probe;
 pub mod resolve;
-pub mod pairing;
 
 pub use model::Disk;
 pub use resolve::{eligible, resolve, LayoutKind, ResolveError, ResolveOpts, ResolvedLayout};

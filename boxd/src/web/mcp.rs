@@ -684,7 +684,7 @@ async fn call_tool(
             &caller.label,
             &caller.id,
         )
-            .map_err(|e| (-32603, format!("{e:#}")))?;
+        .map_err(|e| (-32603, format!("{e:#}")))?;
         let body = json!({
             "pending_approval": action.id,
             "would": summary,
