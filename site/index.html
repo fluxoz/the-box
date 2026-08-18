@@ -147,13 +147,13 @@
     </div>
 
     <div class="panel" id="p-curl" role="tabpanel" aria-labelledby="t-curl" hidden>
-      <p><b><a href="/configurator/">Build your command</a></b> and paste it on the machine you want to convert, or into an SSH session to it.</p>
+      <p><b><a href="/configurator/">Build your command</a></b>, then paste it on the machine you want to convert, or into an SSH session to it. It looks like this, with your settings carried inside it:</p>
       <div class="cmd">
         <span class="prompt">$</span>
-        <code id="cmd-linux">curl -fsSL https://thebox.build/install.sh | sudo sh</code>
-        <button type="button" data-copy="cmd-linux">copy</button>
+        <code id="cmd-linux">curl -fsSL https://thebox.build/install.sh | sudo BOX_YES=1 BOX_ORDERS_B64=&lt;yours&gt; sh</code>
       </div>
-      <p>Your version of that command carries the same things the image does: your SSH key and your pairing code. It asks for consent once, wipes the old OS, installs Box&nbsp;OS in place, and comes back on your network as <code>box.local</code>. About ten minutes, unattended.</p>
+      <p>Those orders are the whole point: they carry your SSH key and your pairing code, so the install runs start to finish without you and the Box comes up already belonging to you. Ten minutes later it is on your network as <code>box.local</code>.</p>
+      <p class="note">There is no version of this to copy without building it first. A bare command has no orders, and the installer refuses to wipe a machine it has no instructions for.</p>
       <p class="note">Works on any Linux machine or VPS. From <b>Windows</b>, run <code>irm https://thebox.build/install.ps1 | iex</code> in an elevated PowerShell. For a machine with <b>no OS to take over</b>, boot the installer from a stick and set it up on the machine itself: the <a href="/docs/install.html#bare-metal">bare-metal guide</a>. <b>Macs</b> take the same paths: the <a href="/docs/install.html#mac">Mac guide</a>.</p>
     </div>
   </div>

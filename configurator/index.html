@@ -1043,11 +1043,18 @@ footer.foot b { color: var(--dim); }
        <ol>${v.steps.map(s => `<li>${s}</li>`).join("")}</ol>
        <div class="cav">${v.cav}</div>`;
   }
+  // Never throws on a config that has not been built yet.
+  function carriesSecrets() {
+    try {
+      const c = JSON.parse(currentJSON || "{}");
+      return !!(c.cloudflare_tunnel_token || (c.wifi && c.wifi.password));
+    } catch { return false; }
+  }
+
   function renderShVector() {
     // Embed the orders in the command — base64 (UTF-8 safe). Nothing to move.
     const b64 = btoa(unescape(encodeURIComponent(currentJSON)));
-    const cfg = JSON.parse(currentJSON);
-    const secret = !!(cfg.cloudflare_tunnel_token || (cfg.wifi && cfg.wifi.password));
+    const secret = carriesSecrets();
     // BOX_YES=1: you already consented here, by building orders that say
     // erase_disk and pasting the command they produced. Without it the install
     // stops at a "type ERASE" prompt, which is not unattended. The caveat below
@@ -1094,10 +1101,7 @@ footer.foot b { color: var(--dim); }
     // Everyone downloads the same image. The server swaps one small file
     // inside it as the bytes go past, so the Pi boots already knowing who owns
     // it and there is nothing to claim over the network.
-    const secret = (() => {
-      const c = JSON.parse(currentJSON);
-      return !!(c.cloudflare_tunnel_token || (c.wifi && c.wifi.password));
-    })();
+    const secret = carriesSecrets();
     $("#instructions").innerHTML = `
       <div class="ihead">VEC-01 · Raspberry Pi — your image, flashed</div>
       <ol>
@@ -1170,8 +1174,11 @@ footer.foot b { color: var(--dim); }
   }
 
   /* ---------- init ---------- */
-  renderInstructions();
+  // render() first: it is what fills currentJSON. renderInstructions() reads
+  // that for the curl and image vectors, so the old order threw at load the
+  // moment either of them became the default.
   render();
+  renderInstructions();
   initPairingCode();
 })();
 </script>
