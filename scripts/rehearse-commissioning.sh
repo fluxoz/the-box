@@ -113,7 +113,10 @@ qemu-system-x86_64 $ACCEL -m 4096 -smp 4 \
 trap 'kill "$(cat qemu.pid 2>/dev/null)" 2>/dev/null || true' EXIT
 STAGE[boot_blank]=$(( $(now) - T0 )); T1=$(now)
 
-SSH="ssh -i vmkey -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 -o BatchMode=yes"
+# Keepalives matter: kexec kills the guest's TCP stack without a RST, so the
+# takeover's ssh session otherwise dangles for its full 900 s timeout under
+# QEMU user-mode networking — a quarter hour of nothing in every rehearsal.
+SSH="ssh -i vmkey -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 -o BatchMode=yes -o ServerAliveInterval=5 -o ServerAliveCountMax=3"
 # shellcheck disable=SC2086
 for _ in $(seq 1 120); do $SSH op@127.0.0.1 true 2>/dev/null && break; sleep 5; done
 # shellcheck disable=SC2086
