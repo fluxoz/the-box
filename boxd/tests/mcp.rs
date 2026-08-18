@@ -838,9 +838,16 @@ async fn pull_request_preview_lives_and_dies_with_the_pr() {
 /// The trust ceremony, end to end: a destructive call from a normal session
 /// queues instead of running; the console tap runs the exact call; a denial
 /// is recorded and nothing happens; an autonomous session skips the queue.
+///
+/// The tap comes from the OPERATOR's session, not the agent's. A ceremony an
+/// agent can complete alone is not one, so the asker approving itself is
+/// refused — see `the_asker_cannot_be_the_approver`.
 #[tokio::test]
 async fn destructive_ops_wait_for_the_human_tap() {
     let (_tmp, app, token) = app();
+    // The human's own signed-in device.
+    let operator = boxd::auth::mint_session(&Paths::new(_tmp.path().to_path_buf()), "operator")
+        .unwrap();
     let text = |v: &Value| {
         v["result"]["content"][0]["text"]
             .as_str()
@@ -890,8 +897,23 @@ async fn destructive_ops_wait_for_the_human_tap() {
     let st = call_tool(&app, &token, "approval_status", json!({ "id": id })).await;
     assert!(text(&st).contains("pending"), "{}", text(&st));
 
-    // 2. The tap runs the exact call.
+    // 2a. The asker cannot be the approver: the agent's own tap does nothing.
     let status = post(format!("/approvals/{id}/approve"), token.clone()).await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    let services = call_tool(&app, &token, "list_services", json!({})).await;
+    assert!(
+        text(&services).contains("blog"),
+        "a session must not be able to approve its own request"
+    );
+    let st = call_tool(&app, &token, "approval_status", json!({ "id": id })).await;
+    assert!(
+        text(&st).contains("pending"),
+        "self-approval must leave it pending: {}",
+        text(&st)
+    );
+
+    // 2b. The operator's tap runs the exact call.
+    let status = post(format!("/approvals/{id}/approve"), operator.clone()).await;
     assert_eq!(status, StatusCode::SEE_OTHER);
     let services = call_tool(&app, &token, "list_services", json!({})).await;
     assert!(
@@ -1514,14 +1536,39 @@ async fn router_falls_back_to_the_cloud_and_counts_it() {
         axum::serve(listener, stub).await.unwrap();
     });
 
-    let conf = call_tool(
+    // The MCP door refuses a fallback aimed at this machine: local models
+    // already win, so a loopback "cloud" is either a mistake or an attempt to
+    // use the Box as a probe for its own loopback-only services.
+    let refused = call_tool(
         &app,
         &token,
         "router_configure",
         json!({ "base_url": format!("http://127.0.0.1:{port}/v1"), "api_key": "sk-cloud-test" }),
     )
     .await;
-    assert_eq!(conf["result"]["isError"], false, "{conf}");
+    assert_eq!(refused["result"]["isError"], true, "{refused}");
+    // ...and a curl option dressed as a URL, which is how argv injection got in.
+    let refused = call_tool(
+        &app,
+        &token,
+        "router_configure",
+        json!({ "base_url": "-K/tmp/pwn", "api_key": "sk-cloud-test" }),
+    )
+    .await;
+    assert_eq!(refused["result"]["isError"], true, "{refused}");
+
+    // The fallback mechanics themselves are exercised with the config written
+    // directly, which is the only way to point one at a test stub on loopback.
+    {
+        let paths = Paths::new(_tmp.path().to_path_buf());
+        boxd::secrets::set(&paths, boxd::router::FALLBACK_KEY_SECRET, "sk-cloud-test").unwrap();
+        let mut config = boxd::config::BoxConfig::load(&paths).unwrap();
+        config.router = Some(boxd::router::RouterConfig {
+            enabled: true,
+            base_url: format!("http://127.0.0.1:{port}/v1"),
+        });
+        config.save(&paths).unwrap();
+    }
 
     let minted = call_tool(&app, &token, "ai_key_create", json!({ "label": "app" })).await;
     let key = serde_json::from_str::<Value>(&text(&minted)).unwrap()["key"]
@@ -1554,4 +1601,168 @@ async fn router_falls_back_to_the_cloud_and_counts_it() {
     assert_eq!(v["stats"]["cloud_requests"], 1, "{t}");
     assert_eq!(v["stats"]["cloud_tokens"], 7, "{t}");
     assert_eq!(v["stats"]["local_requests"], 0, "{t}");
+}
+
+/// A leash you can unclip yourself is not a leash. An agent session holding a
+/// valid token must not be able to grant ITSELF the autonomy that skips the
+/// approval queue — otherwise every destructive operation is one POST away.
+/// Granting autonomy to a DIFFERENT session is how an operator lets an agent
+/// run unattended, so that must still work.
+#[tokio::test]
+async fn a_session_cannot_grant_itself_autonomy() {
+    let (_tmp, app, token) = app();
+    let paths = Paths::new(_tmp.path().to_path_buf());
+    let agent = boxd::auth::list(&paths)
+        .into_iter()
+        .find(|s| s.label == "test-agent")
+        .expect("the test session");
+    assert!(!agent.autonomous, "off by default");
+
+    let grant = |id: String, token: String| {
+        let app = app.clone();
+        async move {
+            app.oneshot(
+                Request::post(format!("/devices/{id}/autonomy"))
+                    .header("authorization", format!("Bearer {token}"))
+                    .header("content-type", "application/x-www-form-urlencoded")
+                    .extension(local())
+                    .body(Body::from("on=true"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+            .status()
+        }
+    };
+
+    // Itself: refused, and the flag stays off.
+    let status = grant(agent.id.clone(), token.clone()).await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    let after = boxd::auth::list(&paths)
+        .into_iter()
+        .find(|s| s.id == agent.id)
+        .unwrap();
+    assert!(
+        !after.autonomous,
+        "a session must not be able to grant itself autonomy"
+    );
+
+    // Another session: allowed — this is the operator's grant.
+    let other = boxd::auth::mint_session(&paths, "other-agent").unwrap();
+    let _ = other;
+    let other_id = boxd::auth::list(&paths)
+        .into_iter()
+        .find(|s| s.label == "other-agent")
+        .unwrap()
+        .id;
+    let status = grant(other_id.clone(), token.clone()).await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert!(
+        boxd::auth::list(&paths)
+            .into_iter()
+            .find(|s| s.id == other_id)
+            .unwrap()
+            .autonomous,
+        "granting another session autonomy must still work"
+    );
+}
+
+/// The bypass that made the self-grant and self-approval checks decorative: an
+/// agent mints a SECOND session, grants that one autonomy (it is not itself, so
+/// the self-check passes), and drives every destructive tool with it. An agent
+/// session may not hand out or enlarge authority at all.
+#[tokio::test]
+async fn an_agent_session_cannot_escalate_through_a_second_session() {
+    let (_tmp, app, _operator) = app();
+    let paths = Paths::new(_tmp.path().to_path_buf());
+    // What the console's "Connect an agent" card hands out.
+    let agent = boxd::auth::mint_session_as(&paths, "agent", boxd::auth::Provenance::Agent).unwrap();
+
+    let post = |path: String, token: String, body: &'static str| {
+        let app = app.clone();
+        async move {
+            app.oneshot(
+                Request::post(path.as_str())
+                    .header("authorization", format!("Bearer {token}"))
+                    .header("content-type", "application/x-www-form-urlencoded")
+                    .extension(local())
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+            .status()
+        }
+    };
+
+    // 1. It cannot mint itself a peer.
+    let before = boxd::auth::list(&paths).len();
+    post("/devices/agent".into(), agent.clone(), "").await;
+    post("/devices/add".into(), agent.clone(), "").await;
+    assert_eq!(
+        boxd::auth::list(&paths).len(),
+        before,
+        "an agent must not be able to create another session"
+    );
+
+    // 2. It cannot grant autonomy to anyone — not itself, not a peer.
+    let operator_id = boxd::auth::list(&paths)
+        .into_iter()
+        .find(|s| s.label == "test-agent")
+        .unwrap()
+        .id;
+    for target in [
+        boxd::auth::list(&paths)
+            .into_iter()
+            .find(|s| s.label == "agent")
+            .unwrap()
+            .id,
+        operator_id.clone(),
+    ] {
+        post(
+            format!("/devices/{target}/autonomy"),
+            agent.clone(),
+            "on=true",
+        )
+        .await;
+    }
+    assert!(
+        boxd::auth::list(&paths).iter().all(|s| !s.autonomous),
+        "an agent must not be able to grant autonomy"
+    );
+
+    // 3. It cannot lock the operator out.
+    post(format!("/devices/{operator_id}/revoke"), agent.clone(), "").await;
+    assert!(
+        boxd::auth::list(&paths).iter().any(|s| s.id == operator_id),
+        "an agent must not be able to revoke the operator's device"
+    );
+
+    // 4. Its own destructive calls still queue rather than run.
+    let deploy = call_tool(
+        &app,
+        &agent,
+        "deploy_static_site",
+        json!({ "name": "blog", "index_html": "precious" }),
+    )
+    .await;
+    assert_eq!(deploy["result"]["isError"], false, "{deploy}");
+    let del = call_tool(&app, &agent, "delete_service", json!({ "name": "blog" })).await;
+    let body: Value = serde_json::from_str(
+        del["result"]["content"][0]["text"].as_str().unwrap(),
+    )
+    .unwrap();
+    let id = body["pending_approval"].as_str().expect("queued").to_string();
+
+    // ...and it cannot decide them, in either direction.
+    post(format!("/approvals/{id}/approve"), agent.clone(), "").await;
+    post(format!("/approvals/{id}/deny"), agent.clone(), "").await;
+    let still = call_tool(&app, &agent, "approval_status", json!({ "id": id })).await;
+    assert!(
+        still["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("pending"),
+        "an agent must not be able to decide its own approval"
+    );
 }

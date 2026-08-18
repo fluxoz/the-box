@@ -106,6 +106,29 @@ fn nix_escape(s: &str) -> String {
         .replace("${", "\\${")
 }
 
+/// Params that only the platform may set, because they are spliced into
+/// generated Nix as syntax rather than as data. `ops::deploy` strips these from
+/// caller params; nixgen re-derives the real value from what is on disk.
+pub const RESERVED_PARAMS: &[&str] = &["secret_env_file"];
+
+/// The one shape `nixgen::module_params` writes for `secret_env_file`:
+/// `./<this service>-env.age`, relative to the module directory. Anything else
+/// is refused, since this value lands in Nix unquoted.
+///
+/// Bound to the service name on purpose. Every service's `.age` is copied into
+/// the same module directory, so accepting any well-formed name would let one
+/// service point at another's file and have agenix decrypt someone else's
+/// credentials into its own environment.
+fn is_generated_env_path(p: &str, service: &str) -> bool {
+    let Some(rest) = p.strip_prefix("./") else {
+        return false;
+    };
+    let Some(name) = rest.strip_suffix("-env.age") else {
+        return false;
+    };
+    !name.is_empty() && name == service
+}
+
 /// A `domain` param becomes an nginx virtual-host name and is spliced into
 /// generated Nix, so restrict it to what a hostname can actually contain. This
 /// is the gate, not the escaping: a domain carrying quotes or `${` never
@@ -471,10 +494,13 @@ impl Template for Container {
             .map(|a| format!("\n    cmd = {};", nix_list(a)))
             .unwrap_or_default();
         // A path literal (unquoted) injected by nixgen when the service has an
-        // encrypted env file next to its module. The name is validated, so safe.
+        // encrypted env file next to its module. Unquoted means escaping cannot
+        // save us, so the value is gated to the exact shape nixgen writes: a
+        // caller who smuggles this key past the API boundary gets nothing.
         let secret_env = params
             .get("secret_env_file")
             .and_then(Value::as_str)
+            .filter(|p| is_generated_env_path(p, name))
             .map(|p| format!("\n    secretEnvFile = {p};"))
             .unwrap_or_default();
         let env = params
@@ -622,6 +648,58 @@ mod tests {
         let empty = tmp.path().join("empty");
         std::fs::create_dir_all(&empty).unwrap();
         assert!(StaticSite.health("s", &empty).is_err());
+    }
+
+    /// `secret_env_file` lands in Nix as a PATH LITERAL — unquoted, where
+    /// escaping cannot help — so the render accepts only the exact shape
+    /// nixgen writes. A caller who smuggles the key past the API boundary
+    /// (ops::deploy refuses it there) must still get nothing.
+    #[test]
+    fn secret_env_file_cannot_inject_nix() {
+        let evil = json!({
+            "image": "nginx:1.27",
+            "secret_env_file": "null; }; systemd.services.pwn.serviceConfig.ExecStart = \"/pwn\"; x = { y = null",
+        });
+        let m = Container.nix_module("web", &evil);
+        assert!(
+            !m.contains("systemd.services.pwn"),
+            "secret_env_file escaped into the module: {m}"
+        );
+        assert!(
+            !m.contains("secretEnvFile"),
+            "a bogus secret_env_file must be dropped entirely: {m}"
+        );
+
+        // Traversal out of the module directory is refused too.
+        for bad in [
+            "../../../../etc/shadow",
+            "./x-env.age; boom = 1",
+            "/etc/passwd",
+            "./-env.age",
+            "./UPPER-env.age",
+        ] {
+            let p = json!({ "image": "nginx:1.27", "secret_env_file": bad });
+            assert!(
+                !Container.nix_module("web", &p).contains("secretEnvFile"),
+                "must refuse secret_env_file {bad:?}"
+            );
+        }
+
+        // One service may not name ANOTHER service's secret file: every .age
+        // lands in the same module directory, so this would hand db's
+        // decrypted credentials to web.
+        let other = json!({ "image": "nginx:1.27", "secret_env_file": "./db-env.age" });
+        assert!(
+            !Container.nix_module("web", &other).contains("secretEnvFile"),
+            "a service must not borrow another service's secret file"
+        );
+
+        // The real thing nixgen writes still renders.
+        let good = json!({ "image": "nginx:1.27", "secret_env_file": "./web-env.age" });
+        assert!(
+            Container.nix_module("web", &good).contains("secretEnvFile = ./web-env.age;"),
+            "the platform's own value must still work"
+        );
     }
 
     /// A `domain` is spliced into generated Nix that gets built as root, so it

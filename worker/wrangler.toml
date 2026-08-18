@@ -1,0 +1,20 @@
+# Serves personalized Box images. The generic artifact lives in R2 once; this
+# Worker patches the claim file in flight. R2 has no egress fees, which is what
+# makes multi-gigabyte downloads per user viable.
+#
+# Upload after a release:
+#   nix build .#packages.aarch64-linux.pi5-image-personalizable
+#   wrangler r2 object put box-images/thebox-pi5.img.gz --file result/thebox-pi5.img.gz
+#   wrangler r2 object put box-images/thebox-pi5.img.gz.manifest.json \
+#     --file result/thebox-pi5.img.gz.manifest.json
+
+name = "thebox-images"
+main = "src/index.js"
+compatibility_date = "2026-08-01"
+
+[[r2_buckets]]
+binding = "IMAGES"
+bucket_name = "box-images"
+
+[observability]
+enabled = true

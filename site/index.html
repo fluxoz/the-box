@@ -136,44 +136,25 @@
   <h2 style="margin:.2rem 0 .6rem">Make it a Box.</h2>
   <div class="install">
     <div class="tabs" role="tablist" aria-label="Install method">
-      <button class="tab" role="tab" aria-selected="true"  id="t-linux"   aria-controls="p-linux"   data-os="linux">Linux / VPS</button>
-      <button class="tab" role="tab" aria-selected="false" id="t-windows" aria-controls="p-windows" data-os="windows">Windows</button>
-      <button class="tab" role="tab" aria-selected="false" id="t-pi"      aria-controls="p-pi"      data-os="pi">Raspberry Pi</button>
-      <button class="tab" role="tab" aria-selected="false" id="t-usb"     aria-controls="p-usb"     data-os="usb">Bare metal</button>
-      <button class="tab" role="tab" aria-selected="false" id="t-mac"     aria-controls="p-mac"     data-os="mac">Mac</button>
+      <button class="tab" role="tab" aria-selected="true"  id="t-flash" aria-controls="p-flash" data-os="flash">Flash a card or stick</button>
+      <button class="tab" role="tab" aria-selected="false" id="t-curl"  aria-controls="p-curl"  data-os="curl">Take over a running machine</button>
     </div>
 
-    <div class="panel" id="p-linux" role="tabpanel" aria-labelledby="t-linux">
+    <div class="panel" id="p-flash" role="tabpanel" aria-labelledby="t-flash">
+      <p><b><a href="/configurator/">Build your image</a></b>, write it to the SD card or USB stick, and power the machine on. That is the whole job.</p>
+      <p>Your Wi-Fi, your SSH key and your pairing code go into the image as it downloads, so the install runs start to finish with nobody watching. No screen, no keyboard, no SSH. It comes up already belonging to you, so there is nothing to claim and nobody on your network can get there first.</p>
+      <p class="note">Raspberry Pi 3/4/5 today. Everyone downloads the same image, with your settings written into one small file inside it, so the hash you can check is the image you flash. Steps in the <a href="/docs/raspberry-pi.html">Raspberry Pi guide</a>.</p>
+    </div>
+
+    <div class="panel" id="p-curl" role="tabpanel" aria-labelledby="t-curl" hidden>
+      <p><b><a href="/configurator/">Build your command</a></b> and paste it on the machine you want to convert, or into an SSH session to it.</p>
       <div class="cmd">
         <span class="prompt">$</span>
         <code id="cmd-linux">curl -fsSL https://thebox.build/install.sh | sudo sh</code>
         <button type="button" data-copy="cmd-linux">copy</button>
       </div>
-      <p>Run this on the machine itself (or over SSH). It asks for consent, wipes the old OS, and installs Box&nbsp;OS in place. About ten minutes, then it comes back on your network as <code>box.local</code>.</p>
-    </div>
-
-    <div class="panel" id="p-windows" role="tabpanel" aria-labelledby="t-windows" hidden>
-      <div class="cmd">
-        <span class="prompt">&gt;</span>
-        <code id="cmd-windows">irm https://thebox.build/install.ps1 | iex</code>
-        <button type="button" data-copy="cmd-windows">copy</button>
-      </div>
-      <p>In an elevated PowerShell on that old Windows laptop. It stages the installer and takes the machine over.</p>
-    </div>
-
-    <div class="panel" id="p-pi" role="tabpanel" aria-labelledby="t-pi" hidden>
-      <p>A Raspberry Pi 3/4/5 makes a great Box. Download a ready-to-flash image (no Nix needed) and write it to the SD card with Raspberry Pi Imager.</p>
-      <p class="note">Image links and steps in the <a href="/docs/raspberry-pi.html">Raspberry Pi guide</a>.</p>
-    </div>
-
-    <div class="panel" id="p-usb" role="tabpanel" aria-labelledby="t-usb" hidden>
-      <p>No OS to take over? Boot the installer from a USB stick or over the network, then wipe and install on the machine itself.</p>
-      <p class="note">Step-by-step in the <a href="/docs/install.html#bare-metal">bare-metal guide</a>.</p>
-    </div>
-
-    <div class="panel" id="p-mac" role="tabpanel" aria-labelledby="t-mac" hidden>
-      <p>Any Mac that runs Linux can become a Box. Intel Macs take the Linux one-liner above or a USB install, like any PC. Apple Silicon (M1/M2) runs Linux through Asahi; install that first, then convert the machine in place.</p>
-      <p class="note">Details in the <a href="/docs/install.html#mac">Mac guide</a>.</p>
+      <p>Your version of that command carries the same things the image does: your SSH key and your pairing code. It asks for consent once, wipes the old OS, installs Box&nbsp;OS in place, and comes back on your network as <code>box.local</code>. About ten minutes, unattended.</p>
+      <p class="note">Works on any Linux machine or VPS. From <b>Windows</b>, run <code>irm https://thebox.build/install.ps1 | iex</code> in an elevated PowerShell. For a machine with <b>no OS to take over</b>, boot the installer from a stick and set it up on the machine itself: the <a href="/docs/install.html#bare-metal">bare-metal guide</a>. <b>Macs</b> take the same paths: the <a href="/docs/install.html#mac">Mac guide</a>.</p>
     </div>
   </div>
 
@@ -308,7 +289,10 @@
     });
   }
   tabs.forEach(t=>t.addEventListener('click',()=>select(t.dataset.os)));
-  if (location.hash && tabs.some(t=>t.dataset.os===location.hash.slice(1))) select(location.hash.slice(1));
+  // Old deep links (#linux, #pi, #windows…) still land on the right path.
+  const ALIAS = {linux:'curl', windows:'curl', mac:'curl', vps:'curl', usb:'flash', pi:'flash'};
+  const want = ALIAS[location.hash.slice(1)] || location.hash.slice(1);
+  if (want && tabs.some(t=>t.dataset.os===want)) select(want);
   document.querySelectorAll('[data-copy]').forEach(b=>b.addEventListener('click',()=>{
     navigator.clipboard.writeText(document.getElementById(b.dataset.copy).textContent);
     const o=b.textContent; b.textContent='copied'; setTimeout(()=>b.textContent=o,1200);

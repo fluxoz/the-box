@@ -33,6 +33,15 @@ fn curl_json(args: &[&str]) -> Result<Value> {
 /// provision managed backup storage.
 pub fn enroll(paths: &Paths, server: &str, enroll_token: &str) -> Result<()> {
     let server = server.trim_end_matches('/');
+    // This URL receives the enrollment token, then a long-lived API token, and
+    // its answers configure backups and the mesh coordinator. A typo'd http://
+    // would put all of that on the wire in the clear, and a leading `-` would
+    // be read by curl as an option rather than an address.
+    crate::util::validate_outbound_url(server, crate::util::Loopback::Deny)?;
+    anyhow::ensure!(
+        server.to_ascii_lowercase().starts_with("https://"),
+        "the control plane must be https:// — refusing to send enrollment credentials in the clear"
+    );
     let body = serde_json::json!({ "enroll_token": enroll_token }).to_string();
     let resp = curl_json(&[
         "-X",

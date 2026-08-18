@@ -270,11 +270,42 @@
         }))
         {
           # Per-model Pi appliance images (raw .img, dd to SD/USB): pi3-image,
-          # pi4-image, pi5-image.
-          aarch64-linux = nixpkgs.lib.mapAttrs'
-            (m: cfg: nixpkgs.lib.nameValuePair "pi${m}-image"
-              cfg.config.system.build.sdImage)
-            boxPis;
+          # pi4-image, pi5-image. Each gets a `-personalizable` sibling: the
+          # same image plus a fixed-size claim file on the FAT boot partition,
+          # packed as a three-member gzip whose middle member is a STORED
+          # deflate block. That lets a download be personalized with a
+          # byte-for-byte overwrite at a known offset — no recompression and no
+          # per-user artifact. See docs/claim-flow-spec.md.
+          aarch64-linux =
+            let
+              pkgs = nixpkgs.legacyPackages.aarch64-linux;
+              personalizable = name: sdImage:
+                pkgs.runCommand "${name}-personalizable"
+                  {
+                    nativeBuildInputs = [ pkgs.python3 pkgs.mtools pkgs.util-linux ];
+                  } ''
+                  img=$(find ${sdImage} -name '*.img' | head -n1)
+                  [ -n "$img" ] || { echo "no .img found in ${sdImage}" >&2; exit 1; }
+                  mkdir -p "$out"
+                  cp "$img" ./work.img
+                  chmod +w ./work.img
+                  python3 ${./scripts/personalizable-image.py} \
+                    ./work.img "$out/${name}.img.gz" "$out/${name}.img.gz.manifest.json"
+                  # Hash computed in the same derivation that produced the
+                  # artifact, matching how install.sh's netboot hashes are
+                  # stamped — so the published hash is provably of these bytes.
+                  sha256sum "$out/${name}.img.gz" | cut -d' ' -f1 \
+                    > "$out/${name}.img.gz.sha256"
+                '';
+            in
+            nixpkgs.lib.mapAttrs'
+              (m: cfg: nixpkgs.lib.nameValuePair "pi${m}-image"
+                cfg.config.system.build.sdImage)
+              boxPis
+            // nixpkgs.lib.mapAttrs'
+              (m: cfg: nixpkgs.lib.nameValuePair "pi${m}-image-personalizable"
+                (personalizable "thebox-pi${m}" cfg.config.system.build.sdImage))
+              boxPis;
 
           x86_64-linux = {
             installer-iso =
@@ -446,6 +477,10 @@
       # Boxes join a Headscale WireGuard mesh; the tunnel carries traffic (one Box
       # reaches another's dashboard over the tailnet) + tailnet fleet discovery.
       checks.x86_64-linux.fleet-mesh = import ./nix/tests/fleet-mesh.nix {
+        inherit self nixpkgs;
+        system = "x86_64-linux";
+      };
+      checks.x86_64-linux.unattended-claim = import ./nix/tests/unattended-claim.nix {
         inherit self nixpkgs;
         system = "x86_64-linux";
       };

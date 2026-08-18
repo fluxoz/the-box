@@ -557,7 +557,7 @@ pub fn spawn(state: crate::web::SharedState) {
             for name in linked {
                 // The same lock every deploy path takes, so a poll can never
                 // race an operator's own deploy on the generation directory.
-                let _guard = state.apply_lock.lock().unwrap();
+                let _guard = state.apply_lock.lock().unwrap_or_else(|e| e.into_inner());
                 match sync_recorded(
                     &state.paths,
                     state.builder.as_ref(),

@@ -291,9 +291,15 @@ pub fn update_and_switch(
         // `activate` registers the generation before switching, so a failure
         // part-way leaves the system profile — and the default boot entry —
         // pointing at a system that was never health-checked. Put both back.
-        let _ = ostier::rollback(ostier::SYSTEM_PROFILE);
+        // Same honesty rule as the health branch below: if the undo failed,
+        // say so. This branch is the more dangerous of the two, because the
+        // profile and the boot entry already point at the unvetted system.
+        let undo = match ostier::rollback(ostier::SYSTEM_PROFILE) {
+            Ok(()) => "rolled back".to_string(),
+            Err(re) => format!("ROLLBACK ALSO FAILED ({re:#}) — this Box needs attention"),
+        };
         restore_pin();
-        return Err(e.context("activating the new platform (rolled back, pin restored)"));
+        return Err(e.context(format!("activating the new platform ({undo}, pin restored)")));
     }
 
     match health() {
@@ -306,14 +312,26 @@ pub fn update_and_switch(
             Ok(toplevel)
         }
         Err(e) => {
-            ostier::rollback(ostier::SYSTEM_PROFILE)?;
+            // Not `?`: a rollback that fails must not skip restore_pin(). The
+            // pin is what `check` compares against upstream, so leaving it
+            // bumped makes the Box answer "up to date" while running the
+            // system that just failed its health check — the exact
+            // self-concealing state this whole path exists to prevent.
+            let rolled_back = ostier::rollback(ostier::SYSTEM_PROFILE);
             restore_pin();
+            // Say which of the two actually happened. A box whose rollback
+            // failed needs a human, and a log line that claims otherwise is
+            // how that box gets left alone.
+            let undo = match &rolled_back {
+                Ok(()) => "rolled back".to_string(),
+                Err(re) => format!("ROLLBACK ALSO FAILED ({re:#}) — this Box needs attention"),
+            };
             crate::journal::record(
                 paths,
                 "update",
-                format!("REFUSED a platform update: health check failed, rolled back ({e:#})"),
+                format!("REFUSED a platform update: health check failed, {undo} ({e:#})"),
             );
-            bail!("platform update health check failed — rolled back (pin restored): {e:#}");
+            bail!("platform update health check failed — {undo} (pin restored): {e:#}");
         }
     }
 }

@@ -79,6 +79,20 @@ pub fn configure(
             cfg.forges.last_mut().expect("just pushed")
         }
     };
+    if let Some(url) = &base_url {
+        // This is where the forge token gets sent, so repointing it is how a
+        // stored token walks off the Box. It must be a real endpoint, and it
+        // may not be moved out from under a token that already exists —
+        // disconnect first, which deletes the token.
+        crate::util::validate_outbound_url(url, crate::util::Loopback::Deny)?;
+        if crate::secrets::exists(paths, &token_secret(id)) && entry.base_url.as_deref() != Some(url.as_str())
+        {
+            bail!(
+                "{id} already holds a connected token — disconnect it before changing base_url, \
+                 so a stored credential is never sent to a new address"
+            );
+        }
+    }
     if base_url.is_some() {
         entry.base_url = base_url;
     }

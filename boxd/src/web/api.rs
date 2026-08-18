@@ -263,7 +263,7 @@ async fn create_service(
     let info = {
         let state = state.clone();
         blocking(move || {
-            let _guard = state.apply_lock.lock().unwrap();
+            let _guard = state.apply_lock.lock().unwrap_or_else(|e| e.into_inner());
             ops::deploy(&state.paths, state.builder.as_ref(), request)
         })
         .await?
@@ -355,7 +355,7 @@ async fn upload_files(
     let result = {
         let state = state.clone();
         blocking(move || {
-            let _guard = state.apply_lock.lock().unwrap();
+            let _guard = state.apply_lock.lock().unwrap_or_else(|e| e.into_inner());
             let (count, bytes) = ops::upload_files(&state.paths, &service, files, body.replace)?;
             if !deploy {
                 return Ok((count, bytes, None));
@@ -405,7 +405,7 @@ async fn delete_service(
     let info = {
         let state = state.clone();
         blocking(move || {
-            let _guard = state.apply_lock.lock().unwrap();
+            let _guard = state.apply_lock.lock().unwrap_or_else(|e| e.into_inner());
             ops::delete_service(&state.paths, state.builder.as_ref(), &name)
         })
         .await?
@@ -449,7 +449,7 @@ async fn rollback(
     let info = {
         let state = state.clone();
         blocking(move || {
-            let _guard = state.apply_lock.lock().unwrap();
+            let _guard = state.apply_lock.lock().unwrap_or_else(|e| e.into_inner());
             ops::rollback(&state.paths, number)
         })
         .await?

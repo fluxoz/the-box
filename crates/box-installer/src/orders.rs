@@ -98,4 +98,4 @@ pub fn load(path: &str) -> Result<Value> {
 
 // The effective-orders merge is shared with the browser wizard (boxd), so it
 // lives in box-core.
-pub use box_core::orders::effective_orders;
+pub use box_core::orders::{effective_orders, ensure_enrollment};

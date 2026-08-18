@@ -36,3 +36,30 @@ pub fn effective_orders(base: &Value, layout: &ResolvedLayout) -> Value {
     );
     Value::Object(obj)
 }
+
+/// Guarantee the orders carry an owner, minting one if the operator did not
+/// bring their own. Returns the plaintext code **only when it had to create
+/// one**, so the caller can put it in front of the person standing there.
+///
+/// Every install path must call this. A Box that boots with no enrollment hash
+/// has no owner, and the only remaining way to claim it is to ask over the
+/// network — which is a race that a script announcing itself on mDNS wins
+/// against a human every time. See docs/claim-flow-spec.md.
+pub fn ensure_enrollment(orders: &mut Value) -> std::io::Result<Option<String>> {
+    let Value::Object(obj) = orders else {
+        return Ok(None);
+    };
+    let present = obj
+        .get("enrollment_code_hash")
+        .and_then(Value::as_str)
+        .is_some_and(|h| !h.trim().is_empty());
+    if present {
+        return Ok(None);
+    }
+    let code = crate::pairing::generate()?;
+    obj.insert(
+        "enrollment_code_hash".into(),
+        Value::String(crate::pairing::hash(&code)),
+    );
+    Ok(Some(code))
+}

@@ -41,6 +41,11 @@ pub struct PendingAction {
     pub summary: String,
     /// The session label that asked (from the device list).
     pub requested_by: String,
+    /// The id of the session that asked. Labels are free text and repeat, so
+    /// the id is what proves the approver is somebody else — the whole point
+    /// of the ceremony. Empty on records written before this field existed.
+    #[serde(default)]
+    pub requested_by_id: String,
     pub state: State,
     /// The executed call's outcome (JSON on success, error text on failure),
     /// present once approved and run.
@@ -72,6 +77,7 @@ pub fn request(
     args: Value,
     summary: &str,
     requested_by: &str,
+    requested_by_id: &str,
 ) -> Result<PendingAction> {
     let action = PendingAction {
         id: crate::auth::random_hex(8)?,
@@ -83,6 +89,7 @@ pub fn request(
         args,
         summary: summary.to_string(),
         requested_by: requested_by.to_string(),
+        requested_by_id: requested_by_id.to_string(),
         state: State::Pending,
         result: None,
     };
@@ -130,6 +137,7 @@ mod tests {
             json!({"name":"x"}),
             "delete x",
             "agent",
+            "sess-1",
         )
         .unwrap();
         let b = request(
@@ -138,6 +146,7 @@ mod tests {
             json!({"target":"t"}),
             "wipe t",
             "agent",
+            "sess-1",
         )
         .unwrap();
         assert_eq!(get(&paths, &a.id).unwrap().state, State::Pending);

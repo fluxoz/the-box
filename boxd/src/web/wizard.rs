@@ -227,7 +227,18 @@ async fn commit(
     // The pasted setup code (browser, already decoded) wins; else the installer-
     // provided base orders; else null for a blank box configured entirely here.
     let base = base_config(&cfg, &body);
-    let effective = orders::effective_orders(&base, &layout);
+    let mut effective = orders::effective_orders(&base, &layout);
+    // Same rule as the console wizard: never install a Box nobody owns. The
+    // browser is right here, so hand the code back and let the page show it.
+    let minted = match orders::ensure_enrollment(&mut effective) {
+        Ok(c) => c,
+        Err(e) => {
+            return (
+                StatusCode::OK,
+                Json(json!({ "ok": false, "error": format!("minting a pairing code: {e}") })),
+            )
+        }
+    };
 
     if let Err(e) = write_commit(&cfg, &effective, &layout) {
         return (
@@ -241,7 +252,7 @@ async fn commit(
         .unwrap_or("box");
     (
         StatusCode::OK,
-        Json(json!({ "ok": true, "hostname": host })),
+        Json(json!({ "ok": true, "hostname": host, "pairing_code": minted })),
     )
 }
 
