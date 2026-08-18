@@ -26,8 +26,13 @@ machine with no OS to SSH into, use the bare-metal beacon flow in the runbook.
 Manage it over its on-box MCP server at `http://<box>:2693/mcp` (JSON-RPC 2.0),
 authenticating with the session token as `Authorization: Bearer <token>`. The tools
 deploy sites, apps, and containers, take backups, and roll back. If you don't have a
-token: have the user open `http://<box>:2693` and click **Claim this Box** (or enter
-a pairing code), or run `boxd auth mint --label agent` on the box.
+token: have the user enter their pairing code at `http://<box>:2693/pair` (it is in
+the recovery kit from when they built the install medium, and their kit also has a
+one-click link that fills it in), or ask them for a fresh one from
+`http://<box>:2693/devices` → "Add device", or run `boxd auth mint --label agent` on
+the box. Do not tell them to look for a "Claim this Box" button: a Box installed
+with orders already knows who owns it and never offers one, which is what stops
+anyone else on their network claiming it first.
 
 ## Tools
 
