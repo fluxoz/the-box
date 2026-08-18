@@ -55,6 +55,25 @@ jobs:
         continue-on-error: true
         run: nix develop -c cargo fmt --all -- --check
 
+      # The site, driven in a real browser.
+      #
+      # Three bugs shipped here that nothing else could see: a <form> the HTML
+      # parser dropped (killing the pairing code), a private key that saved as
+      # id_ed25519.txt, and a keypair that handed back only one half. All of
+      # them were correct in source and correct in the built artifact, and only
+      # existed once a browser had parsed, run and been clicked. This is the
+      # only check in the repo that operates the page rather than reading it.
+      - name: thebox.build (browser)
+        run: |
+          set -euo pipefail
+          site=$(nix build .#site --no-link --print-out-paths)
+          chromium=$(nix build nixpkgs#chromium --no-link --print-out-paths)/bin/chromium
+          python=$(nix build --impure --no-link --print-out-paths --expr \
+            'let pkgs = import (builtins.getFlake "nixpkgs") {system="x86_64-linux";};
+             in pkgs.python313.withPackages (ps: [ ps.playwright ])')
+          CHROMIUM_BIN="$chromium" "$python/bin/python3" \
+            scripts/test-site.py "$site"
+
       - name: cargo clippy
         run: nix develop -c cargo clippy --workspace --all-targets -- -D warnings
 
