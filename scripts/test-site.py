@@ -293,10 +293,10 @@ def main() -> int:
         check(len(vec_names) == 2, "the Configurator offers exactly two deployment vectors",
               ", ".join(vec_names))
 
-        # Arming a complete config must produce the goods: both takeover
-        # commands, orders embedded.
+        # A complete config must produce the goods immediately: both takeover
+        # commands, orders embedded. There is no arm step (the erase consent
+        # rides in the orders themselves; John: the commands ARE the point).
         page.click("[data-vec=sh]")
-        page.click(".arm:has(#arm)")
         page.wait_for_selector("#sh-cmd", timeout=10_000)
         sh_cmd = page.text_content("#sh-cmd") or ""
         cfg_win_cmd = page.text_content("#win-cmd") or ""
