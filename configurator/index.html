@@ -318,6 +318,12 @@ input.invalid, textarea.invalid { border-color: var(--critical); box-shadow: 0 0
 }
 .privkey textarea { min-height: 120px; font-size: 11px; }
 
+/* pairing code as a form field */
+.codefield { display: flex; gap: 8px; align-items: center; }
+.codefield input { flex: 1; letter-spacing: .14em; }
+.btn.copied { border-color: var(--ok); color: var(--ok); animation: copiedpulse .28s ease-out; }
+@keyframes copiedpulse { 0% { transform: scale(1); } 35% { transform: scale(1.06); } 100% { transform: scale(1); } }
+
 /* deploy / vectors */
 .vectors { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 @media (max-width: 560px) { .vectors { grid-template-columns: 1fr; } }
@@ -642,6 +648,17 @@ footer.foot b { color: var(--dim); }
     root.setAttribute("data-theme", cur === "dark" ? "light" : "dark");
   });
 
+
+  // The copy button answers on the button itself: a brief Copied state with a
+  // small pulse (the global reduced-motion rule strips the animation; the text
+  // swap still communicates).
+  function flashCopied(btn) {
+    const orig = btn.dataset.origLabel || (btn.dataset.origLabel = btn.textContent);
+    btn.classList.add("copied");
+    btn.textContent = "Copied";
+    clearTimeout(btn._copyT);
+    btn._copyT = setTimeout(() => { btn.classList.remove("copied"); btn.textContent = orig; }, 1200);
+  }
 
   function toast(msg) {
     const t = $("#toast"); t.textContent = msg; t.classList.add("show");
@@ -978,7 +995,7 @@ footer.foot b { color: var(--dim); }
     // hand-edit is worse than no link.
     const link = $("#claimlink");
     if (link && enrollCode) {
-      const note = link.closest(".note");
+      const note = $("#claimnote");
       if (cfg.hostname === "auto") {
         if (note) note.style.display = "none";
       } else {
@@ -1231,19 +1248,18 @@ footer.foot b { color: var(--dim); }
     const anchor = $("#privout");
     if (anchor) {
       anchor.insertAdjacentHTML("beforebegin", `
-        <div class="privkey" id="paircode-box">
-          <div class="warn"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="11" r="2.8"/><path d="m7 9 6-6M11.2 3.2l1.8 1.8M9.6 4.8l1.5 1.5"/></svg> Pairing code. Save this. You enter it once at the box's dashboard to pair your first browser (no SSH needed).</div>
-          <div class="deploybar" style="margin-top:9px">
-            <code class="mono" id="paircode" style="font-size:1.05rem;letter-spacing:.14em"></code>
+        <div id="paircode-box">
+          <label class="lbl" for="paircode">Pairing code</label>
+          <div class="codefield">
+            <input type="text" id="paircode" class="mono" readonly spellcheck="false" aria-describedby="paircode-note">
             <button type="button" class="btn small ghost" id="cp-code">Copy</button>
           </div>
-          <div class="note" style="margin-top:7px">
-            Or just open this once the Box is up, and it fills the code in for you:
-            <a id="claimlink" class="mono" href="#" rel="noreferrer"></a>
-          </div>
+          <p class="field-note" id="paircode-note">Save this. You enter it once at the Box's dashboard to pair your first browser, no SSH needed.</p>
+          <p class="field-note" id="claimnote">Or open this once the Box is up, and it fills the code in for you:
+            <a id="claimlink" class="mono" href="#" rel="noreferrer"></a></p>
         </div>`);
-      $("#paircode").textContent = enrollCode;
-      $("#cp-code").addEventListener("click", () => { navigator.clipboard.writeText(enrollCode); toast("Pairing code copied"); });
+      $("#paircode").value = enrollCode;
+      $("#cp-code").addEventListener("click", () => { navigator.clipboard.writeText(enrollCode); flashCopied($("#cp-code")); });
     }
     render(); // re-render so enrollment_code_hash is included in the orders
   }

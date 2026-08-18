@@ -44,7 +44,10 @@ from playwright.sync_api import sync_playwright
 
 FAILURES: list[str] = []
 
-HEX_PAIRCODE = "() => /^[0-9a-f]{20,}$/.test((document.querySelector('#paircode')||{}).textContent||'')"
+# The code renders as a readonly input on the Configurator and a <code> on the
+# landing page; read whichever the element carries.
+HEX_PAIRCODE = ("() => { const el = document.querySelector('#paircode') || {};"
+                " return /^[0-9a-f]{20,}$/.test(el.value || el.textContent || ''); }")
 
 
 def check(ok: bool, what: str, detail: str = "") -> None:
@@ -85,7 +88,7 @@ def credential_checks(page, where: str) -> tuple[str, str]:
     # An exception anywhere in init used to leave the code silently empty, and
     # it renders async (the hash is computed first), so wait for the real thing.
     page.wait_for_function(HEX_PAIRCODE, timeout=10_000)
-    code = (page.text_content("#paircode") or "").strip()
+    code = (page.eval_on_selector("#paircode", "el => el.value || el.textContent") or "").strip()
     check(bool(code), f"{where}: a pairing code is shown")
     # 80 bits. It was 40, and only the HASH of it travels in the orders, which
     # get pasted into shell commands and screenshots.
@@ -239,9 +242,13 @@ def main() -> int:
         # Auto-named Boxes have no address until they boot, so no claim link
         # renders (a link the user must hand-edit is worse than none).
         hidden = page.eval_on_selector(
-            "#claimlink", "el => el.closest('.note').style.display === 'none'"
+            "#claimnote", "el => el.style.display === 'none'"
         )
         check(hidden, "no claim link is shown for an auto-named Box")
+        # The copy button answers on itself.
+        page.click("#cp-code")
+        check(page.eval_on_selector("#cp-code", "b => b.textContent") == "Copied",
+              "copying the code animates the button into a Copied state")
 
         # The public half is useless unless the Box actually trusts it.
         orders_view = page.evaluate("() => document.body.innerText")
