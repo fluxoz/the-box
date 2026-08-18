@@ -70,6 +70,20 @@
       stamp=/etc/box/.handoff-applied
       [ -e "$stamp" ] && exit 0
 
+      # OWNERSHIP FIRST, before anything that can fail.
+      #
+      # Everything below this can fail on a given machine — no Wi-Fi hardware, a
+      # malformed key, a missing tunnel token. If ownership were seeded last, a
+      # failure part-way would leave a Box with no owner, and a Box with no owner
+      # falls back to being claimable by whoever asks first on the network. That
+      # is the one outcome worth ordering the whole script around.
+      enroll_hash=$(jq -r '.enrollment_code_hash // empty' "$conf")
+      if [ -n "$enroll_hash" ]; then
+        install -d -o boxd -g boxd -m 750 /var/lib/boxd
+        boxd --data-dir /var/lib/boxd auth import-code --hash "$enroll_hash" --label enrollment \
+          || echo "box-firstboot: could not seed the enrollment code" >&2
+      fi
+
       # Wi-Fi: materialize a NetworkManager connection before NM starts.
       ssid=$(jq -r '.wifi.ssid // empty' "$conf")
       if [ -n "$ssid" ]; then
@@ -88,15 +102,6 @@
 
       # SSH keys for agents/operators.
       jq -r '.ssh_authorized_keys[]? // empty' "$conf" > /etc/box/authorized_keys
-
-      # Enrollment code (its hash) from the handoff: makes the box pairable from
-      # first boot with the code in the user's recovery kit — no SSH needed. We
-      # seed it before boxd starts, owned by the boxd user.
-      enroll_hash=$(jq -r '.enrollment_code_hash // empty' "$conf")
-      if [ -n "$enroll_hash" ]; then
-        install -d -o boxd -g boxd -m 750 /var/lib/boxd
-        boxd --data-dir /var/lib/boxd auth import-code --hash "$enroll_hash" --label enrollment || true
-      fi
 
       # Cloudflare tunnel token: seed boxd's secret store and enable.
       token=$(jq -r '.cloudflare_tunnel_token // empty' "$conf")
