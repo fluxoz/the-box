@@ -73,6 +73,37 @@
   .panel p{margin:.7rem 0 0;color:var(--dim);font-size:.9rem;}
   .panel p.note{color:var(--faint);font-size:.82rem;}
 
+  /* step 1: the form. Key in, pairing code out, image or command out. */
+  .setup{padding:1rem 1.1rem 1.05rem;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:.95rem;}
+  .setup .lbl{display:block;font-size:.7rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin-bottom:.35rem;}
+  .setup textarea{width:100%;background:var(--bg);color:var(--ink);border:1px solid var(--line2);border-radius:8px;
+    padding:.55rem .7rem;font-family:var(--mono);font-size:.8rem;line-height:1.45;min-height:3.2em;resize:vertical;}
+  .setup textarea:focus{outline:none;border-color:var(--brass);}
+  .err{color:#c9704e;font-size:.8rem;min-height:1.1em;margin-top:.25rem;}
+  .mini{background:transparent;color:var(--dim);border:1px solid var(--line2);border-radius:6px;
+    padding:.3rem .65rem;font:inherit;font-size:.78rem;cursor:pointer;}
+  .mini:hover{color:var(--ink);border-color:var(--brass);}
+  .fieldbar{display:flex;align-items:center;gap:.7rem;margin-top:.4rem;flex-wrap:wrap;}
+  .fieldbar .hint,.privkey .hint{color:var(--faint);font-size:.8rem;}
+  .paircode{display:flex;align-items:center;gap:.7rem;flex-wrap:wrap;background:var(--bg);
+    border:1px dashed var(--line2);border-radius:8px;padding:.6rem .8rem;}
+  .paircode .lbl{margin:0;}
+  .paircode code{font-family:var(--mono);letter-spacing:.12em;color:var(--brass2);font-size:.95rem;}
+  .paircode .why{flex-basis:100%;color:var(--faint);font-size:.8rem;}
+  .privkey{margin-top:.8rem;background:var(--bg);border:1px solid var(--line2);border-radius:8px;padding:.8rem .9rem;}
+  .privkey .warn{color:var(--brass2);font-size:.85rem;font-weight:600;}
+  .privkey textarea{width:100%;margin-top:.5rem;background:var(--panel);color:var(--ink);border:1px solid var(--line);
+    border-radius:6px;font-family:var(--mono);font-size:.72rem;padding:.5rem .6rem;min-height:5.5em;resize:vertical;}
+  .privkey .row{display:flex;gap:.5rem;margin-top:.5rem;flex-wrap:wrap;}
+  .dl{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;}
+  select.mono{background:var(--bg);color:var(--ink);border:1px solid var(--line2);border-radius:6px;
+    padding:.5rem .6rem;font-family:var(--mono);font-size:.85rem;}
+  .go2{background:var(--brass);color:#1a1408;border:none;border-radius:8px;padding:.55rem 1rem;
+    font:inherit;font-weight:700;cursor:pointer;}
+  .go2:hover{background:var(--brass2);}
+  .go2[disabled]{opacity:.45;cursor:not-allowed;}
+  .cmdlbl{margin:.85rem 0 .35rem;color:var(--dim);font-size:.85rem;}
+
   /* agent door */
   .agent{margin-top:.85rem;background:var(--panel);border:1px dashed var(--line2);border-radius:9px;
     padding:.85rem 1rem;font-size:.95rem;color:var(--dim);}
@@ -135,26 +166,58 @@
   <p class="eyebrow">Step 1 · on the spare machine</p>
   <h2 style="margin:.2rem 0 .6rem">Make it a Box.</h2>
   <div class="install">
+    <div class="setup">
+      <div>
+        <label class="lbl" for="keyin">Your SSH public key</label>
+        <textarea id="keyin" rows="2" placeholder="ssh-ed25519 AAAAC3Nza… you@laptop" spellcheck="false"></textarea>
+        <div class="err" id="key-err"></div>
+        <div class="fieldbar">
+          <button type="button" class="mini" id="key-gen"><span>Generate a keypair</span></button>
+          <span class="hint">No key? Generate one here and save both halves. Nothing you enter leaves this browser.</span>
+        </div>
+        <div id="privout"></div>
+      </div>
+      <div class="paircode">
+        <span class="lbl">Pairing code</span>
+        <code id="paircode">·········</code>
+        <button type="button" class="mini" id="cp-code">copy</button>
+        <span class="why">Save it. You enter it once at the Box's dashboard to pair your first browser. Only its hash travels in the install; the code itself stays with you.</span>
+      </div>
+    </div>
+
     <div class="tabs" role="tablist" aria-label="Install method">
-      <button class="tab" role="tab" aria-selected="true"  id="t-flash" aria-controls="p-flash" data-os="flash">Flash a card or stick</button>
+      <button class="tab" role="tab" aria-selected="true"  id="t-flash" aria-controls="p-flash" data-os="flash">Flash an image</button>
       <button class="tab" role="tab" aria-selected="false" id="t-curl"  aria-controls="p-curl"  data-os="curl">Take over a running machine</button>
     </div>
 
     <div class="panel" id="p-flash" role="tabpanel" aria-labelledby="t-flash">
-      <p><b><a href="/configurator/">Build your image</a></b>, write it to the SD card or USB stick, and power the machine on. That is the whole job.</p>
-      <p>Your Wi-Fi, your SSH key and your pairing code go into the image as it downloads, so the install runs start to finish with nobody watching. No screen, no keyboard, no SSH. It comes up already belonging to you, so there is nothing to claim and nobody on your network can get there first.</p>
-      <p class="note">Raspberry Pi 3/4/5 today. Everyone gets the same published image with one small settings file swapped inside it, so the only part that differs between your download and anyone else's is the part you asked for. Your copy will not match the published checksum, because your settings are in it; if you want to check that hash yourself, download the plain image instead and set the Box up on the machine. Steps in the <a href="/docs/raspberry-pi.html">Raspberry Pi guide</a>.</p>
+      <div class="dl">
+        <select id="pi-model" class="mono" aria-label="Machine">
+          <option value="thebox-pi5" selected>Raspberry Pi 5</option>
+          <option value="thebox-pi4">Raspberry Pi 4</option>
+          <option value="thebox-pi3">Raspberry Pi 3</option>
+        </select>
+        <button type="button" class="go2" id="pi-go" disabled>Download my image</button>
+      </div>
+      <p>Your public key and the hash of your pairing code are written into the image as it downloads. Write it to the SD card or USB stick, power the machine on, and walk away: the install runs start to finish with nobody watching, and the Box comes up already yours. No screen, no keyboard, no SSH.</p>
+      <p class="note">Wi-Fi, disk layout, a name, a tunnel: the <a href="/configurator/">Configurator</a> builds this same image with those choices in it.</p>
     </div>
 
     <div class="panel" id="p-curl" role="tabpanel" aria-labelledby="t-curl" hidden>
-      <p><b><a href="/configurator/">Build your command</a></b>, then paste it on the machine you want to convert, or into an SSH session to it. It looks like this, with your settings carried inside it:</p>
+      <p class="cmdlbl" style="margin-top:0">On a Linux machine or VPS, or an SSH session into one:</p>
       <div class="cmd">
         <span class="prompt">$</span>
-        <code id="cmd-linux">curl -fsSL https://thebox.build/install.sh | sudo BOX_YES=1 BOX_ORDERS_B64=&lt;yours&gt; sh</code>
+        <code id="cmd-linux">building your command…</code>
+        <button type="button" data-copy="cmd-linux">copy</button>
       </div>
-      <p>Those orders are the whole point: they carry your SSH key and your pairing code, so the install runs start to finish without you and the Box comes up already belonging to you. Ten minutes later it is on your network as <code>box.local</code>.</p>
-      <p class="note">There is no version of this to copy without building it first. A bare command has no orders, and the installer refuses to wipe a machine it has no instructions for.</p>
-      <p class="note">Works on any Linux machine or VPS. From <b>Windows</b>, run <code>irm https://thebox.build/install.ps1 | iex</code> in an elevated PowerShell. For a machine with <b>no OS to take over</b>, boot the installer from a stick and set it up on the machine itself: the <a href="/docs/install.html#bare-metal">bare-metal guide</a>. <b>Macs</b> take the same paths: the <a href="/docs/install.html#mac">Mac guide</a>.</p>
+      <p class="cmdlbl">On Windows, in an elevated PowerShell:</p>
+      <div class="cmd">
+        <span class="prompt">&gt;</span>
+        <code id="cmd-win">building your command…</code>
+        <button type="button" data-copy="cmd-win">copy</button>
+      </div>
+      <p>Either command wipes the machine on paste and installs unattended. Your public key and the hash of your pairing code ride base64 inside it, so there is nothing to download or move, and the Box comes up already yours.</p>
+      <p class="note">Wi-Fi, disk layout, a name, a tunnel: the <a href="/configurator/">Configurator</a> builds this same command with those choices in it. Bare metal with no OS, and Macs: the <a href="/docs/install.html">install guide</a>.</p>
     </div>
   </div>
 
@@ -297,6 +360,156 @@
     navigator.clipboard.writeText(document.getElementById(b.dataset.copy).textContent);
     const o=b.textContent; b.textContent='copied'; setTimeout(()=>b.textContent=o,1200);
   }));
+
+  /* Step 1: the form. A public key in, a pairing code out, and the two
+     deliveries (image, command) built from them right here. */
+  (function () {
+    const $ = s => document.querySelector(s);
+    if (!$("#keyin")) return;
+
+    // Ed25519 keypair, fully client-side. Same construction as the Configurator.
+    function b64(bytes) { let s=""; bytes.forEach(b => s += String.fromCharCode(b)); return btoa(s); }
+    function u32(n) { return new Uint8Array([(n>>>24)&255,(n>>>16)&255,(n>>>8)&255,n&255]); }
+    function concat(...arrs) {
+      let len = arrs.reduce((a,x)=>a+x.length,0), out = new Uint8Array(len), o=0;
+      arrs.forEach(a => { out.set(a,o); o += a.length; }); return out;
+    }
+    function sshStr(bytes) { const b = new Uint8Array(bytes); return concat(u32(b.length), b); }
+    const enc = new TextEncoder();
+    function opensshPub(pub32) {
+      return "ssh-ed25519 " + b64(concat(sshStr(enc.encode("ssh-ed25519")), sshStr(pub32))) + " box@generated";
+    }
+    function opensshPriv(seed32, pub32, comment) {
+      const pubBlob = concat(sshStr(enc.encode("ssh-ed25519")), sshStr(pub32));
+      const check = crypto.getRandomValues(new Uint8Array(4));
+      let priv = concat(check, check, sshStr(enc.encode("ssh-ed25519")), sshStr(pub32),
+        sshStr(concat(seed32, pub32)), sshStr(enc.encode(comment)));
+      let pad = 1; while (priv.length % 8 !== 0) priv = concat(priv, new Uint8Array([pad++]));
+      const body = concat(enc.encode("openssh-key-v1\0"),
+        sshStr(enc.encode("none")), sshStr(enc.encode("none")), sshStr(new Uint8Array(0)),
+        u32(1), sshStr(pubBlob), sshStr(priv));
+      return "-----BEGIN OPENSSH PRIVATE KEY-----\n" + b64(body).replace(/(.{70})/g, "$1\n") + "\n-----END OPENSSH PRIVATE KEY-----\n";
+    }
+
+    function validPubKey(k) {
+      return /^(ssh-ed25519|ssh-rsa|ecdsa-sha2-\S+|sk-ssh-ed25519@openssh\.com)\s+[A-Za-z0-9+/=]+/.test(k.trim());
+    }
+    function download(name, text) {
+      // octet-stream, not text/plain: a browser appends .txt to an
+      // extensionless text download, and ssh wants id_ed25519 exactly.
+      const blob = new Blob([text], { type: "application/octet-stream" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    // Pairing code: 80 bits, minted here. Only its hash rides in the orders;
+    // the code itself never leaves this page.
+    const enrollCode = [...crypto.getRandomValues(new Uint8Array(10))]
+      .map(b => b.toString(16).padStart(2, "0")).join("");
+    let enrollHash = null;
+
+    function orders() {
+      const cfg = { erase_disk: true, hostname: "auto", disk: "auto" };
+      const k = $("#keyin").value.trim();
+      if (k && validPubKey(k)) cfg.ssh_authorized_keys = [k];
+      cfg.enrollment_code_hash = enrollHash;
+      return JSON.stringify(cfg, null, 2) + "\n";
+    }
+
+    function renderCmds() {
+      const k = $("#keyin").value.trim();
+      const bad = !!k && !validPubKey(k);
+      $("#key-err").textContent = bad ? "Not an SSH public key. It starts with ssh-ed25519 or ssh-rsa." : "";
+      if (!enrollHash) return;
+      if (bad) {
+        $("#cmd-linux").textContent = "fix the key above and your command builds here";
+        $("#cmd-win").textContent = "fix the key above and your command builds here";
+        $("#pi-go").disabled = true;
+        return;
+      }
+      const rider = btoa(unescape(encodeURIComponent(orders())));
+      $("#cmd-linux").textContent = `curl -fsSL https://thebox.build/install.sh | sudo BOX_YES=1 BOX_ORDERS_B64='${rider}' sh`;
+      $("#cmd-win").textContent = `$env:BOX_ORDERS_B64='${rider}'; irm https://thebox.build/install.ps1 | iex`;
+      $("#pi-go").disabled = false;
+    }
+    $("#keyin").addEventListener("input", renderCmds);
+
+    crypto.subtle.digest("SHA-256", enc.encode(enrollCode)).then(h => {
+      enrollHash = [...new Uint8Array(h)].map(x => x.toString(16).padStart(2, "0")).join("");
+      $("#paircode").textContent = enrollCode;
+      renderCmds();
+    }).catch(e => console.error("pairing code", e));
+
+    $("#cp-code").addEventListener("click", e => {
+      navigator.clipboard.writeText(enrollCode);
+      const b = e.currentTarget, o = b.textContent;
+      b.textContent = "copied"; setTimeout(() => b.textContent = o, 1200);
+    });
+
+    // Generate: both halves shown, both saveable. A keypair where you only get
+    // one part is not a keypair.
+    $("#key-gen").addEventListener("click", async () => {
+      const btn = $("#key-gen"), lbl = btn.querySelector("span");
+      btn.disabled = true; lbl.textContent = "Generating…";
+      try {
+        const kp = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]);
+        const rawPub = new Uint8Array(await crypto.subtle.exportKey("raw", kp.publicKey));
+        const pkcs8 = new Uint8Array(await crypto.subtle.exportKey("pkcs8", kp.privateKey));
+        const pub = opensshPub(rawPub);
+        const priv = opensshPriv(pkcs8.slice(-32), rawPub, "box@generated"); // pkcs8: last 32 bytes are the seed
+        $("#keyin").value = pub;
+        renderCmds();
+        $("#privout").innerHTML = `
+          <div class="privkey">
+            <div class="warn">Private key. Save it now: it is shown once and never leaves this browser.</div>
+            <textarea id="priv-text" readonly spellcheck="false"></textarea>
+            <div class="row">
+              <button type="button" class="mini" id="dl-both">Save both keys</button>
+              <button type="button" class="mini" id="dl-priv">id_ed25519</button>
+              <button type="button" class="mini" id="cp-priv">Copy private</button>
+            </div>
+            <div class="warn" style="margin-top:.7rem">Public key. Already in the field above, so it rides in your image and your command.</div>
+            <textarea id="pub-text" readonly spellcheck="false" style="min-height:3em"></textarea>
+            <div class="row">
+              <button type="button" class="mini" id="dl-pub">id_ed25519.pub</button>
+              <button type="button" class="mini" id="cp-pub">Copy public</button>
+            </div>
+            <div class="hint" style="margin-top:.5rem">On your laptop: save both into <code>~/.ssh/</code>, then <code>chmod 600 ~/.ssh/id_ed25519</code>, and you can ssh to the Box with them.</div>
+          </div>`;
+        $("#priv-text").value = priv;
+        $("#pub-text").value = pub;
+        $("#dl-priv").addEventListener("click", () => download("id_ed25519", priv));
+        $("#dl-pub").addEventListener("click", () => download("id_ed25519.pub", pub + "\n"));
+        $("#dl-both").addEventListener("click", () => {
+          download("id_ed25519", priv);
+          // Two saves in a row: give the first one a moment or the second is dropped.
+          setTimeout(() => download("id_ed25519.pub", pub + "\n"), 350);
+        });
+        $("#cp-priv").addEventListener("click", () => navigator.clipboard.writeText(priv));
+        $("#cp-pub").addEventListener("click", () => navigator.clipboard.writeText(pub));
+      } catch (err) {
+        $("#key-err").textContent = "This browser can't generate Ed25519 keys. Paste an existing public key instead.";
+      } finally {
+        btn.disabled = false; lbl.textContent = "Generate a keypair";
+      }
+    });
+
+    // The image: a native form POST, so the browser streams a multi-gigabyte
+    // download straight to disk with its own progress bar. The server writes
+    // these orders into the image as the bytes go past.
+    const IMAGE_ENDPOINT = "https://thebox-images.fluxoz.workers.dev";
+    $("#pi-go").addEventListener("click", () => {
+      const f = document.createElement("form");
+      f.method = "POST";
+      f.action = `${IMAGE_ENDPOINT}/image/${$("#pi-model").value}`;
+      const field = document.createElement("input");
+      field.type = "hidden"; field.name = "orders"; field.value = orders();
+      f.appendChild(field);
+      document.body.appendChild(f); f.submit(); f.remove();
+    });
+  })();
 </script>
 </body>
 </html>

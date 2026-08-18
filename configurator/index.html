@@ -318,7 +318,7 @@ input.invalid, textarea.invalid { border-color: var(--critical); box-shadow: 0 0
 .privkey textarea { min-height: 120px; font-size: 11px; }
 
 /* deploy / vectors */
-.vectors { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.vectors { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 @media (max-width: 560px) { .vectors { grid-template-columns: 1fr; } }
 .vec {
   border: 1px solid var(--line-strong); border-radius: 3px; padding: 12px; cursor: pointer;
@@ -406,9 +406,9 @@ footer.foot b { color: var(--dim); }
     <p class="eyebrow">Unit Configuration // Pre-Deployment</p>
     <h1>Configure a unit for field deployment.</h1>
     <p class="lede">
-      Answer a few questions and this console assembles a <b>deployment file</b> —
-      the single set of orders that turns any machine into a Box.
-      Everything runs locally: <b>nothing you enter leaves this browser.</b>
+      Answer a few questions and this console builds your orders into one of the
+      two ways a machine becomes a Box: a <b>flash image</b>, or <b>one pasted
+      command</b>. Everything runs locally: <b>nothing you enter leaves this browser.</b>
     </p>
   </div>
 
@@ -587,30 +587,16 @@ footer.foot b { color: var(--dim); }
             <div class="vectors" role="radiogroup" aria-label="Deployment vector">
               <div class="vec active" data-vec="pi" tabindex="0" role="radio" aria-checked="true">
                 <span class="code">VEC-01</span><span class="name">Flash an image</span>
-                <span class="desc">Raspberry Pi. Write it, power on, done.</span>
+                <span class="desc">SD card or USB stick. Write it, power on, done.</span>
               </div>
               <div class="vec" data-vec="sh" tabindex="0" role="radio" aria-checked="false">
-                <span class="code">VEC-02</span><span class="name">curl | sh</span>
-                <span class="desc">Take over a running Linux box or VPS.</span>
-              </div>
-              <div class="vec" data-vec="usb" tabindex="0" role="radio" aria-checked="false">
-                <span class="code">VEC-03</span><span class="name">USB Stick</span>
-                <span class="desc">Bare metal with no OS to take over.</span>
-              </div>
-              <div class="vec" data-vec="win" tabindex="0" role="radio" aria-checked="false">
-                <span class="code">VEC-04</span><span class="name">From Windows</span>
-                <span class="desc">Convert a running PC in place.</span>
-              </div>
-              <div class="vec" data-vec="pxe" tabindex="0" role="radio" aria-checked="false">
-                <span class="code">VEC-05</span><span class="name">Network / PXE</span>
-                <span class="desc">Fleets. Self-install over the wire.</span>
+                <span class="code">VEC-02</span><span class="name">Take over a running machine</span>
+                <span class="desc">Linux, VPS, or Windows. One pasted command.</span>
               </div>
             </div>
           </div>
 
           <div class="deploybar">
-            <button type="button" class="btn primary" id="download" disabled><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v8M4.5 6.5 8 10l3.5-3.5M2.5 13.5h11"/></svg> Download deployment file</button>
-            <button type="button" class="btn" id="copy" disabled>Copy JSON</button>
             <span class="gate" id="gate">Arm the unit to enable</span>
           </div>
 
@@ -618,11 +604,16 @@ footer.foot b { color: var(--dim); }
 
           <div class="jsonview">
             <div class="jhead">
-              <span class="t">box-install.json</span>
-              <span class="t" id="bytes" style="color:var(--faint)">— bytes</span>
+              <span class="t">the orders riding inside</span>
+              <span style="display:flex;gap:8px;align-items:center">
+                <span class="t" id="bytes" style="color:var(--faint)">— bytes</span>
+                <button type="button" class="btn small ghost" id="download" disabled>Save</button>
+                <button type="button" class="btn small ghost" id="copy" disabled>Copy</button>
+              </span>
             </div>
             <pre id="json"><span class="jk">{ }</span></pre>
           </div>
+          <p class="field-note">This is <code class="inline">box-install.json</code>, the orders themselves. The image and the command carry it for you; save it only for the fleet and bare-metal paths in the <a href="/docs/install.html">docs</a>.</p>
         </div>
       </section>
     </form>
@@ -999,11 +990,13 @@ footer.foot b { color: var(--dim); }
     if (ready) { gate.innerHTML = '<svg class="ico ico--sm" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="8" cy="8" r="4"/></svg> Ready'; gate.style.color = "var(--ok)"; }
     else if (!armed) { gate.textContent = "Arm the unit to enable"; gate.style.color = "var(--critical)"; }
     else { gate.textContent = "Complete required fields above"; gate.style.color = "var(--critical)"; }
-    // Both of these render from the live config: the curl vector embeds the
-    // orders, and the image vector states whether the download carries secrets.
-    // Re-render on every change or that security claim goes stale the moment
-    // someone types a Wi-Fi password after picking the vector.
-    if (vector === "sh" || vector === "pi") renderInstructions();
+    // The instructions render from the live config: the command vector embeds
+    // the orders, the image vector states whether the download carries
+    // secrets, and both gate their output on the unit being armed and
+    // complete. Re-render on every change or all of that goes stale the
+    // moment someone types a Wi-Fi password after picking the vector.
+    lastReady = ready;
+    renderInstructions();
 
     // The claim link carries the code, so pairing is one click rather than
     // sixteen typed characters. An "auto" designation names itself per unit, so
@@ -1032,47 +1025,14 @@ footer.foot b { color: var(--dim); }
   $("#copy").addEventListener("click", () => { navigator.clipboard.writeText(currentJSON); toast("JSON copied"); });
 
   /* ---------- vectors + instructions ---------- */
+  // Two vectors, because there are two ways a machine becomes a Box: flash the
+  // image, or paste the command. Fleets and bare-metal recovery ride the same
+  // orders via the docs; they are not doors of their own.
   let vector = "pi";
-  const VEC = {
-    usb: {
-      head: "VEC-03 · USB Stick — bare metal",
-      steps: [
-        'Write the generic <b>Box installer image</b> to a USB stick (8&nbsp;GB+). One image serves every install — it is never personalized.',
-        'Drop <code>box-install.json</code> onto the stick, or onto a second FAT-formatted stick labeled <code>BOX-INSTALL</code>.',
-        'Boot the target machine from USB and confirm the erase prompt once.',
-        'About ten minutes later the Box is online at <code>&lt;name&gt;.local</code>.'
-      ],
-      cav: "Works on any UEFI machine. This is also the recovery path if anything else goes wrong."
-    },
-    win: {
-      head: "VEC-04 · From Windows — convert in place",
-      steps: [
-        'Download the <b>Box for Windows</b> payload folder.',
-        'Put <code>box-install.json</code> in the same folder as <code>stage.ps1</code>.',
-        'Right-click <code>stage.ps1</code> → <b>Run as administrator</b> (it shows the erase warning first).',
-        'It stages the installer, sets a one-shot boot entry, and reboots into the wipe. If anything fails before the wipe, the next boot is Windows, untouched.'
-      ],
-      cav: "UEFI only, and Secure Boot must be off until we ship a signed loader. If Windows has pending updates, let them finish and run stage.ps1 once more."
-    },
-    pxe: {
-      head: "VEC-05 · Network / PXE — fleets",
-      steps: [
-        'Serve the Box <b>netboot</b> kernel and initrd from your PXE / iPXE setup (or a mirror you host).',
-        'Host this <code>box-install.json</code> over HTTP and add <code>box.install-url=http://&lt;server&gt;/box-install.json</code> to the kernel command line.',
-        'For a fleet, serve a per-machine file keyed by MAC — an agent can generate one deployment file per unit.',
-        'Every machine that netboots installs itself and, with an auto designation, self-names <code>box-&lt;id&gt;.local</code>.'
-      ],
-      cav: "No keyboard or screen needed on the targets — the strongest path for racks and for agent-driven provisioning."
-    }
-  };
+  let lastReady = false;
   function renderInstructions() {
-    if (vector === "sh") { renderShVector(); return; }
-    if (vector === "pi") { renderPiVector(); return; }
-    const v = VEC[vector];
-    $("#instructions").innerHTML =
-      `<div class="ihead">${v.head}</div>
-       <ol>${v.steps.map(s => `<li>${s}</li>`).join("")}</ol>
-       <div class="cav">${v.cav}</div>`;
+    if (vector === "sh") renderShVector();
+    else renderPiVector();
   }
   // Never throws on a config that has not been built yet.
   function carriesSecrets() {
@@ -1083,27 +1043,38 @@ footer.foot b { color: var(--dim); }
   }
 
   function renderShVector() {
-    // Embed the orders in the command — base64 (UTF-8 safe). Nothing to move.
-    const b64 = btoa(unescape(encodeURIComponent(currentJSON)));
     const secret = carriesSecrets();
-    // BOX_YES=1: you already consented here, by building orders that say
-    // erase_disk and pasting the command they produced. Without it the install
-    // stops at a "type ERASE" prompt, which is not unattended. The caveat below
-    // says plainly that this wipes on paste, because that is now the truth.
-    const cmd = `curl -fsSL https://thebox.build/install.sh | sudo BOX_YES=1 BOX_ORDERS_B64='${b64}' sh`;
     $("#instructions").innerHTML = `
-      <div class="ihead">VEC-02 · curl | sh — a running Linux machine or VPS</div>
+      <div class="ihead">VEC-02 · Take over a running machine</div>
       <ol>
-        <li>On the machine you want to convert (or an SSH session into it), paste the command below.</li>
+        <li>On a running Linux machine or VPS (or an SSH session into it), paste the first command. On Windows, paste the second into an <b>elevated</b> PowerShell.</li>
         <li>It <b>erases every disk</b> and installs Box OS — your orders are embedded, so there is nothing to download or move.</li>
         <li>A few minutes later it comes up at <code>&lt;name&gt;.local</code>; pair it with the code above.</li>
       </ol>
-      <div class="cmdbox"><code id="sh-cmd"></code><button type="button" class="btn small ghost" id="cp-cmd">Copy</button></div>
+      ${lastReady ? `
+      <div style="padding:0 13px 13px">
+        <div class="lbl">Linux / VPS</div>
+        <div class="cmdbox" style="margin:4px 0 0"><code id="sh-cmd"></code><button type="button" class="btn small ghost" id="cp-cmd">Copy</button></div>
+        <div class="lbl" style="margin-top:10px">Windows · elevated PowerShell</div>
+        <div class="cmdbox" style="margin:4px 0 0"><code id="win-cmd"></code><button type="button" class="btn small ghost" id="cp-win">Copy</button></div>
+      </div>
       <div class="cav ${secret ? "cav-secret" : ""}">${secret
         ? "Wipes on paste, no prompt. It also carries secrets (Wi-Fi password / tunnel token), so do not paste it anywhere public."
-        : "Wipes on paste, no prompt. Carries no secrets: only the box name, disk choice, your SSH public key, and the pairing-code hash."}</div>`;
-    $("#sh-cmd").textContent = cmd; // textContent avoids any HTML interpretation
-    $("#cp-cmd").addEventListener("click", () => { navigator.clipboard.writeText(cmd); toast("Command copied"); });
+        : "Wipes on paste, no prompt. Carries no secrets: only the box name, disk choice, your SSH public key, and the pairing-code hash."}</div>`
+      : '<div class="cav">Arm the unit and complete the modules above, and the commands generate here.</div>'}`;
+    if (!lastReady) return;
+    // Embed the orders in both commands — base64 (UTF-8 safe). Nothing to move.
+    // BOX_YES=1: you already consented here, by arming orders that say
+    // erase_disk and pasting the command they produced. Without it the install
+    // stops at a "type ERASE" prompt, which is not unattended. The caveat above
+    // says plainly that this wipes on paste, because that is the truth.
+    const b64 = btoa(unescape(encodeURIComponent(currentJSON)));
+    const sh = `curl -fsSL https://thebox.build/install.sh | sudo BOX_YES=1 BOX_ORDERS_B64='${b64}' sh`;
+    const ps = `$env:BOX_ORDERS_B64='${b64}'; irm https://thebox.build/install.ps1 | iex`;
+    $("#sh-cmd").textContent = sh; // textContent avoids any HTML interpretation
+    $("#win-cmd").textContent = ps;
+    $("#cp-cmd").addEventListener("click", () => { navigator.clipboard.writeText(sh); toast("Command copied"); });
+    $("#cp-win").addEventListener("click", () => { navigator.clipboard.writeText(ps); toast("Command copied"); });
   }
 
   // Where personalized images are served from.
@@ -1118,9 +1089,9 @@ footer.foot b { color: var(--dim); }
   function renderPiVector() {
     if (!imagesReady) {
       $("#instructions").innerHTML = `
-        <div class="ihead">VEC-01 · Raspberry Pi — your image, flashed</div>
+        <div class="ihead">VEC-01 · Flash an image</div>
         <p class="note">Personalized image downloads are not switched on yet. Until they are, use
-        <b>VEC-02 · curl | sh</b> on a spare PC or VPS, which carries the same pairing code and SSH key
+        <b>VEC-02 · Take over a running machine</b>, which carries the same pairing code and SSH key
         and installs unattended. Your pairing code above is already valid either way.</p>
         <div class="cav">Nothing here is broken; this door just is not open yet.</div>`;
       return;
@@ -1130,24 +1101,25 @@ footer.foot b { color: var(--dim); }
     // of buffering it into a Blob in this tab.
     //
     // Everyone downloads the same image. The server swaps one small file
-    // inside it as the bytes go past, so the Pi boots already knowing who owns
-    // it and there is nothing to claim over the network.
+    // inside it as the bytes go past, so the machine boots already knowing who
+    // owns it and there is nothing to claim over the network.
     const secret = carriesSecrets();
     $("#instructions").innerHTML = `
-      <div class="ihead">VEC-01 · Raspberry Pi — your image, flashed</div>
+      <div class="ihead">VEC-01 · Flash an image</div>
       <ol>
-        <li>Pick your model and download the image. Your settings are written into it as it downloads.</li>
-        <li>Write it to the SD card with <b>Raspberry Pi Imager</b> or <b>Etcher</b>. Do not use Imager's own customisation screen; everything is already in the image.</li>
-        <li>Put the card in the Pi and power it on. No screen, no keyboard, no SSH.</li>
+        <li>Pick your machine and download the image. Your orders are written into it as it downloads.</li>
+        <li>Write it to the SD card or USB stick with <b>Raspberry Pi Imager</b>, <b>Etcher</b>, or <code>dd</code>. Skip Imager's customisation screen; everything is already in the image.</li>
+        <li>Put it in the machine and power on. No screen, no keyboard, no SSH — the install runs unattended.</li>
         <li>A few minutes later it is at <code>&lt;name&gt;.local</code>. Pair it with the code above.</li>
       </ol>
-      <div class="deploybar" style="margin-top:9px">
-        <select id="pi-model" class="mono" aria-label="Raspberry Pi model">
+      <div class="deploybar" style="margin:9px 13px 13px">
+        <select id="pi-model" class="mono" aria-label="Machine">
           <option value="thebox-pi5" selected>Raspberry Pi 5</option>
           <option value="thebox-pi4">Raspberry Pi 4</option>
           <option value="thebox-pi3">Raspberry Pi 3</option>
         </select>
-        <button type="button" class="btn small" id="pi-go">Download my image</button>
+        <button type="button" class="btn small" id="pi-go" ${lastReady ? "" : "disabled"}>Download my image</button>
+        ${lastReady ? "" : '<span class="gate">Arm the unit above</span>'}
       </div>
       <div class="cav ${secret ? "cav-secret" : ""}">${secret
         ? "This image carries secrets (Wi-Fi password / tunnel token). Treat the file like a key: it installs a Box that trusts you."
