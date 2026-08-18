@@ -1114,27 +1114,43 @@ footer.foot b { color: var(--dim); }
         <li>Put the card in the Pi and power it on. No screen, no keyboard, no SSH.</li>
         <li>A few minutes later it is at <code>&lt;name&gt;.local</code>. Pair it with the code above.</li>
       </ol>
-      <form id="pi-form" method="POST" action="${IMAGE_ENDPOINT}/image/thebox-pi5">
-        <input type="hidden" name="orders" id="pi-orders">
-        <div class="deploybar" style="margin-top:9px">
-          <select id="pi-model" class="mono" aria-label="Raspberry Pi model">
-            <option value="thebox-pi5" selected>Raspberry Pi 5</option>
-            <option value="thebox-pi4">Raspberry Pi 4</option>
-            <option value="thebox-pi3">Raspberry Pi 3</option>
-          </select>
-          <button type="submit" class="btn small">Download my image</button>
-        </div>
-      </form>
+      <div class="deploybar" style="margin-top:9px">
+        <select id="pi-model" class="mono" aria-label="Raspberry Pi model">
+          <option value="thebox-pi5" selected>Raspberry Pi 5</option>
+          <option value="thebox-pi4">Raspberry Pi 4</option>
+          <option value="thebox-pi3">Raspberry Pi 3</option>
+        </select>
+        <button type="button" class="btn small" id="pi-go">Download my image</button>
+      </div>
       <div class="cav ${secret ? "cav-secret" : ""}">${secret
         ? "This image carries secrets (Wi-Fi password / tunnel token). Treat the file like a key: it installs a Box that trusts you."
         : "The image carries no secrets — only the box name, your SSH public key if you added one, and the pairing-code hash. The code itself stays with you."}</div>`;
-    const form = $("#pi-form"), model = $("#pi-model");
-    // Set the orders at submit time so late edits are always included.
-    form.addEventListener("submit", () => {
-      $("#pi-orders").value = currentJSON;
-      form.action = `${IMAGE_ENDPOINT}/image/${model.value}`;
-      toast("Building your image…");
-    });
+    // A form built and submitted on click, rather than markup.
+    //
+    // This panel renders INSIDE the page's main <form>, and HTML forbids
+    // nesting forms: the parser silently drops the inner one, so the element
+    // was never in the DOM and wiring a submit handler to it threw — which
+    // killed the rest of init, including the pairing code. Building the form
+    // here and appending it to <body> keeps it out of the outer form, and a
+    // native submit still streams the download straight to disk.
+    const go = $("#pi-go"), model = $("#pi-model");
+    if (go && model) {
+      go.addEventListener("click", () => {
+        const f = document.createElement("form");
+        f.method = "POST";
+        f.action = `${IMAGE_ENDPOINT}/image/${model.value}`;
+        const field = document.createElement("input");
+        field.type = "hidden";
+        field.name = "orders";
+        // Read at click time, so late edits are always included.
+        field.value = currentJSON;
+        f.appendChild(field);
+        document.body.appendChild(f);
+        f.submit();
+        f.remove();
+        toast("Building your image…");
+      });
+    }
   }
   $$(".vec").forEach(el => {
     const pick = () => {
@@ -1194,8 +1210,25 @@ footer.foot b { color: var(--dim); }
   // render() first: it is what fills currentJSON. renderInstructions() reads
   // that for the curl and image vectors, so the old order threw at load the
   // moment either of them became the default.
-  render();
-  renderInstructions();
-  initPairingCode();
+  //
+  // Each step is isolated. One of these threw once — a null element from a
+  // <form> the parser had dropped — and because they run in sequence it took
+  // the pairing code down with it: the page looked fine and simply never
+  // showed the credential the whole install depends on. A failure in one part
+  // of this page must not silently disable another.
+  for (const [what, step] of [
+    ["render", render],
+    ["instructions", renderInstructions],
+    ["pairing code", initPairingCode],
+  ]) {
+    try {
+      const r = step();
+      if (r && typeof r.catch === "function") {
+        r.catch((e) => console.error(`configurator: ${what} failed`, e));
+      }
+    } catch (e) {
+      console.error(`configurator: ${what} failed`, e);
+    }
+  }
 })();
 </script>
