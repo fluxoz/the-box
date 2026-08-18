@@ -1187,7 +1187,10 @@ footer.foot b { color: var(--dim); }
     if (!panel.classList.contains("open")) return;
     let cfg = null;
     try { cfg = JSON.parse(currentJSON || "{}"); } catch { cfg = {}; }
-    const named = cfg && cfg.hostname && cfg.hostname !== "auto";
+    // Only a VALIDATED name goes into this markup: the field's raw value can
+    // hold anything mid-typing, and this page never puts unchecked input into
+    // innerHTML (everything else here uses textContent for exactly that reason).
+    const named = cfg && cfg.hostname && cfg.hostname !== "auto" && validHostname(cfg.hostname);
     const secret = carriesSecrets();
     panel.innerHTML = `
       <p class="field-note">Run this on any Linux machine on the same network (it is <b>not</b> wiped —
