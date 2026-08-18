@@ -365,6 +365,35 @@ def main() -> int:
         check(not not_stripe, "every machine checkout is a Stripe link",
               "; ".join(not_stripe)[:80])
 
+        # --- one site, one header --------------------------------------------
+        # Every page wears the same band: same brand (a home link), same five
+        # global nav links, in the same order. This drifted into five different
+        # headers once; the shared markup contract plus this check is what
+        # stops it happening again.
+        canonical = None
+        for path in ("/", "/store/", "/why/", "/configurator/",
+                     "/docs/", "/docs/install.html", "/docs/fleet.html"):
+            page.goto(f"{base}{path}", wait_until="domcontentloaded")
+            brand = page.get_attribute(".sitehead .sh-brand", "href")
+            check(brand is not None and brand.rstrip("/").endswith(f"127.0.0.1:{port}") or brand == "/",
+                  f"{path}: the brand links home", repr(brand))
+            nav = page.eval_on_selector_all(
+                ".sitehead .sh-nav a",
+                "els => els.map(e => e.textContent.trim() + '=' + e.getAttribute('href'))",
+            )
+            if canonical is None:
+                canonical = nav
+                check(
+                    nav == [
+                        "Configurator=/configurator/", "Store=/store/", "Why=/why/",
+                        "Docs=/docs/", "GitHub=https://github.com/fluxoz/the-box",
+                    ],
+                    "the global nav is the canonical five", "; ".join(nav),
+                )
+            else:
+                check(nav == canonical, f"{path}: same header as every other page",
+                      "; ".join(nav)[:80])
+
         # --- the page did not quietly break --------------------------------
         check(not errors, "no uncaught errors on the page", "; ".join(errors[:2]))
 
