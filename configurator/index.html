@@ -256,6 +256,17 @@ input[type="text"], input[type="password"], textarea {
 }
 textarea { resize: vertical; min-height: 74px; }
 input::placeholder, textarea::placeholder { color: var(--faint); }
+select {
+  font-family: ui-monospace, monospace; font-size: 12.5px; color: var(--ink);
+  background-color: var(--bg); border: 1px solid var(--line-strong); border-radius: 2px;
+  padding: 8px 32px 8px 11px; cursor: pointer;
+  appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M4 6l4 4 4-4' fill='none' stroke='%236c6455' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/></svg>"); background-repeat: no-repeat; background-position: right 9px center; background-size: 14px;
+}
+@media (prefers-color-scheme: dark) { select { background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M4 6l4 4 4-4' fill='none' stroke='%23948a68' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/></svg>"); } }
+:root[data-theme="light"] select { background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M4 6l4 4 4-4' fill='none' stroke='%236c6455' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/></svg>"); }
+:root[data-theme="dark"] select { background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M4 6l4 4 4-4' fill='none' stroke='%23948a68' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/></svg>"); }
+select:focus { outline: none; border-color: var(--brass); box-shadow: 0 0 0 3px var(--brass-wash); }
 input:focus, textarea:focus { outline: none; border-color: var(--brass); box-shadow: 0 0 0 3px var(--brass-wash); }
 input.invalid, textarea.invalid { border-color: var(--critical); box-shadow: 0 0 0 3px var(--critical-wash); }
 .err { color: var(--critical); font-size: 12px; font-family: ui-monospace, monospace; min-height: 0; }
@@ -598,7 +609,7 @@ footer.foot b { color: var(--dim); }
           </div>
 
           <div class="deploybar">
-            <span class="gate" id="gate">Complete required fields above</span>
+            <span class="gate" id="gate"></span>
           </div>
 
           <div class="instructions" id="instructions"></div>
@@ -908,16 +919,22 @@ footer.foot b { color: var(--dim); }
     return cfg;
   }
 
-  /* ---------- problems (gates the download) ---------- */
+  /* ---------- problems (gate the outputs, and say WHICH field) ---------- */
+  // "Complete required fields above" with no name reads as a broken page.
+  // Each problem is the sentence the gate shows.
   function problems() {
     const p = [];
     if ($("input[name=namemode]:checked").value === "custom") {
       const h = $("#hostname").value.trim();
-      if (!h) p.push("designation"); else if (!validHostname(h)) p.push("bad-hostname");
+      if (!h) p.push("Identity: type a name, or switch back to Auto-assign");
+      else if (!validHostname(h)) p.push("Identity: that name is not a valid hostname");
     }
-    if ($("input[name=netmode]:checked").value === "wifi" && !$("#ssid").value.trim()) p.push("ssid");
-    if ($("input[name=expmode]:checked").value === "cf" && !$("#cftoken").value.trim()) p.push("cf-token");
-    if ($("input[name=diskmode]:checked").value === "custom" && !$("#diskpath").value.trim()) p.push("disk");
+    if ($("input[name=netmode]:checked").value === "wifi" && !$("#ssid").value.trim())
+      p.push("Network: enter the Wi-Fi name, or switch back to Ethernet");
+    if ($("input[name=expmode]:checked").value === "cf" && !$("#cftoken").value.trim())
+      p.push("Public Exposure: paste the tunnel token, or switch back to Private");
+    if ($("input[name=diskmode]:checked").value === "custom" && !$("#diskpath").value.trim())
+      p.push("Target Disk: enter the device path, or pick Auto");
     return p;
   }
 
@@ -983,7 +1000,7 @@ footer.foot b { color: var(--dim); }
     $("#copy").disabled = !ready;
     const gate = $("#gate");
     if (ready) { gate.innerHTML = '<svg class="ico ico--sm" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="8" cy="8" r="4"/></svg> Ready'; gate.style.color = "var(--ok)"; }
-    else { gate.textContent = "Complete required fields above"; gate.style.color = "var(--critical)"; }
+    else { gate.textContent = probs.join("  ·  "); gate.style.color = "var(--critical)"; }
     // The instructions render from the live config: the command vector embeds
     // the orders, the image vector states whether the download carries
     // secrets, and both gate their output on the unit being armed and
@@ -1059,7 +1076,7 @@ footer.foot b { color: var(--dim); }
       <div class="cav ${secret ? "cav-secret" : ""}">${secret
         ? "Wipes on paste, no prompt. It also carries secrets (Wi-Fi password / tunnel token), so do not paste it anywhere public."
         : "Wipes on paste, no prompt. Carries no secrets: only the box name, disk choice, your SSH public key, and the pairing-code hash."}</div>`
-      : '<div class="cav">Complete the modules above, and the commands generate here.</div>'}`;
+      : '<div class="cav">' + (problems()[0] || "Complete the modules above") + '. The commands generate here the moment the form is complete.</div>'}`;
     if (!lastReady) return;
     // Embed the orders in both commands — base64 (UTF-8 safe). Nothing to move.
     // BOX_YES=1: you already consented here, by arming orders that say
@@ -1118,7 +1135,7 @@ footer.foot b { color: var(--dim); }
           <option value="thebox-pi3">Raspberry Pi 3</option>
         </select>
         <button type="button" class="btn small" id="pi-go" ${lastReady ? "" : "disabled"}>Download</button>
-        ${lastReady ? "" : '<span class="gate">Complete the modules above</span>'}
+        ${lastReady ? "" : '<span class="gate">' + (problems()[0] || "Complete the modules above") + '</span>'}
       </div>
       <div class="cav ${secret ? "cav-secret" : ""}">${secret
         ? "This image carries secrets (Wi-Fi password / tunnel token). Treat the file like a key: it installs a Box that trusts you."
@@ -1208,7 +1225,7 @@ footer.foot b { color: var(--dim); }
         <div class="cav ${secret ? "cav-secret" : ""}">${secret
           ? "The command and boot.ipxe carry secrets (Wi-Fi password / tunnel token): anyone on this network who can read them can boot a machine that trusts you."
           : "The command and boot.ipxe carry no secrets: the box name policy, your SSH public key, and the pairing-code hash."}</div>`
-        : '<div class="cav">Complete the modules above, and the fleet command generates here.</div>'}
+        : '<div class="cav">' + (problems()[0] || "Complete the modules above") + '. The fleet command generates here the moment the form is complete.</div>'}
       </div>`;
     if (!lastReady) return;
     const b64 = btoa(unescape(encodeURIComponent(currentJSON)));
