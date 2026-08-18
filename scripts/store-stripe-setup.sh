@@ -100,6 +100,12 @@ ensure "order-minisforum-x1pro"  "Inference Box order: Minisforum AI X1 Pro (96G
 ensure "order-beelink-me-mini"   "Starter Box order: Beelink ME mini (N150)"          "$(dep beelink-me-mini)"     "$ORDER_MSG"
 ensure "kit-usb"                 "The Installer Kit"                                  9900 "$KIT_MSG"
 
+# The Pro tier does not exist yet, so its reservation is a flat refundable
+# deposit that counts toward the total when the machines do. Never a GitHub
+# issue: every store flow runs through Stripe (John, 2026-08-18).
+PRO_MSG="Reserved. The 192GB machines are expected this fall; the moment we can bench one, you get the quote first, and your deposit counts toward the total. Fully refundable any time until yours ships."
+ensure "order-pro-192"           "Reservation: The Pro tier (192GB)"                  9900 "$PRO_MSG"
+
 # Box Cloud: a $9/mo subscription with 30 free days, so billing never starts
 # before the service is provisioned and connected. Same idempotency rules.
 CLOUD_MSG="Subscribed. Your first 30 days are free; we email connection instructions for your Box within a few days, and billing only begins after the trial. Cancel any time from the receipt email."

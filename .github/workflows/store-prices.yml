@@ -5,9 +5,11 @@
 # in static HTML — which they did: the first run of this check found one
 # machine $800 cheaper than the page claimed.
 #
-# Price moves beyond taste get a human: drift findings become a GitHub issue,
-# because the Stripe deposit links can only be re-minted by a person holding
-# the key (scripts/store-stripe-setup.sh).
+# Price moves beyond taste get a human: drift FAILS this run, which GitHub
+# emails to the owner — never a repo issue (standing rule: GitHub issues are
+# not part of any product or ops flow). The fix is human because the Stripe
+# deposit links can only be re-minted by a person holding the key
+# (scripts/store-stripe-setup.sh).
 name: Nightly store prices
 
 on:
@@ -17,7 +19,6 @@ on:
 
 permissions:
   contents: write # push the pricing branch
-  issues: write # surface drift
 
 jobs:
   prices:
@@ -42,21 +43,17 @@ jobs:
           git push -f origin pricing-tmp:pricing
 
       - name: Surface drift to a human
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           drift=$(python3 -c "import json; print('\n'.join(json.load(open('/tmp/pricing.json'))['drift']))")
           [ -n "$drift" ] || { echo "no drift"; exit 0; }
-          title="Store prices drifted"
-          # printf, not a multi-line string: a YAML literal block ends at the
-          # first dedented line, so an unindented markdown code fence inside
-          # one silently truncates the workflow file.
-          # shellcheck disable=SC2016 # the backticks are markdown, not expansion
-          body=$(printf 'The nightly price check found:\n\n```\n%s\n```\n\nUpdate `baked_hardware` / `deposit_cents` in `scripts/store-catalog.json`, re-run `scripts/store-stripe-setup.sh` if a deposit changed (it prints the new payment-link URLs for the store page), and update the static numbers in `site/store/index.html`.' "$drift")
-          n=$(gh issue list --state open --search "in:title \"$title\"" --json number -q '.[0].number' || true)
-          if [ -n "$n" ]; then
-            gh issue comment "$n" --body "$body"
-          else
-            gh issue create --title "$title" --body "$body"
-          fi
+          echo "::error title=Store prices drifted::the store's totals or deposits no longer match reality"
+          echo "$drift"
+          echo
+          echo "Update baked_hardware / deposit_cents in scripts/store-catalog.json, re-run"
+          echo "scripts/store-stripe-setup.sh if a deposit changed (it prints the new"
+          echo "payment-link URLs), and update the static numbers in site/store/index.html."
+          # A red run is the alert: GitHub emails the owner on scheduled-workflow
+          # failure. The pricing branch was already pushed above, so the live
+          # page still shows the checked numbers while the deposit catches up.
+          exit 1
