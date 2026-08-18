@@ -6,6 +6,14 @@ name: Publish thebox.build
 
 on:
   push:
+    # A tag cuts a Release. A push to main deploys the SITE, and only the site:
+    # every Release/worker/pi/channel job below is individually tag-gated.
+    #
+    # Without this, site changes sat on main looking finished while
+    # thebox.build served the previous release's page — the Configurator was
+    # weeks stale and nothing said so, because "merged" and "live" were
+    # different things and no signal connected them.
+    branches: ["main"]
     tags: ["v*"]
   workflow_dispatch: {} # manual run: deploys Pages; skips the Release
 
@@ -93,9 +101,20 @@ jobs:
           PIN_NAME=box-os PIN_KEEP=10 .github/scripts/push-closure.sh "$sys"
 
       - name: Stage the bundle + stamp the Release URL into install.sh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF_NAME}"
+          # On a tag this IS the release. On a push to main it is not: stamping
+          # "main" here would point install.sh at a download URL that does not
+          # exist, so resolve the newest published release instead. Getting this
+          # wrong ships a site whose one-liner 404s.
+          case "${GITHUB_REF}" in
+            refs/tags/*) tag="${GITHUB_REF_NAME}" ;;
+            *) tag=$(gh release view --json tagName -q .tagName) ;;
+          esac
+          [ -n "$tag" ] || { echo "::error::could not resolve a release tag to stamp"; exit 1; }
+          echo "stamping netboot base with $tag"
           rel="https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}"
           mkdir -p pub
           cp -rL result/. pub/
