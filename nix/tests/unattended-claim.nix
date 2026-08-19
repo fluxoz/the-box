@@ -28,7 +28,7 @@ let
   # then NUL padding out to the fixed 8192-byte file. The padding is the point —
   # the file's length never changes, so the filesystem is never touched.
   claimFile = pkgs.runCommand "box-claim.txt" { } ''
-    orders='{"erase_disk":true,"hostname":"auto","enrollment_code_hash":"${codeHash}"}'
+    orders='{"erase_disk":true,"hostname":"auto","enrollment_code_hash":"${codeHash}","static_ip":{"address":"192.168.1.50/24","gateway":"192.168.1.1","dns":["1.1.1.1","9.9.9.9"]}}'
     printf '%s\n' "$orders" > $out
     # Pad with NULs to 8192, the way a stored-block payload is padded.
     len=$(stat -c %s $out)
@@ -62,6 +62,17 @@ pkgs.testers.runNixOSTest {
     with subtest("first boot adopted the orders written into the image"):
         machine.succeed("test -f /etc/box/install-config.json")
         machine.succeed("grep -q '${codeHash}' /etc/box/install-config.json")
+
+    with subtest("the static address became a NetworkManager keyfile"):
+        # NM itself is off in this test (the framework scripts the network);
+        # what firstboot owns is the keyfile, so that is what is asserted.
+        conn = "/etc/NetworkManager/system-connections/box-lan.nmconnection"
+        machine.succeed(f"test -f {conn}")
+        machine.succeed(f'[ "$(stat -c %a {conn})" = 600 ]')
+        out = machine.succeed(f"cat {conn}")
+        assert "method=manual" in out, "static orders must produce a manual connection"
+        assert "address1=192.168.1.50/24,192.168.1.1" in out, f"bad address line:\n{out}"
+        assert "dns=1.1.1.1;9.9.9.9;" in out and "ignore-auto-dns=true" in out, f"bad dns:\n{out}"
 
     with subtest("the Box is answering"):
         machine.succeed("curl -fsS http://127.0.0.1:2693/api/v1/health | grep -q health")
