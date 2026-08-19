@@ -283,9 +283,34 @@
     }, secs * 1000);
   }
 
+  // A select with data-switch shows only the [data-case] blocks in its form
+  // whose case list contains the selected value (the backup backend picker).
+  // Hidden groups still submit their (empty) fields; with JS off, every
+  // group simply renders. Delegated, so swapped-in views need no re-arm.
+  function applySwitches(scope) {
+    var sels = (scope || document).querySelectorAll("select[data-switch]");
+    for (var i = 0; i < sels.length; i++) {
+      var form = sels[i].closest("form");
+      if (!form) continue;
+      var cases = form.querySelectorAll("[data-case]");
+      for (var k = 0; k < cases.length; k++) {
+        var wants = cases[k].getAttribute("data-case").split(" ");
+        cases[k].style.display = wants.indexOf(sels[i].value) >= 0 ? "" : "none";
+      }
+    }
+  }
+  document.addEventListener("change", function (e) {
+    if (e.target && e.target.matches && e.target.matches("select[data-switch]")) {
+      applySwitches(e.target.closest("form"));
+    }
+  });
+  var origSwap2 = new MutationObserver(function () { applySwitches(document); });
+  origSwap2.observe(main, { childList: true });
+
   // Arm for the page we loaded on; swap() re-arms after every view change.
   watchJob();
   watchLive();
+  applySwitches(document);
 })();
 
 // ---- security keys (WebAuthn) ---------------------------------------------

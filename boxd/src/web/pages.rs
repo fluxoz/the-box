@@ -244,7 +244,17 @@ pub async fn index(
                                                 span.muted { (d) }
                                             }
                                         },
-                                        None => { span.muted { "private (LAN only)" } },
+                                        // "private (LAN only)" conflated two very
+                                        // different blast radii; say which it is.
+                                        None => {
+                                            @let expose = s.params.get("expose").and_then(|v| v.as_str());
+                                            @match expose {
+                                                Some("internal") => { span.muted { "private · this Box only" } },
+                                                Some("exposed") => { span.muted { "LAN · direct port" } },
+                                                _ if s.template == "container" => { span.muted { "LAN · proxied" } },
+                                                _ => { span.muted { "LAN" } },
+                                            }
+                                        },
                                     }
                                 }
                                 td {
@@ -791,6 +801,91 @@ fn deploy_request_from_form(form: NewServiceForm) -> Result<ops::DeployRequest, 
     })
 }
 
+#[derive(serde::Deserialize)]
+pub struct AccessForm {
+    mode: String,
+    #[serde(default)]
+    domain: Option<String>,
+}
+
+/// Change who can reach a service: private (this Box), LAN, or public. The
+/// change is a redeploy with the same template and params — only the exposure
+/// facts move — so it rides the same jobified, health-gated path as any deploy.
+pub async fn service_access(
+    State(state): State<SharedState>,
+    Path(name): Path<String>,
+    Form(form): Form<AccessForm>,
+) -> Redirect {
+    let config = match BoxConfig::load(&state.paths) {
+        Ok(c) => c,
+        Err(e) => return err_redirect(&e),
+    };
+    let Some(svc) = config.find(&name).cloned() else {
+        return err_redirect(&anyhow::anyhow!("no service named {name}"));
+    };
+    let is_container = svc.template == "container";
+    let image = svc.params.get("image").and_then(|v| v.as_str()).unwrap_or("");
+    let looks_like_db = ["postgres", "mysql", "mariadb", "redis", "valkey", "mongo",
+        "clickhouse", "memcached", "etcd"]
+        .iter()
+        .any(|d| image.contains(d));
+    let mut params = match svc.params.clone() {
+        serde_json::Value::Object(m) => m,
+        _ => serde_json::Map::new(),
+    };
+    let (domain, public) = match form.mode.as_str() {
+        "private" if is_container => {
+            params.insert("expose".into(), "internal".into());
+            (Some(String::new()), Some(false))
+        }
+        "lan" => {
+            if is_container {
+                // Web-shaped containers go behind the Box's nginx (their port
+                // stays closed); raw-protocol ones can only open the port.
+                let mode = if looks_like_db { "exposed" } else { "proxied" };
+                params.insert("expose".into(), mode.into());
+            }
+            (Some(String::new()), Some(false))
+        }
+        "public" if !(is_container && looks_like_db) => {
+            let d = form.domain.unwrap_or_default().trim().to_string();
+            if d.is_empty() {
+                return err_redirect(&anyhow::anyhow!(
+                    "a public service needs a domain — type one under Public"
+                ));
+            }
+            if is_container {
+                params.insert("expose".into(), "proxied".into());
+            }
+            (Some(d), Some(true))
+        }
+        other => {
+            return err_redirect(&anyhow::anyhow!(
+                "access mode {other:?} does not apply to {name}"
+            ))
+        }
+    };
+    let request = ops::DeployRequest {
+        name: name.clone(),
+        template: svc.template.clone(),
+        params: serde_json::Value::Object(params),
+        domain,
+        public,
+        port: svc.port,
+    };
+    let jobs = state.jobs.clone();
+    let target = format!("/service/{name}");
+    let id = jobs.start("deploy", format!("Changing access for {name}"), target, move |p| {
+        p.phase("waiting for other changes to finish");
+        let _guard = state.apply_lock.lock().unwrap_or_else(|e| e.into_inner());
+        p.phase(format!("rebuilding with the new access for {name}"));
+        let info = ops::deploy(&state.paths, state.builder.as_ref(), request)?;
+        p.phase("applied");
+        Ok(format!("Access updated — now at generation #{}", info.number))
+    });
+    Redirect::to(&format!("/jobs/{id}"))
+}
+
 pub async fn create_service(
     State(state): State<SharedState>,
     Form(form): Form<NewServiceForm>,
@@ -1143,9 +1238,14 @@ fn backup_form(config: &BoxConfig, submit: &str) -> Markup {
         form.stack method="post" action="/backup/configure" {
             div.row2 {
                 label { "Backend"
-                    select name="kind" {
-                        @for k in ["local", "s3", "sftp", "rest"] {
-                            option value=(k) selected[kind == k] { (k) }
+                    select name="kind" data-switch {
+                        @for (k, label) in [
+                            ("s3", "S3 bucket (Backblaze, R2, any S3)"),
+                            ("local", "local disk / USB"),
+                            ("sftp", "SFTP server"),
+                            ("rest", "restic REST server"),
+                        ] {
+                            option value=(k) selected[if kind.is_empty() { k == "s3" } else { kind == k }] { (label) }
                         }
                     }
                 }
@@ -1157,26 +1257,43 @@ fn backup_form(config: &BoxConfig, submit: &str) -> Markup {
                     }
                 }
             }
-            p.field-note { "Fill the fields for your chosen backend; leave the rest blank." }
-            label { "Path " span.muted { "(local dir, or SFTP remote path)" }
-                input type="text" name="path" value=(val(|b| b.path.clone())) placeholder="/mnt/usb/box-backups";
+            // Only the chosen backend's fields show (dash.js switches on the
+            // select); with JS off every group renders, which still works.
+            div data-case="local sftp" {
+                label { "Path " span.muted { "(local dir, or SFTP remote path)" }
+                    input type="text" name="path" value=(val(|b| b.path.clone())) placeholder="/mnt/usb/box-backups";
+                }
             }
-            div.row2 {
-                label { "S3 endpoint" input type="text" name="endpoint" value=(val(|b| b.endpoint.clone())) placeholder="s3.us-west-002.backblazeb2.com"; }
-                label { "S3 bucket" input type="text" name="bucket" value=(val(|b| b.bucket.clone())) placeholder="my-box-backups"; }
+            div data-case="s3" {
+                div.row2 {
+                    label { "S3 endpoint" input type="text" name="endpoint" value=(val(|b| b.endpoint.clone())) placeholder="s3.us-west-002.backblazeb2.com"; }
+                    label { "S3 bucket" input type="text" name="bucket" value=(val(|b| b.bucket.clone())) placeholder="my-box-backups"; }
+                }
+                div.row2 {
+                    label { "S3 access key" input type="password" name="access_key" placeholder="•••••• (keep current)"; }
+                    label { "S3 secret key" input type="password" name="secret_key" placeholder="•••••• (keep current)"; }
+                }
+                details {
+                    summary { "Advanced" }
+                    label { "S3 prefix " span.muted { "(folder inside the bucket; several boxes can share one)" }
+                        input type="text" name="prefix" value=(val(|b| b.prefix.clone())) placeholder="box-1";
+                    }
+                }
             }
-            div.row2 {
-                label { "S3 prefix" input type="text" name="prefix" value=(val(|b| b.prefix.clone())) placeholder="box-1"; }
-                label { "S3 access key" input type="password" name="access_key" placeholder="•••••• (keep current)"; }
+            div data-case="sftp" {
+                div.row2 {
+                    label { "SFTP host" input type="text" name="host" value=(val(|b| b.host.clone())); }
+                    label { "SFTP user" input type="text" name="user" value=(val(|b| b.user.clone())); }
+                }
+                details {
+                    summary { "Advanced" }
+                    label { "SFTP port"
+                        input type="text" name="port" value=(b.and_then(|bk| bk.port).map(|p| p.to_string()).unwrap_or_default()) placeholder="22";
+                    }
+                }
             }
-            label { "S3 secret key" input type="password" name="secret_key" placeholder="•••••• (keep current)"; }
-            div.row2 {
-                label { "SFTP host" input type="text" name="host" value=(val(|b| b.host.clone())); }
-                label { "SFTP user" input type="text" name="user" value=(val(|b| b.user.clone())); }
-            }
-            div.row2 {
-                label { "SFTP port" input type="text" name="port" value=(b.and_then(|bk| bk.port).map(|p| p.to_string()).unwrap_or_default()) placeholder="22"; }
-                label { "REST url" input type="text" name="url" value=(val(|b| b.url.clone())); }
+            div data-case="rest" {
+                label { "REST url" input type="text" name="url" value=(val(|b| b.url.clone())) placeholder="https://restic.example.com/box"; }
             }
             button.btn type="submit" { (submit) }
         }
@@ -1202,10 +1319,8 @@ pub async fn backup(State(state): State<SharedState>, Query(flash): Query<Flash>
     let body = html! {
         h2 { "Backup" }
         p.muted {
-            "Client-side encrypted backups to a destination you own — your S3/Backblaze bucket, "
-            "an SFTP server, another Box, or a USB disk. The key is generated here and never leaves "
-            "this Box, so we (and your storage provider) can't read a backup. What gets backed up is "
-            "derived from your services automatically; the OS rebuilds from config."
+            "Encrypted on this Box before anything leaves it. Nobody, including us, "
+            "can read your backups. Your services' data is included automatically."
         }
 
         @if ready {
@@ -1273,9 +1388,20 @@ pub async fn backup(State(state): State<SharedState>, Query(flash): Query<Flash>
                 div style="margin-top:.75rem" { (backup_form(&config, "Save destination")) }
             }
         } @else {
+            // The easy door first: managed storage, one decision. The form
+            // below stays the free, bring-your-own door — same encryption,
+            // your bucket, your keys.
+            section.cards {
+                div.card {
+                    h3 { "Box Cloud Backup" }
+                    p { "Offsite storage on our infrastructure, zero setup: no bucket, no keys, "
+                        "no provider account. This Box still holds the only encryption key. $9/mo." }
+                    p { a.btn href="/system" { "Link Box Cloud" } }
+                }
+            }
             section {
-                h2 { "Set up a destination" }
-                p.muted { "Pick where encrypted backups go. A recovery key is generated on save — write it down." }
+                h2 { "Or bring your own destination" }
+                p.muted { "An S3 bucket, a USB disk, an SFTP server. Free forever. A recovery key is generated on save — write it down." }
                 (backup_form(&config, "Save & enable"))
             }
         }
@@ -2797,6 +2923,29 @@ pub async fn service_detail(
             .unwrap_or_else(|| "—".into())
     };
 
+    // Access: where this service can be reached from, in three honest levels.
+    let is_container = svc.template == "container";
+    let expose = svc
+        .params
+        .get("expose")
+        .and_then(|v| v.as_str())
+        .unwrap_or(if is_container { "internal" } else { "lan" });
+    let image = svc.params.get("image").and_then(|v| v.as_str()).unwrap_or("");
+    // Not authorization — a hint. Raw-protocol services have no login page to
+    // hide behind and no HTTP for the proxy to front, so they get direct-port
+    // LAN exposure and a sterner warning.
+    let looks_like_db = ["postgres", "mysql", "mariadb", "redis", "valkey", "mongo",
+        "clickhouse", "memcached", "etcd"]
+        .iter()
+        .any(|d| image.contains(d));
+    let mode_now = if svc.domain.is_some() && svc.public {
+        "public"
+    } else if is_container && expose == "internal" {
+        "private"
+    } else {
+        "lan"
+    };
+
     let body = html! {
         div.section-head {
             h2 { (svc.name) }
@@ -2837,6 +2986,56 @@ pub async fn service_detail(
                         @if link.build.is_some() { " · built on the Box" }
                     }
                 }
+            }
+        }
+
+        section {
+            div.section-head { h2 { "Access" } span.hint { "who can reach it" } }
+            form.stack method="post" action={ "/service/" (svc.name) "/access" } {
+                @if is_container {
+                    label.radio {
+                        input type="radio" name="mode" value="private" checked[mode_now == "private"];
+                        span {
+                            b { "Private" } " · only this Box. Other services here reach it at "
+                            code { "127.0.0.1:" (svc.port.map(|p| p.to_string()).unwrap_or_default()) }
+                            "; nothing on your network can."
+                        }
+                    }
+                }
+                label.radio {
+                    input type="radio" name="mode" value="lan" checked[mode_now == "lan"];
+                    span {
+                        b { "LAN" } " · anyone on your network. "
+                        @if is_container && looks_like_db {
+                            "This looks like a database: its port opens directly, with no "
+                            "login page in front. Apps on this Box already reach it "
+                            "privately. Open it only if another machine must connect."
+                        } @else if is_container {
+                            "Served through the Box's own front door (nginx); the container's "
+                            "port stays closed."
+                        } @else {
+                            "Served by the Box's front door on your network."
+                        }
+                    }
+                }
+                @if !(is_container && looks_like_db) {
+                    label.radio {
+                        input type="radio" name="mode" value="public" checked[mode_now == "public"];
+                        span {
+                            b { "Public" } " · the whole internet, through your tunnel. "
+                            "Anything without its own login is public property the moment this "
+                            "applies. Needs a domain:"
+                        }
+                    }
+                    input type="text" name="domain" placeholder="app.example.com"
+                        value=(svc.domain.clone().unwrap_or_default());
+                } @else {
+                    p.field-note {
+                        "No Public option: this speaks a raw protocol, not the web — a tunnel "
+                        "cannot front it. For remote access, use Box Connect (private mesh)."
+                    }
+                }
+                button.btn type="submit" { "Apply access" }
             }
         }
 
