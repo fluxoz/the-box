@@ -236,8 +236,10 @@ let
       # and left with nothing to boot. Check first.
       if [ ! -d /sys/firmware/efi ]; then
         log "this machine booted in legacy BIOS mode, and Box OS boots via UEFI."
-        log "NOTHING HAS BEEN CHANGED. Enable UEFI in the firmware settings and"
-        log "run this again, or install from the USB image on older hardware."
+        log "NOTHING HAS BEEN CHANGED. If the firmware has a UEFI mode: enable it,"
+        log "then boot the Box USB installer — switching modes strands the current"
+        log "OS, so the curl|sh takeover has nothing left to run on. A machine with"
+        log "no UEFI mode at all cannot boot Box OS."
         exit 1
       fi
 
