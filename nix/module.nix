@@ -698,6 +698,16 @@ in
           ];
         }) cfg.containers;
 
+        # Host directories for volume mounts. podman refuses to create them
+        # ("statfs ...: no such file or directory"), so a container with a
+        # data volume — the normal case for a database — failed on first
+        # start. Only absolute host paths need this; named volumes podman
+        # manages itself.
+        systemd.tmpfiles.rules = lib.concatLists (lib.mapAttrsToList
+          (_: c: map (v: "d ${lib.head (lib.splitString ":" v)} 0755 root root -")
+            (lib.filter (v: lib.hasPrefix "/" v) c.volumes))
+          cfg.containers);
+
         # Each container's secret env file is an agenix secret, decrypted at
         # runtime to /run/agenix (root, 0400) where the container service reads it.
         age.secrets = lib.mapAttrs'
