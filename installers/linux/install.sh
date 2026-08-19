@@ -53,6 +53,16 @@ verify_sha() { # <file> <expected-hash>
 
 [ "$(id -u)" = 0 ] || die "run as root: pipe into 'sudo sh'."
 
+# Box OS boots via UEFI (systemd-boot). A kernel kexec'd from a BIOS-mode boot
+# comes up without EFI, so the installer would refuse — but only on the
+# machine's own console, AFTER the ssh session this ran from is gone. The
+# running OS already knows its boot mode; refuse here, while the machine can
+# still answer.
+[ -d /sys/firmware/efi ] || die "this machine is booted in legacy BIOS mode, and Box OS boots via UEFI. \
+Nothing has been changed. If the firmware has a UEFI mode: enable it, then boot the Box USB \
+installer from https://thebox.build — switching modes usually strands the OS this command needs. \
+A machine with no UEFI mode cannot boot Box OS."
+
 # kexec is the one thing stock distros usually lack — install it for them.
 ensure_kexec() {
   command -v kexec >/dev/null 2>&1 && return 0
