@@ -278,10 +278,25 @@ def main() -> int:
         # A styled radio: the visible <span> takes the click, so drive the
         # label a person would actually press.
         page.click("label:has(input[name=namemode][value=custom])")
-        page.fill("#hostname", "kitchen")
+        page.fill("#hostname", "kitchen-rack-long-name-32-chars")
         page.dispatch_event("#hostname", "input")
+        # Everything filled: Wi-Fi with a max-length WPA passphrase, a
+        # real-sized Cloudflare tunnel token, minimum disk, force, power off.
+        # The commands this produces must still fit their transports.
+        page.click("label:has(input[name=netmode][value=wifi])")
+        page.fill("#ssid", "A-Real-Household-Network-Name")
+        page.fill("#wpass", "p" * 63)
+        page.dispatch_event("#wpass", "input")
+        page.click("label:has(input[name=expmode][value=cf])")
+        page.fill("#cftoken", "eyJhIjoi" + "x" * 240)
+        page.dispatch_event("#cftoken", "input")
+        page.click("#adv-toggle")
+        page.fill("#mindisk", "100")
+        page.dispatch_event("#mindisk", "input")
+        page.click("label:has(input[name=finish][value=poweroff])")
+        page.click(".arm:has(#force)")
         link = page.get_attribute("#claimlink", "href") or ""
-        check(cfg_code and cfg_code in link and "kitchen.local" in link,
+        check(cfg_code and cfg_code in link and "kitchen-rack-long-name-32-chars.local" in link,
               "naming the Box produces a claim link with its code", link[:60])
         orders_text = page.evaluate(
             "() => document.querySelector('#json')?.innerText"
@@ -297,8 +312,13 @@ def main() -> int:
         check(parsed is not None, "the page exposes the orders it built", orders_text[:60])
 
         if parsed is not None:
-            check(parsed.get("hostname") == "kitchen", "a configured hostname reaches the orders",
-                  repr(parsed.get("hostname")))
+            check(parsed.get("hostname") == "kitchen-rack-long-name-32-chars",
+                  "a configured hostname reaches the orders", repr(parsed.get("hostname")))
+            check(parsed.get("wifi", {}).get("password") == "p" * 63
+                  and parsed.get("cloudflare_tunnel_token", "").startswith("eyJhIjoi")
+                  and parsed.get("min_disk_gb") == 100 and parsed.get("force") is True
+                  and parsed.get("finish") == "poweroff",
+                  "every option reaches the orders")
             check(bool(parsed.get("ssh_authorized_keys")), "the generated key reaches the orders")
             check(len(str(parsed.get("enrollment_code_hash", ""))) == 64,
                   "the orders carry a full pairing hash")
@@ -331,6 +351,14 @@ def main() -> int:
               "arming yields a curl command with orders embedded", sh_cmd[:70])
         check("BOX_ORDERS_B64='" in cfg_win_cmd and "install.ps1" in cfg_win_cmd,
               "arming yields a Windows command with orders embedded", cfg_win_cmd[:70])
+        # The rider becomes the kexec KERNEL COMMAND LINE (2048-byte cap on
+        # x86-64; the installer's own params use ~230). A fully loaded form
+        # must still fit, or the funnel breaks exactly for the people who
+        # configured the most.
+        mb = re.search(r"BOX_ORDERS_B64='([A-Za-z0-9+/=]+)'", sh_cmd)
+        check(mb is not None and len(mb.group(1)) + 230 <= 2048,
+              "the maximal takeover command fits the kernel command line",
+              f"b64 {len(mb.group(1)) if mb else 0} chars")
 
         # --- the fleet panel: PXE is the network delivery of the same orders -
         # Not a third door (the vector count above pins that); it must still
@@ -368,6 +396,24 @@ def main() -> int:
             if m and fleet_orders is not None:
                 check(json.loads(base64.b64decode(m.group(1))) == fleet_orders,
                       "boot.ipxe and the depot command carry the same orders")
+
+        # --- oversized orders are steered, not handed a doomed command ------
+        # Three RSA-sized keys blow past the kernel line; the takeover door
+        # must say so (and disable Copy) instead of emitting a command that
+        # dies at kexec after the 570MB download. The flash door, whose claim
+        # file holds 8KB, stays open.
+        for i in range(3):
+            page.fill("#keyin", f"ssh-rsa {'A' * 690}{i}= qa@bigkey{i}")
+            page.click("#key-add")
+        big_sh = page.text_content("#sh-cmd") or ""
+        check("too large" in big_sh and "install.sh" not in big_sh,
+              "an oversized rider is refused with directions, not emitted", big_sh[:60])
+        check(page.eval_on_selector("#cp-cmd", "b => b.disabled"),
+              "the doomed command cannot be copied")
+        page.click("[data-vec=pi]")
+        page.wait_for_selector("#pi-go", timeout=5_000)
+        check(page.eval_on_selector("#pi-go", "b => !b.disabled"),
+              "the flash door stays open for the same orders")
 
         # --- the store: every machine card is wired for live pricing --------
         # The nightly price check publishes totals the page fills in by

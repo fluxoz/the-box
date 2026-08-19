@@ -678,6 +678,16 @@ footer.foot b { color: var(--dim); }
   }
   const flashCopied = (btn) => flashBtn(btn, "Copied");
 
+  // How big the encoded orders may get, per door. The takeover rides the
+  // kexec KERNEL COMMAND LINE, capped at 2048 bytes on x86-64; the installer's
+  // own parameters use ~230 of them. Windows stages the orders as a file, but
+  // the pasted console line itself has an ~8K ceiling. The flash image carries
+  // an 8191-byte claim file, so it is the roomy door we steer to.
+  const KEXEC_B64_MAX = 1750;
+  const WIN_B64_MAX = 7500;
+  const CLAIM_BYTES_MAX = 8191;
+  const TOO_BIG = (n, max) => n > max;
+
   function toast(msg) {
     const t = $("#toast"); t.textContent = msg; t.classList.add("show");
     clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), 1900);
@@ -1089,8 +1099,20 @@ footer.foot b { color: var(--dim); }
     const b64 = btoa(unescape(encodeURIComponent(currentJSON)));
     const sh = `curl -fsSL https://thebox.build/install.sh | sudo BOX_YES=1 BOX_ORDERS_B64='${b64}' sh`;
     const ps = `$env:BOX_ORDERS_B64='${b64}'; irm https://thebox.build/install.ps1 | iex`;
-    $("#sh-cmd").textContent = sh; // textContent avoids any HTML interpretation
-    $("#win-cmd").textContent = ps;
+    // Oversized orders would die at kexec with a cryptic error after the
+    // download; say so here instead, and point at the roomy door.
+    if (TOO_BIG(b64.length, KEXEC_B64_MAX)) {
+      $("#sh-cmd").textContent = "Your orders are too large for the one-line takeover (they ride the ~2KB kernel command line). Flash the image instead: the same orders fit inside it with room to spare. Trimming SSH keys also helps.";
+      $("#cp-cmd").disabled = true;
+    } else {
+      $("#sh-cmd").textContent = sh; // textContent avoids any HTML interpretation
+    }
+    if (TOO_BIG(b64.length, WIN_B64_MAX)) {
+      $("#win-cmd").textContent = "Your orders are too large to paste as one console line. Flash the image instead.";
+      $("#cp-win").disabled = true;
+    } else {
+      $("#win-cmd").textContent = ps;
+    }
     $("#cp-cmd").addEventListener("click", () => { navigator.clipboard.writeText(sh); flashCopied($("#cp-cmd")); });
     $("#cp-win").addEventListener("click", () => { navigator.clipboard.writeText(ps); flashCopied($("#cp-win")); });
   }
@@ -1152,6 +1174,10 @@ footer.foot b { color: var(--dim); }
     // here and appending it to <body> keeps it out of the outer form, and a
     // native submit still streams the download straight to disk.
     const go = $("#pi-go"), model = $("#pi-model");
+    if (go && TOO_BIG(new Blob([currentJSON]).size, CLAIM_BYTES_MAX)) {
+      go.disabled = true;
+      go.textContent = "Orders too large";
+    }
     if (go && model) {
       go.addEventListener("click", () => {
         const f = document.createElement("form");
@@ -1233,7 +1259,12 @@ footer.foot b { color: var(--dim); }
     if (!lastReady) return;
     const b64 = btoa(unescape(encodeURIComponent(currentJSON)));
     const cmd = `curl -fsSL https://thebox.build/pxe.sh | sudo BOX_ORDERS_B64='${b64}' sh`;
-    $("#pxe-cmd").textContent = cmd;
+    if (TOO_BIG(b64.length, KEXEC_B64_MAX)) {
+      $("#pxe-cmd").textContent = "Your orders are too large for the netboot kernel command line (~2KB). Flash the image instead and boot each machine from the same stick, or trim SSH keys.";
+      $("#cp-pxe").disabled = true;
+    } else {
+      $("#pxe-cmd").textContent = cmd;
+    }
     $("#cp-pxe").addEventListener("click", () => { navigator.clipboard.writeText(cmd); flashCopied($("#cp-pxe")); });
     // For people with their own PXE server: the same orders as a tiny iPXE
     // script that chains the published netboot.ipxe (which honors ${cmdline}),

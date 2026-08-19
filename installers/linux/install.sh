@@ -86,6 +86,15 @@ fi
 grep -q '"erase_disk"[[:space:]]*:[[:space:]]*true' "$ORDERS" \
   || die "orders do not consent to erase_disk:true — refusing to touch any disk."
 
+# The orders ride the kexec KERNEL COMMAND LINE, which caps at 2048 bytes on
+# x86-64 (the installer's own parameters use ~230 of them). Oversized orders
+# would die at kexec with a cryptic error after the big download; refuse now,
+# while nothing has happened, and name the door with room.
+orders_b64_probe=$(base64 -w0 "$ORDERS")
+[ "${#orders_b64_probe}" -le 1750 ] \
+  || die "your orders are too large for the takeover's kernel command line (~2KB). \
+Flash the image from https://thebox.build instead — the same orders ride inside it with room to spare — or trim SSH keys."
+
 name=$(sed -n 's/.*"hostname"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ORDERS" | head -1)
 
 cat >&2 <<EOF
@@ -136,6 +145,7 @@ verify_sha "$WORK/netboot.ipxe" "$IPXE_SHA256"
 # use the USB path.
 orders_b64=$(base64 -w0 "$ORDERS")
 
+# shellcheck disable=SC2016 # ${cmdline} is an iPXE variable being stripped, not shell
 params=$(grep '^kernel' "$WORK/netboot.ipxe" \
   | sed -e 's/^kernel bzImage //' -e 's/ initrd=initrd//' -e 's/ *${cmdline}//')
 [ -n "$params" ] || die "could not parse boot parameters from netboot.ipxe."
