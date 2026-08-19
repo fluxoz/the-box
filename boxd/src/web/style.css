@@ -281,6 +281,19 @@ button.danger:hover { border-color: var(--critical); color: var(--critical); }
 button.btn { border: none; color: var(--bg); }
 button.btn:hover { color: var(--bg); }
 
+/* ---- access radios ----
+   One choice per line, the consequence written next to it. */
+label.radio {
+  display: flex; gap: .6rem; align-items: baseline;
+  padding: .55rem .7rem; margin: 0 0 .45rem;
+  border: 1px solid var(--line); border-radius: 3px; background: var(--panel-2);
+  font-size: 13.5px; line-height: 1.5; cursor: pointer;
+}
+label.radio input[type=radio] { flex: none; margin: 0; position: relative; top: 2px; }
+label.radio:has(input:checked) { border-color: var(--brass); background: var(--brass-wash); }
+label.radio input { margin-right: .5rem; }
+label.radio b { text-transform: uppercase; font-size: 12px; letter-spacing: .05em; }
+
 /* ---- flash bars ---- */
 .flash {
   font-family: var(--mono); font-size: 13px; padding: 11px 14px; border-radius: 3px; margin-bottom: 20px;
