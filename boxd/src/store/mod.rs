@@ -11,10 +11,12 @@
 
 pub mod local;
 pub mod nix;
+pub mod nixlog;
 
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
@@ -23,6 +25,39 @@ use serde::Serialize;
 use crate::paths::Paths;
 
 pub const PROFILE: &str = "box";
+
+/// Live output from a running build: raw lines for a job log, and real
+/// (done, expected) counts when the backend knows them.
+pub trait BuildWatch: Send + Sync {
+    fn line(&self, line: &str);
+    fn units(&self, done: u64, expected: u64);
+}
+
+std::thread_local! {
+    static WATCH: std::cell::RefCell<Option<Arc<dyn BuildWatch>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Install `watch` as this thread's build watch. A job's worker thread does
+/// this with its own Progress, so ANY build that runs inside ANY job streams
+/// its output into the job — no call site has to thread a handle through.
+/// The guard resets on drop; nesting is not supported (jobs do not nest).
+pub fn set_thread_watch(watch: Arc<dyn BuildWatch>) -> WatchGuard {
+    WATCH.with(|c| *c.borrow_mut() = Some(watch));
+    WatchGuard
+}
+
+pub struct WatchGuard;
+
+impl Drop for WatchGuard {
+    fn drop(&mut self) {
+        WATCH.with(|c| *c.borrow_mut() = None);
+    }
+}
+
+pub(crate) fn thread_watch() -> Option<Arc<dyn BuildWatch>> {
+    WATCH.with(|c| c.borrow().clone())
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct GenerationInfo {

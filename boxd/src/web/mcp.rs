@@ -1669,7 +1669,8 @@ pub(crate) async fn execute_as(
                                 std::fs::write(crate::channel::force_marker(&paths), b"1")?;
                             }
                             progress.phase("handing the switch to the system updater");
-                            crate::ostier::run_update_unit()?;
+                            let journal = progress.clone();
+                            crate::ostier::run_update_unit(move |l| journal.log(l))?;
                             let release = platform_release().unwrap_or_else(|| "unknown".into());
                             return Ok(format!("updated; running platform release {release}"));
                         }

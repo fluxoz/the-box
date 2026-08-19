@@ -207,19 +207,27 @@
       }
     }
 
-    // The smooth half of the bar: between polls, elapsed time alone moves the
-    // fill and the counters, so progress reads as motion rather than steps.
+    // The smooth half of the bar. Real counts from the build itself (nix's
+    // done/expected, in the job JSON) win; the clock estimate only fills the
+    // gaps before the first count and for kinds nothing measures.
     function paint() {
       var e = elapsedSecs();
+      var units = last && last.units_total > 0
+        ? [last.units_done || 0, last.units_total] : null;
       var secs = main.querySelector(".job .section-head .muted");
       if (secs) {
         secs.textContent = Math.round(e) + "s" +
-          (expected ? " · ~" + expected + "s typical" : "");
+          (units ? " · " + units[0] + " / " + units[1]
+                 : (expected ? " · ~" + expected + "s typical" : ""));
       }
-      var fill = main.querySelector(".job .bar.det .fill");
-      if (fill && expected) {
-        var pct = Math.max(2, Math.min(92, (e / expected) * 100));
-        fill.style.width = pct + "%";
+      var bar = main.querySelector(".job .bar");
+      var fill = bar && bar.querySelector(".fill");
+      if (fill && units) {
+        // First real count: retire the sweep, this bar is measured now.
+        bar.classList.add("det");
+        fill.style.width = Math.max(1, Math.min(99, (units[0] / units[1]) * 100)) + "%";
+      } else if (fill && bar.classList.contains("det") && expected) {
+        fill.style.width = Math.max(2, Math.min(92, (e / expected) * 100)) + "%";
       }
       if (last) renderPhases(last);
     }
