@@ -1309,6 +1309,9 @@ footer.foot b { color: var(--dim); }
         </ol>
         ${named ? '<div class="cav" style="color:var(--critical)">Every machine would be named <b>' +
           cfg.hostname + '</b> and collide on the network. Switch Identity to <b>Auto-assign</b> so each machine names itself.</div>' : ""}
+        ${cfg && cfg.static_ip ? '<div class="cav" style="color:var(--critical)">Every machine would claim the same static address' +
+          (validCidr4(cfg.static_ip.address || "") ? " <b>" + cfg.static_ip.address + "</b>" : "") +
+          ' and collide. Switch Addressing to <b>DHCP</b> so each machine gets its own.</div>' : ""}
         ${lastReady ? `
         <div style="padding:0 13px 13px">
           <div class="lbl">PXE depot · one command</div>

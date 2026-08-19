@@ -156,7 +156,18 @@ enum Command {
         /// Storage layout: single | mirror | pool (default: single, largest disk).
         #[arg(long)]
         layout: Option<String>,
-        /// Host/IP to reach the Box on after boot (default: the target's host).
+        /// Pin the Box's LAN address (IPv4/prefix, e.g. 192.168.1.50/24)
+        /// instead of DHCP.
+        #[arg(long)]
+        static_ip: Option<String>,
+        /// Default gateway for --static-ip (also the DNS fallback).
+        #[arg(long, requires = "static_ip")]
+        gateway: Option<String>,
+        /// DNS server for --static-ip (repeatable; default: the gateway).
+        #[arg(long, requires = "static_ip")]
+        dns: Vec<String>,
+        /// Host/IP to reach the Box on after boot (default: the static
+        /// address if one is set, else the target's host).
         #[arg(long)]
         reach_host: Option<String>,
         /// Installer URL (override for forks/mirrors).
@@ -601,6 +612,9 @@ fn main() -> Result<()> {
             hostname,
             ssh_key,
             layout,
+            static_ip,
+            gateway,
+            dns,
             reach_host,
             install_url,
             boot_timeout,
@@ -613,6 +627,11 @@ fn main() -> Result<()> {
                 hostname,
                 ssh_keys,
                 layout,
+                static_ip: static_ip.map(|address| boxd::provision::StaticIp {
+                    address,
+                    gateway,
+                    dns,
+                }),
                 reach_host,
                 install_url,
                 boot_timeout_secs: boot_timeout,

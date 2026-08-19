@@ -385,6 +385,11 @@ def main() -> int:
         # machine would.
         page.click("#fleet-toggle")
         page.wait_for_selector("#pxe-cmd", timeout=10_000)
+        # This form carries a static address; N machines cannot share one IP,
+        # and the panel must say so (same treatment as the shared-name caveat).
+        fleet_text = page.inner_text("#fleet")
+        check("same static address" in fleet_text and "192.168.1.50/24" in fleet_text,
+              "the fleet panel warns that one static address cannot serve a fleet")
         pxe_cmd = page.text_content("#pxe-cmd") or ""
         check("pxe.sh" in pxe_cmd and "BOX_ORDERS_B64='" in pxe_cmd,
               "the fleet panel yields a PXE depot command with orders embedded", pxe_cmd[:70])

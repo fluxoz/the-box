@@ -364,7 +364,12 @@ fn tool_definitions() -> Value {
                     "target": { "type": "string", "description": "SSH target, e.g. root@192.168.1.42" },
                     "ssh_public_keys": { "type": "array", "items": { "type": "string" }, "description": "Public keys to authorize on the new Box (the operator's, so a human can always get in)" },
                     "hostname": { "type": "string", "description": "Hostname for the new Box; 'auto' (default) derives a stable per-machine name" },
-                    "layout": { "type": "string", "description": "Storage layout: single | mirror | pool (default: decided on-box)" }
+                    "layout": { "type": "string", "description": "Storage layout: single | mirror | pool (default: decided on-box)" },
+                    "static_ip": { "type": "object", "description": "Pin the new Box's LAN address instead of DHCP. The Box comes up at this address (provisioning waits there, not at the target's old lease).", "properties": {
+                        "address": { "type": "string", "description": "IPv4 with prefix, e.g. 192.168.1.50/24" },
+                        "gateway": { "type": "string", "description": "Default gateway (also the DNS fallback)" },
+                        "dns": { "type": "array", "items": { "type": "string" }, "description": "DNS servers; default: the gateway" }
+                    }, "required": ["address"], "additionalProperties": false }
                 },
                 "required": ["target", "ssh_public_keys"],
                 "additionalProperties": false,
@@ -1709,6 +1714,28 @@ pub(crate) async fn execute_as(
             }
             let hostname = str_arg("hostname").unwrap_or_else(|| "auto".into());
             let layout = str_arg("layout");
+            let static_ip = args.get("static_ip").and_then(Value::as_object).map(|s| {
+                crate::provision::StaticIp {
+                    address: s
+                        .get("address")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string(),
+                    gateway: s
+                        .get("gateway")
+                        .and_then(Value::as_str)
+                        .map(str::to_string),
+                    dns: s
+                        .get("dns")
+                        .and_then(Value::as_array)
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(|v| v.as_str().map(str::to_string))
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                }
+            });
             let state = state.clone();
             Ok(blocking(move || {
                 let opts = crate::provision::ProvisionOpts {
@@ -1716,6 +1743,7 @@ pub(crate) async fn execute_as(
                     hostname,
                     ssh_keys: crate::provision::resolve_ssh_keys(keys)?,
                     layout,
+                    static_ip,
                     install_url: crate::provision::DEFAULT_INSTALL_URL.into(),
                     reach_host: None,
                     boot_timeout_secs: 900,

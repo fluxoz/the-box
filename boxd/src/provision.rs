@@ -34,6 +34,16 @@ pub const BOX_PORT: u16 = 2693;
 /// connection (the installer kexecs) is distinguishable from "never reached".
 const SENTINEL: &str = "__BOX_PROVISION_CONNECTED__";
 
+/// A pinned LAN address for the new Box (orders `static_ip`).
+pub struct StaticIp {
+    /// IPv4 address with prefix, e.g. `192.168.1.50/24`.
+    pub address: String,
+    /// Default gateway. Optional; DNS falls back to it on the Box.
+    pub gateway: Option<String>,
+    /// DNS servers. Empty means "use the gateway".
+    pub dns: Vec<String>,
+}
+
 /// Everything `provision` needs to turn one machine into a Box.
 pub struct ProvisionOpts {
     /// SSH target for the spare machine, e.g. `root@192.168.1.42`.
@@ -44,6 +54,8 @@ pub struct ProvisionOpts {
     pub ssh_keys: Vec<String>,
     /// Optional storage layout: `single` | `mirror` | `pool`.
     pub layout: Option<String>,
+    /// Pin the Box's LAN address instead of DHCP.
+    pub static_ip: Option<StaticIp>,
     /// The takeover installer URL.
     pub install_url: String,
     /// Host/IP to reach the Box on after it boots (default: the target's host).
@@ -88,7 +100,13 @@ pub fn run(opts: &ProvisionOpts) -> Result<Provisioned> {
         &opts.ssh_keys,
         &code_hash,
         opts.layout.as_deref(),
+        opts.static_ip.as_ref(),
     );
+    // The installer runs this same validator — but it learns the answer after
+    // kexec, when the machine is dark and the SSH session is gone. Refuse
+    // here, while the target still answers.
+    box_core::orders::validate_for_install(&orders)
+        .map_err(|why| anyhow::anyhow!("the installer would refuse these orders: {why}"))?;
     let orders_b64 = base64_encode(&serde_json::to_vec(&orders)?);
 
     // 3. Ship the orders over SSH and start the takeover. The installer kexecs,
@@ -100,9 +118,16 @@ pub fn run(opts: &ProvisionOpts) -> Result<Provisioned> {
     ship_and_install(opts, &orders_b64)?;
 
     // 4. Wait for the machine to wipe, reinstall, reboot, and come up as a Box.
+    //    A Box given a static address comes up THERE — the target's old DHCP
+    //    lease is a coincidence the reboot may not repeat.
     let host = opts
         .reach_host
         .clone()
+        .or_else(|| {
+            opts.static_ip
+                .as_ref()
+                .map(|s| s.address.split('/').next().unwrap_or_default().to_string())
+        })
         .unwrap_or_else(|| host_of(&opts.target));
     let address = format!("{host}:{BOX_PORT}");
     eprintln!(
@@ -133,6 +158,7 @@ pub fn build_orders(
     ssh_keys: &[String],
     code_hash: &str,
     layout: Option<&str>,
+    static_ip: Option<&StaticIp>,
 ) -> Value {
     let mut orders = json!({
         // Consent is explicit and machine-checked: install.sh refuses to touch
@@ -144,6 +170,16 @@ pub fn build_orders(
     });
     if let Some(l) = layout {
         orders["storage"] = json!({ "layout": l });
+    }
+    if let Some(s) = static_ip {
+        let mut ip = json!({ "address": s.address });
+        if let Some(g) = &s.gateway {
+            ip["gateway"] = json!(g);
+        }
+        if !s.dns.is_empty() {
+            ip["dns"] = json!(s.dns);
+        }
+        orders["static_ip"] = ip;
     }
     orders
 }
@@ -397,18 +433,51 @@ mod tests {
     #[test]
     fn orders_carry_consent_identity_and_pairing() {
         let keys = vec!["ssh-ed25519 AAAA... agent".to_string()];
-        let o = build_orders("kitchen", &keys, "deadbeef", None);
+        let o = build_orders("kitchen", &keys, "deadbeef", None, None);
         assert_eq!(o["erase_disk"], json!(true));
         assert_eq!(o["hostname"], json!("kitchen"));
         assert_eq!(o["ssh_authorized_keys"], json!(keys));
         assert_eq!(o["enrollment_code_hash"], json!("deadbeef"));
         assert!(o.get("storage").is_none());
+        assert!(o.get("static_ip").is_none());
     }
 
     #[test]
     fn orders_include_layout_when_requested() {
-        let o = build_orders("auto", &[], "h", Some("mirror"));
+        let o = build_orders("auto", &[], "h", Some("mirror"), None);
         assert_eq!(o["storage"]["layout"], json!("mirror"));
+    }
+
+    #[test]
+    fn orders_carry_the_static_address_and_the_validator_accepts_them() {
+        let s = StaticIp {
+            address: "192.168.1.50/24".into(),
+            gateway: Some("192.168.1.1".into()),
+            dns: vec!["1.1.1.1".into()],
+        };
+        let keys = vec!["ssh-ed25519 AAAA... agent".to_string()];
+        let o = build_orders("auto", &keys, &"a".repeat(64), None, Some(&s));
+        assert_eq!(o["static_ip"]["address"], json!("192.168.1.50/24"));
+        assert_eq!(o["static_ip"]["gateway"], json!("192.168.1.1"));
+        assert_eq!(o["static_ip"]["dns"], json!(["1.1.1.1"]));
+        box_core::orders::validate_for_install(&o).expect("installer must accept these");
+
+        // Gateway/DNS omitted: the keys must be absent, not null — firstboot
+        // reads them with `// empty`.
+        let bare = StaticIp { address: "10.0.0.7/16".into(), gateway: None, dns: vec![] };
+        let o = build_orders("auto", &keys, &"a".repeat(64), None, Some(&bare));
+        assert!(o["static_ip"].get("gateway").is_none());
+        assert!(o["static_ip"].get("dns").is_none());
+    }
+
+    #[test]
+    fn a_bad_static_address_is_refused_before_anything_ships() {
+        // The pre-flight validator is what keeps a typo from becoming a
+        // machine that kexec'd and went dark refusing its orders.
+        let s = StaticIp { address: "192.168.1.50".into(), gateway: None, dns: vec![] };
+        let keys = vec!["ssh-ed25519 AAAA... agent".to_string()];
+        let o = build_orders("auto", &keys, &"a".repeat(64), None, Some(&s));
+        assert!(box_core::orders::validate_for_install(&o).is_err());
     }
 
     #[test]
