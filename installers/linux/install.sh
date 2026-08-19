@@ -53,6 +53,14 @@ verify_sha() { # <file> <expected-hash>
 
 [ "$(id -u)" = 0 ] || die "run as root: pipe into 'sudo sh'."
 
+# The netboot artifacts are x86-64. On anything else this would download the
+# whole installer and then die at kexec with a format error — or worse, brick
+# a boot chain kexec cannot legally replace (Apple Silicon must keep m1n1).
+arch=$(uname -m)
+[ "$arch" = "x86_64" ] || die "this machine is $arch and the takeover ships an x86-64 installer. \
+Raspberry Pi: flash the Pi image from https://thebox.build instead. \
+Apple Silicon Macs are not supported yet (the Box must ride Asahi's boot chain, not replace it)."
+
 # Box OS boots via UEFI (systemd-boot). A kernel kexec'd from a BIOS-mode boot
 # comes up without EFI, so the installer would refuse — but only on the
 # machine's own console, AFTER the ssh session this ran from is gone. The

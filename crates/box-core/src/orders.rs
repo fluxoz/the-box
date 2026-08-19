@@ -152,6 +152,37 @@ pub fn validate_for_install(orders: &Value) -> Result<(), String> {
         }
     }
 
+    // A static LAN address is written into a NetworkManager keyfile exactly
+    // like Wi-Fi is. Validating the shapes strictly here means firstboot can
+    // interpolate the values blind: an address that parses as IPv4/CIDR
+    // cannot smuggle a newline or rewrite the keyfile.
+    if let Some(s) = o.get("static_ip") {
+        let Some(s) = s.as_object() else {
+            return Err("static_ip must be an object".into());
+        };
+        let addr = s.get("address").and_then(Value::as_str).unwrap_or_default();
+        if !valid_cidr4(addr) {
+            return Err(format!(
+                "static_ip.address {addr:?} must be an IPv4 address with a prefix, like 192.168.1.50/24"
+            ));
+        }
+        if let Some(gw) = s.get("gateway") {
+            if !gw.as_str().is_some_and(valid_ip4) {
+                return Err(format!("static_ip.gateway {gw:?} is not an IPv4 address"));
+            }
+        }
+        if let Some(d) = s.get("dns") {
+            let Some(d) = d.as_array() else {
+                return Err("static_ip.dns must be an array of IPv4 addresses".into());
+            };
+            for v in d {
+                if !v.as_str().is_some_and(valid_ip4) {
+                    return Err(format!("static_ip.dns entry {v:?} is not an IPv4 address"));
+                }
+            }
+        }
+    }
+
     if let Some(st) = o.get("storage").and_then(Value::as_object) {
         let layout = st.get("layout").and_then(Value::as_str).unwrap_or_default();
         if !matches!(layout, "single" | "mirror" | "pool" | "ask") {
@@ -160,6 +191,19 @@ pub fn validate_for_install(orders: &Value) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+// std's Ipv4Addr parser: four octets, 0-255, and it refuses leading zeros —
+// exactly the strictness the keyfile interpolation above relies on.
+fn valid_ip4(s: &str) -> bool {
+    s.parse::<std::net::Ipv4Addr>().is_ok()
+}
+
+fn valid_cidr4(s: &str) -> bool {
+    let Some((ip, prefix)) = s.split_once('/') else {
+        return false;
+    };
+    valid_ip4(ip) && prefix.parse::<u8>().is_ok_and(|p| (1..=32).contains(&p))
 }
 
 #[cfg(test)]
@@ -174,6 +218,7 @@ mod install_validation_tests {
             "enrollment_code_hash": "a".repeat(64),
             "ssh_authorized_keys": ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI me@laptop"],
             "wifi": { "ssid": "HomeNet", "password": "hunter2" },
+            "static_ip": { "address": "192.168.1.50/24", "gateway": "192.168.1.1", "dns": ["1.1.1.1"] },
             "storage": { "layout": "single", "devices": ["/dev/disk/by-id/x"] }
         })
     }
@@ -217,5 +262,25 @@ mod install_validation_tests {
         let mut o = good();
         o["storage"] = json!({ "layout": "raid9" });
         assert!(validate_for_install(&o).is_err());
+
+        // A static address that isn't strictly IPv4/CIDR could rewrite the
+        // NetworkManager keyfile firstboot writes it into.
+        for bad in [
+            json!({ "address": "192.168.1.50" }),                       // no prefix
+            json!({ "address": "192.168.1.50/33" }),                    // prefix out of range
+            json!({ "address": "192.168.1.50/24\nid=evil" }),           // injection
+            json!({ "address": "192.168.1.256/24" }),                   // bad octet
+            json!({ "address": "192.168.1.50/24", "gateway": "router" }),
+            json!({ "address": "192.168.1.50/24", "dns": ["8.8.8.8", "not-an-ip"] }),
+            json!({ "address": "192.168.1.50/24", "dns": "8.8.8.8" }),  // not an array
+        ] {
+            let mut o = good();
+            o["static_ip"] = bad;
+            assert!(validate_for_install(&o).is_err(), "must refuse {:?}", o["static_ip"]);
+        }
+        // Gateway and DNS are optional; address alone is a valid static setup.
+        let mut o = good();
+        o["static_ip"] = json!({ "address": "10.0.0.7/16" });
+        validate_for_install(&o).unwrap();
     }
 }

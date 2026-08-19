@@ -484,7 +484,7 @@ footer.foot b { color: var(--dim); }
             <label><input type="radio" name="netmode" value="eth" checked><span>Ethernet</span></label>
             <label><input type="radio" name="netmode" value="wifi"><span>Wi-Fi</span></label>
           </div>
-          <p class="field-note" id="net-eth-note">Plug in a cable and it comes up on DHCP. Nothing to configure.</p>
+          <p class="field-note" id="net-eth-note">Plug in a cable and it comes online. Nothing else to configure.</p>
           <div id="net-wifi" class="collapse">
             <div class="row2">
               <div>
@@ -497,6 +497,29 @@ footer.foot b { color: var(--dim); }
               </div>
             </div>
             <p class="field-note">Written to the unit as a saved connection on first boot. WPA/WPA2 personal.</p>
+          </div>
+          <div class="seg" role="radiogroup" aria-label="Addressing">
+            <label><input type="radio" name="addrmode" value="dhcp" checked><span>DHCP</span></label>
+            <label><input type="radio" name="addrmode" value="static"><span>Static IP</span></label>
+          </div>
+          <p class="field-note" id="addr-dhcp-note">The router hands out an address. Fine for most networks.</p>
+          <div id="net-static" class="collapse">
+            <div class="row2">
+              <div>
+                <label class="lbl" for="staddr">Address / prefix</label>
+                <input type="text" id="staddr" placeholder="192.168.1.50/24" spellcheck="false">
+                <div class="err" id="staddr-err"></div>
+              </div>
+              <div>
+                <label class="lbl" for="stgw">Gateway</label>
+                <input type="text" id="stgw" placeholder="192.168.1.1" spellcheck="false">
+              </div>
+            </div>
+            <div>
+              <label class="lbl" for="stdns">DNS servers</label>
+              <input type="text" id="stdns" placeholder="1.1.1.1, 9.9.9.9" spellcheck="false">
+            </div>
+            <p class="field-note">Applied at first boot. Pick an address outside the router's DHCP range. DNS defaults to the gateway when left empty.</p>
           </div>
         </div>
       </section>
@@ -715,6 +738,14 @@ footer.foot b { color: var(--dim); }
     if (wifi) $("#ssid").focus();
     render();
   }));
+  // addressing
+  $$("input[name=addrmode]").forEach(r => r.addEventListener("change", () => {
+    const st = $("input[name=addrmode]:checked").value === "static";
+    show($("#net-static"), st);
+    $("#addr-dhcp-note").style.display = st ? "none" : "";
+    if (st) $("#staddr").focus();
+    render();
+  }));
   // exposure
   $$("input[name=expmode]").forEach(r => r.addEventListener("change", () => {
     const cf = $("input[name=expmode]:checked").value === "cf";
@@ -753,7 +784,7 @@ footer.foot b { color: var(--dim); }
     $("#adv-toggle .caret").classList.toggle("caret--open", open);
   });
 
-  ["hostname","ssid","wpass","cftoken","diskpath","mindisk"].forEach(id =>
+  ["hostname","ssid","wpass","staddr","stgw","stdns","cftoken","diskpath","mindisk"].forEach(id =>
     $("#"+id).addEventListener("input", render));
   $$("input[name=finish]").forEach(r => r.addEventListener("change", render));
   $("#force").addEventListener("change", render);
@@ -761,6 +792,19 @@ footer.foot b { color: var(--dim); }
   /* ---------- validation ---------- */
   function validHostname(h) {
     return /^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$/.test(h) && h.length <= 32;
+  }
+  // Mirrors the installer's validator (box-core valid_ip4/valid_cidr4,
+  // std-strict: no leading zeros) so the page refuses what the install would.
+  function validIp4(s) {
+    const m = s.split(".");
+    return m.length === 4 && m.every(o => /^\d{1,3}$/.test(o) && +o <= 255 && (o.length === 1 || o[0] !== "0"));
+  }
+  function validCidr4(s) {
+    const m = s.split("/");
+    return m.length === 2 && validIp4(m[0]) && /^\d{1,2}$/.test(m[1]) && +m[1] >= 1 && +m[1] <= 32;
+  }
+  function dnsList() {
+    return $("#stdns").value.split(/[,\s]+/).filter(Boolean);
   }
 
   /* ---------- SSH keys ---------- */
@@ -911,6 +955,14 @@ footer.foot b { color: var(--dim); }
       const ssid = $("#ssid").value.trim();
       if (ssid) { cfg.wifi = { ssid }; const pw = $("#wpass").value; if (pw) cfg.wifi.password = pw; }
     }
+    if ($("input[name=addrmode]:checked").value === "static") {
+      const address = $("#staddr").value.trim();
+      if (address) {
+        cfg.static_ip = { address };
+        const gw = $("#stgw").value.trim(); if (gw) cfg.static_ip.gateway = gw;
+        const dns = dnsList(); if (dns.length) cfg.static_ip.dns = dns;
+      }
+    }
     if (keys.length) cfg.ssh_authorized_keys = keys.map(k => k.key);
     if ($("input[name=expmode]:checked").value === "cf") {
       const tok = $("#cftoken").value.trim(); if (tok) cfg.cloudflare_tunnel_token = tok;
@@ -944,6 +996,14 @@ footer.foot b { color: var(--dim); }
     }
     if ($("input[name=netmode]:checked").value === "wifi" && !$("#ssid").value.trim())
       p.push("Network: enter the Wi-Fi name, or switch back to Ethernet");
+    if ($("input[name=addrmode]:checked").value === "static") {
+      const a = $("#staddr").value.trim();
+      if (!a) p.push("Network: enter the static address, or switch back to DHCP");
+      else if (!validCidr4(a)) p.push("Network: the static address needs a prefix, like 192.168.1.50/24");
+      const gw = $("#stgw").value.trim();
+      if (gw && !validIp4(gw)) p.push("Network: that gateway is not an IPv4 address");
+      if (dnsList().some(d => !validIp4(d))) p.push("Network: each DNS server must be an IPv4 address");
+    }
     if ($("input[name=expmode]:checked").value === "cf" && !$("#cftoken").value.trim())
       p.push("Public Exposure: paste the tunnel token, or switch back to Private");
     if ($("input[name=diskmode]:checked").value === "custom" && !$("#diskpath").value.trim())
@@ -985,12 +1045,18 @@ footer.foot b { color: var(--dim); }
       h.classList.add("invalid"); $("#hostname-err").textContent = "Use a–z, 0–9 and dashes (not at the ends), max 32.";
     } else { h.classList.remove("invalid"); $("#hostname-err").textContent = ""; }
 
+    const sa = $("#staddr");
+    if ($("input[name=addrmode]:checked").value === "static" && sa.value.trim() && !validCidr4(sa.value.trim())) {
+      sa.classList.add("invalid"); $("#staddr-err").textContent = "IPv4 with a prefix, like 192.168.1.50/24.";
+    } else { sa.classList.remove("invalid"); $("#staddr-err").textContent = ""; }
+
     const cfg = buildConfig();
     currentJSON = JSON.stringify(cfg, null, 2) + "\n";
 
     // manifest
     setV($("#m-name"), cfg.hostname === "auto" ? "box-auto (per-unit)" : cfg.hostname, cfg.hostname === "auto");
-    setV($("#m-net"), cfg.wifi ? `Wi-Fi · ${cfg.wifi.ssid}` : "Ethernet · DHCP", !cfg.wifi);
+    const addrLabel = cfg.static_ip ? cfg.static_ip.address : "DHCP";
+    setV($("#m-net"), cfg.wifi ? `Wi-Fi · ${cfg.wifi.ssid} · ${addrLabel}` : `Ethernet · ${addrLabel}`, !cfg.wifi && !cfg.static_ip);
     setV($("#m-access"), keys.length ? `${keys.length} key${keys.length>1?"s":""} · SSH` : "0 keys · console only", !keys.length);
     setV($("#m-expose"), cfg.cloudflare_tunnel_token ? "Public · Cloudflare Tunnel" : "Private · LAN", !cfg.cloudflare_tunnel_token);
     const diskLabel = cfg.storage
@@ -1024,17 +1090,20 @@ footer.foot b { color: var(--dim); }
     renderFleet(); // the fleet panel embeds the same live orders
 
     // The claim link carries the code, so pairing is one click rather than
-    // sixteen typed characters. It only renders when a name is set: an
-    // auto-named Box has no address until it boots, and a link the user must
-    // hand-edit is worse than no link.
+    // sixteen typed characters. It renders when the Box will have a knowable
+    // address: a set name (<name>.local), or better, a static IP — the IP
+    // works even from machines that cannot resolve .local at all, and gives
+    // an auto-named Box an address before it ever boots.
     const link = $("#claimlink");
     if (link && enrollCode) {
       const note = $("#claimnote");
-      if (cfg.hostname === "auto") {
+      const staticHost = cfg.static_ip ? cfg.static_ip.address.split("/")[0] : null;
+      if (!staticHost && cfg.hostname === "auto") {
         if (note) note.style.display = "none";
       } else {
         if (note) note.style.display = "";
-        const url = `http://${cfg.hostname}.local:2693/pair?c=${encodeURIComponent(enrollCode)}`;
+        const host = staticHost || `${cfg.hostname}.local`;
+        const url = `http://${host}:2693/pair?c=${encodeURIComponent(enrollCode)}`;
         link.textContent = url;
         link.href = url;
       }

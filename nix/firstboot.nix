@@ -84,6 +84,28 @@
           || echo "box-firstboot: could not seed the enrollment code" >&2
       fi
 
+      # The [ipv4] stanza the connection files below share: DHCP unless the
+      # orders pin a static LAN address. validate-orders already proved these
+      # parse as IPv4/CIDR, so interpolating them cannot rewrite the keyfile.
+      st_addr=$(jq -r '.static_ip.address // empty' "$conf")
+      st_gw=$(jq -r '.static_ip.gateway // empty' "$conf")
+      st_dns=$(jq -r '.static_ip.dns // [] | join(";")' "$conf")
+      ipv4_stanza() {
+        if [ -z "$st_addr" ]; then
+          printf '[ipv4]\nmethod=auto\n\n'
+          return
+        fi
+        printf '[ipv4]\nmethod=manual\naddress1=%s%s\n' "$st_addr" "''${st_gw:+,$st_gw}"
+        # A manual connection with no DNS resolves nothing — the box would
+        # boot on its address but unable to fetch updates or pair a tunnel.
+        # Default to the gateway, the home-router answer.
+        d="$st_dns"; [ -n "$d" ] || d="$st_gw"
+        if [ -n "$d" ]; then
+          printf 'dns=%s;\nignore-auto-dns=true\n' "$d"
+        fi
+        printf '\n'
+      }
+
       # Wi-Fi: materialize a NetworkManager connection before NM starts.
       ssid=$(jq -r '.wifi.ssid // empty' "$conf")
       if [ -n "$ssid" ]; then
@@ -95,9 +117,20 @@
           if [ -n "$psk" ]; then
             printf '[wifi-security]\nkey-mgmt=wpa-psk\npsk=%s\n\n' "$psk"
           fi
-          printf '[ipv4]\nmethod=auto\n\n[ipv6]\nmethod=auto\n'
+          ipv4_stanza
+          printf '[ipv6]\nmethod=auto\n'
         } > /etc/NetworkManager/system-connections/box-wifi.nmconnection
         chmod 600 /etc/NetworkManager/system-connections/box-wifi.nmconnection
+      elif [ -n "$st_addr" ]; then
+        # Wired + static: a saved ethernet profile (any wired device), which
+        # also stops NM from auto-creating its DHCP "Wired connection 1".
+        mkdir -p /etc/NetworkManager/system-connections
+        {
+          printf '[connection]\nid=box-lan\ntype=ethernet\nautoconnect=true\n\n'
+          ipv4_stanza
+          printf '[ipv6]\nmethod=auto\n'
+        } > /etc/NetworkManager/system-connections/box-lan.nmconnection
+        chmod 600 /etc/NetworkManager/system-connections/box-lan.nmconnection
       fi
 
       # SSH keys for agents/operators.
