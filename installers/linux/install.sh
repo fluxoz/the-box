@@ -97,12 +97,23 @@ Flash the image from https://thebox.build instead — the same orders ride insid
 
 name=$(sed -n 's/.*"hostname"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ORDERS" | head -1)
 
+# "auto" is not a name: the Box derives a stable per-machine one (box-xxxxxx,
+# from its machine id) at first boot, so there is no .local name to promise
+# here — only where to look for it.
+if [ "$name" = "auto" ]; then
+  becomes="a Box named at first boot (box-xxxxxx)"
+  comeback="it will pick its name at first boot — look for box-xxxxxx.local at this machine's address in a few minutes."
+else
+  becomes="${name:-box}"
+  comeback="it will come back up at ${name:-box}.local in a few minutes."
+fi
+
 cat >&2 <<EOF
 
   ============================================================
    THE BOX — CONVERT THIS MACHINE  (erases everything)
    Every disk on this machine will be wiped and replaced with
-   Box OS. All data is lost. It becomes: ${name:-box}
+   Box OS. All data is lost. It becomes: ${becomes}
   ============================================================
 EOF
 if [ "${BOX_YES:-}" != "1" ]; then
@@ -151,7 +162,7 @@ params=$(grep '^kernel' "$WORK/netboot.ipxe" \
 [ -n "$params" ] || die "could not parse boot parameters from netboot.ipxe."
 
 say "handing off to the Box installer via kexec — the machine will now wipe and install."
-say "it will come back up at ${name:-box}.local in a few minutes."
+say "$comeback"
 kexec -l "$WORK/bzImage" --initrd="$WORK/initrd" --command-line="$params box.install-b64=$orders_b64"
 # kexec has loaded both into reserved memory — free the staging copies so the
 # peak footprint is just that reservation (helps small boxes clear the jump).
