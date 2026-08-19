@@ -61,6 +61,12 @@ pub struct Job {
     /// successes). None on a first run — the bar sweeps instead of guessing.
     #[serde(default)]
     pub expected_secs: Option<i64>,
+    /// Real progress measured by the work itself (nix's own done/expected
+    /// counts). When present the bar shows THIS, not the clock estimate.
+    #[serde(default)]
+    pub units_done: Option<u64>,
+    #[serde(default)]
+    pub units_total: Option<u64>,
 }
 
 impl Job {
@@ -72,9 +78,25 @@ impl Job {
 }
 
 /// Handle given to the running closure so it can report progress.
+#[derive(Clone)]
 pub struct Progress {
     id: String,
     jobs: Arc<Registry>,
+}
+
+/// Every job thread installs its Progress as the thread's build watch, so a
+/// nix build running anywhere inside the job streams its log lines and its
+/// real (done, expected) counts into the job — no call site threads a handle.
+impl crate::store::BuildWatch for Progress {
+    fn line(&self, line: &str) {
+        self.log(line);
+    }
+    fn units(&self, done: u64, expected: u64) {
+        self.jobs.with(&self.id, |j| {
+            j.units_done = Some(done);
+            j.units_total = Some(expected);
+        });
+    }
 }
 
 impl Progress {
@@ -258,6 +280,8 @@ impl Registry {
             started_unix: now_unix(),
             finished_unix: None,
             expected_secs,
+            units_done: None,
+            units_total: None,
         };
         if let Ok(mut map) = self.jobs.lock() {
             map.insert(id.clone(), job);
@@ -287,6 +311,8 @@ impl Registry {
                 id: job_id.clone(),
                 jobs: Arc::clone(&registry),
             };
+            // Any build inside this job streams into it (see BuildWatch).
+            let _watch = crate::store::set_thread_watch(Arc::new(progress.clone()));
             let outcome =
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| work(&progress)));
             let (state, message) = match outcome {
@@ -414,6 +440,8 @@ mod tests {
             started_unix: 1,
             finished_unix: None,
             expected_secs: None,
+            units_done: None,
+            units_total: None,
         };
         persist(&dir, &stuck);
         let reg3 = Registry::persistent(dir);
@@ -444,6 +472,8 @@ mod tests {
                 started_unix: *t0,
                 finished_unix: Some(*t1),
                 expected_secs: None,
+                units_done: None,
+                units_total: None,
             };
             persist(&dir, &done);
         }

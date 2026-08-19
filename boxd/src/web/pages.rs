@@ -322,10 +322,14 @@ pub async fn job_view(
     let running = job.state == crate::jobs::State::Running;
     let failed = job.state == crate::jobs::State::Failed;
 
-    // History-informed progress: the median of this kind's recent runs, so the
-    // bar moves at the pace this box has actually shown — and sweeps
-    // indeterminately on a first run rather than inventing a number.
+    // The bar prefers what the work itself measured (nix's done/expected
+    // counts, streamed live) over the clock estimate from this kind's recent
+    // runs; with neither, it sweeps rather than inventing a number.
     let expected = job.expected_secs.filter(|e| *e > 0);
+    let units = job
+        .units_total
+        .filter(|t| *t > 0)
+        .map(|t| (job.units_done.unwrap_or(0), t));
     let body = html! {
         section.job data-job=(job.id) data-state=(format!("{:?}", job.state).to_lowercase())
                     data-target=(job.target) data-elapsed=(job.elapsed_secs(now))
@@ -334,11 +338,15 @@ pub async fn job_view(
                 h2 { (job.label) }
                 span.muted {
                     (job.elapsed_secs(now)) "s"
-                    @if let Some(exp) = expected { " · ~" (exp) "s typical" }
+                    @if let Some((done, total)) = units { " · " (done) " / " (total) }
+                    @else if let Some(exp) = expected { " · ~" (exp) "s typical" }
                 }
             }
             @if running {
-                @if let Some(exp) = expected {
+                @if let Some((done, total)) = units {
+                    @let pct = (done * 100 / total).clamp(1, 99);
+                    div.bar.det { div.fill style=(format!("width:{pct}%")) {} }
+                } @else if let Some(exp) = expected {
                     @let pct = (job.elapsed_secs(now) * 100 / exp).clamp(2, 92);
                     div.bar.det { div.fill style=(format!("width:{pct}%")) {} }
                 } @else {

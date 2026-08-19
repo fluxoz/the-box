@@ -1,9 +1,10 @@
+use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use anyhow::{bail, Context, Result};
 
-use super::Builder;
+use super::{nixlog::NixLog, Builder};
 
 /// Builds generations with `nix build` from the machine-generated flake in
 /// the generation source directory, producing an immutable store path.
@@ -31,24 +32,45 @@ impl Builder for NixBuilder {
         // `path:` forces the plain path fetcher: without it, a data dir that
         // happens to live inside a git repository is treated as a git flake
         // and untracked generation files become invisible to the build.
-        let output = Command::new("nix")
+        //
+        // internal-json is nix's own progress-bar feed: per-path and per-drv
+        // activities, aggregate (done, expected) counts, and every builder log
+        // line. Streamed as it happens into this thread's build watch (a job's
+        // Progress installs itself as that), so the console shows the build
+        // the way `nix build` shows it to a person — measured, not guessed.
+        let mut child = Command::new("nix")
             .args([
                 "--extra-experimental-features",
                 "nix-command flakes",
+                "--log-format",
+                "internal-json",
                 "build",
                 "--no-link",
                 "--print-out-paths",
             ])
             .arg(format!("path:{}", gensrc.display()))
-            .output()
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
             .context("running nix build (is nix installed?)")?;
-        if !output.status.success() {
-            bail!(
-                "nix build failed:\n{}",
-                String::from_utf8_lossy(&output.stderr)
-            );
+
+        let watch = super::thread_watch();
+        let mut log = NixLog::new();
+        let stderr = child.stderr.take().expect("stderr was piped");
+        for line in BufReader::new(stderr).lines() {
+            let Ok(line) = line else { break };
+            log.line(&line, watch.as_deref());
         }
-        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        let mut stdout = String::new();
+        if let Some(mut out) = child.stdout.take() {
+            let _ = out.read_to_string(&mut stdout);
+        }
+        let status = child.wait().context("waiting for nix build")?;
+        if !status.success() {
+            bail!("nix build failed:\n{}", log.tail());
+        }
         let path = stdout
             .lines()
             .map(str::trim)

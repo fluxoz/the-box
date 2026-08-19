@@ -187,11 +187,44 @@ pub fn update_unit_available() -> bool {
 /// finishes. The update's switch restarts boxd, so the caller may well die
 /// mid-call — that is the persistent-job "interrupted, and for an update the
 /// restart usually IS the success path" story, and it is the truth.
-pub fn run_update_unit() -> Result<()> {
+///
+/// The oneshot's story goes to the journal, not to us — so tail it for the
+/// duration and hand each line to `line`, which is how the console's job view
+/// shows a platform update doing something rather than a bar and silence.
+pub fn run_update_unit(line: impl Fn(&str) + Send + 'static) -> Result<()> {
+    let mut tail = Command::new("journalctl")
+        .args(["-f", "-n", "0", "-o", "cat", "-u", UPDATE_UNIT])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .ok();
+    // The reader owns the callback and pumps lines AS THEY ARRIVE; killing
+    // the tail below ends it via EOF.
+    let pump = tail.as_mut().and_then(|t| t.stdout.take()).map(|out| {
+        std::thread::spawn(move || {
+            use std::io::BufRead;
+            for l in std::io::BufReader::new(out).lines() {
+                let Ok(l) = l else { break };
+                line(&l);
+            }
+        })
+    });
+
     let out = Command::new("systemctl")
         .args(["start", UPDATE_UNIT])
         .output()
-        .with_context(|| format!("starting {UPDATE_UNIT}"))?;
+        .with_context(|| format!("starting {UPDATE_UNIT}"));
+
+    if let Some(mut t) = tail {
+        let _ = t.kill();
+        let _ = t.wait();
+    }
+    if let Some(h) = pump {
+        let _ = h.join();
+    }
+
+    let out = out?;
     if out.status.success() {
         return Ok(());
     }
