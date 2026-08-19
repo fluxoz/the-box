@@ -28,6 +28,14 @@ pub enum State {
     Failed,
 }
 
+/// One announced phase and when it began. The console turns consecutive marks
+/// into steps with real durations.
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+pub struct PhaseMark {
+    pub name: String,
+    pub started_unix: i64,
+}
+
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct Job {
     pub id: String,
@@ -38,6 +46,10 @@ pub struct Job {
     pub state: State,
     /// The phase running right now ("building generation", "health check").
     pub phase: String,
+    /// Every phase so far, in order. `phase` is always the last entry's name;
+    /// this is the sequence with timings the progress view steps through.
+    #[serde(default)]
+    pub phase_history: Vec<PhaseMark>,
     pub log: Vec<String>,
     /// Set when the job ends: the flash message to show.
     pub message: String,
@@ -45,6 +57,10 @@ pub struct Job {
     pub target: String,
     pub started_unix: i64,
     pub finished_unix: Option<i64>,
+    /// What history says this kind of job takes (median of its recent
+    /// successes). None on a first run — the bar sweeps instead of guessing.
+    #[serde(default)]
+    pub expected_secs: Option<i64>,
 }
 
 impl Job {
@@ -68,6 +84,10 @@ impl Progress {
         let text = text.into();
         self.jobs.with(&self.id, |j| {
             j.phase = text.clone();
+            j.phase_history.push(PhaseMark {
+                name: text.clone(),
+                started_unix: now_unix(),
+            });
             push_log(j, &text);
         });
     }
@@ -179,6 +199,25 @@ impl Registry {
             .collect()
     }
 
+    /// What history says a `kind` of job takes: the median duration of its
+    /// last three successes. This is the number the progress bar is honest
+    /// about — measured on THIS box, not invented.
+    fn estimate_secs(&self, kind: &str) -> Option<i64> {
+        let mut durations: Vec<i64> = self
+            .recent(50)
+            .into_iter()
+            .filter(|j| j.kind == kind && j.state == State::Done)
+            .filter_map(|j| j.finished_unix.map(|f| f - j.started_unix))
+            .filter(|d| *d >= 1)
+            .take(3)
+            .collect();
+        if durations.is_empty() {
+            return None;
+        }
+        durations.sort_unstable();
+        Some(durations[durations.len() / 2])
+    }
+
     /// Is something that changes the system running right now? The console uses
     /// this to keep polling rather than settle.
     pub fn any_running(&self) -> bool {
@@ -205,17 +244,20 @@ impl Registry {
         F: FnOnce(&Progress) -> anyhow::Result<String> + Send + 'static,
     {
         let id = new_id();
+        let expected_secs = self.estimate_secs(kind);
         let job = Job {
             id: id.clone(),
             kind: kind.to_string(),
             label: label.into(),
             state: State::Running,
             phase: "starting".into(),
+            phase_history: Vec::new(),
             log: Vec::new(),
             message: String::new(),
             target: target.into(),
             started_unix: now_unix(),
             finished_unix: None,
+            expected_secs,
         };
         if let Ok(mut map) = self.jobs.lock() {
             map.insert(id.clone(), job);
@@ -365,11 +407,13 @@ mod tests {
             label: "platform update".into(),
             state: State::Running,
             phase: "switching".into(),
+            phase_history: Vec::new(),
             log: Vec::new(),
             message: String::new(),
             target: "system".into(),
             started_unix: 1,
             finished_unix: None,
+            expected_secs: None,
         };
         persist(&dir, &stuck);
         let reg3 = Registry::persistent(dir);
@@ -377,6 +421,48 @@ mod tests {
         assert_eq!(j.state, State::Failed);
         assert!(j.message.contains("restarted"), "{}", j.message);
         assert!(j.message.contains("channel_status"), "{}", j.message);
+    }
+
+    #[test]
+    fn a_repeat_job_carries_what_history_says_it_takes() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let dir = tmp.path().join("jobs");
+        std::fs::create_dir_all(&dir).unwrap();
+        // Three past deploys: 30 s, 40 s and one 300 s outlier. The median
+        // keeps the bar honest against the outlier.
+        for (i, (t0, t1)) in [(100, 130), (200, 240), (300, 600)].iter().enumerate() {
+            let done = Job {
+                id: format!("old{i}"),
+                kind: "deploy".into(),
+                label: "x".into(),
+                state: State::Done,
+                phase: "done".into(),
+                phase_history: Vec::new(),
+                log: Vec::new(),
+                message: "ok".into(),
+                target: "/".into(),
+                started_unix: *t0,
+                finished_unix: Some(*t1),
+                expected_secs: None,
+            };
+            persist(&dir, &done);
+        }
+        let reg = Registry::persistent(dir);
+        let id = reg.start("deploy", "Deploying blog", "/", |p| {
+            p.phase("building generation");
+            p.phase("activating");
+            Ok("ok".into())
+        });
+        assert_eq!(reg.get(&id).unwrap().expected_secs, Some(40));
+
+        // A kind never seen has no estimate: the bar sweeps instead of lying.
+        let first = reg.start("rollback", "r", "/", |_| Ok("ok".into()));
+        assert_eq!(reg.get(&first).unwrap().expected_secs, None);
+
+        // Phases arrive as an ordered history the console can step through.
+        let done = wait_for(&reg, &id, State::Done);
+        let names: Vec<&str> = done.phase_history.iter().map(|m| m.name.as_str()).collect();
+        assert_eq!(names, ["building generation", "activating"]);
     }
 
     #[test]

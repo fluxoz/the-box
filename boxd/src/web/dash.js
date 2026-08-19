@@ -162,14 +162,68 @@
   // elapsed time and log advance while it runs instead of the page appearing
   // to hang. When it finishes, go where the job said it was going.
   var poll = null;
-  function stopPolling() { if (poll) { clearTimeout(poll); poll = null; } }
+  var jobTicker = null;
+  function stopPolling() {
+    if (poll) { clearTimeout(poll); poll = null; }
+    if (jobTicker) { clearInterval(jobTicker); jobTicker = null; }
+  }
 
   function watchJob() {
     stopPolling();
     var el = main.querySelector(".job[data-job]");
     if (!el || el.getAttribute("data-state") !== "running") return;
     var id = el.getAttribute("data-job");
-    var started = Date.now();
+    // Anchor elapsed to the SERVER's count, not page load: reopening a job
+    // that has run for a minute must not restart its clock at 0.
+    var elapsed0 = parseInt(el.getAttribute("data-elapsed"), 10) || 0;
+    var expected = parseInt(el.getAttribute("data-expected"), 10) || 0;
+    var t0 = Date.now() - elapsed0 * 1000;
+    var last = null; // the latest job JSON, for the between-polls repaint
+
+    function elapsedSecs() { return (Date.now() - t0) / 1000; }
+
+    // Steps with real durations: finished phases from their timestamps
+    // (server clock only, so client skew cannot warp them), the running one
+    // from the live elapsed count.
+    function renderPhases(job) {
+      var list = main.querySelector(".job .phases");
+      if (!list || !job.phase_history || !job.phase_history.length) return;
+      list.textContent = "";
+      for (var i = 0; i < job.phase_history.length; i++) {
+        var m = job.phase_history[i];
+        var isLast = i === job.phase_history.length - 1;
+        var li = document.createElement("li");
+        var dur;
+        if (!isLast) dur = job.phase_history[i + 1].started_unix - m.started_unix;
+        else if (job.finished_unix) dur = job.finished_unix - m.started_unix;
+        else dur = Math.round(elapsedSecs() - (m.started_unix - job.started_unix));
+        li.className = (isLast && job.state === "running") ? "now" : "done";
+        li.textContent = m.name;
+        var t = document.createElement("span");
+        t.className = "t";
+        t.textContent = Math.max(0, dur) + "s";
+        li.appendChild(t);
+        list.appendChild(li);
+      }
+    }
+
+    // The smooth half of the bar: between polls, elapsed time alone moves the
+    // fill and the counters, so progress reads as motion rather than steps.
+    function paint() {
+      var e = elapsedSecs();
+      var secs = main.querySelector(".job .section-head .muted");
+      if (secs) {
+        secs.textContent = Math.round(e) + "s" +
+          (expected ? " · ~" + expected + "s typical" : "");
+      }
+      var fill = main.querySelector(".job .bar.det .fill");
+      if (fill && expected) {
+        var pct = Math.max(2, Math.min(92, (e / expected) * 100));
+        fill.style.width = pct + "%";
+      }
+      if (last) renderPhases(last);
+    }
+    jobTicker = setInterval(paint, 500);
 
     (function tick() {
       poll = setTimeout(function () {
@@ -177,6 +231,7 @@
           .then(function (r) { return r.ok ? r.json() : null; })
           .then(function (job) {
             if (!job) return; // daemon restarted; leave the last state on screen
+            last = job;
             var phase = main.querySelector(".job .phase");
             if (phase && job.phase) phase.textContent = job.phase;
             var log = main.querySelector(".joblog");
@@ -185,11 +240,13 @@
               log.textContent = job.log.join("\n") + "\n";
               if (atBottom) log.scrollTop = log.scrollHeight;
             }
-            var secs = main.querySelector(".job .section-head .muted");
-            if (secs) secs.textContent = Math.round((Date.now() - started) / 1000) + "s";
+            paint();
             if (job.state !== "running") {
-              // Re-render the finished view, then continue to the target so the
-              // operator lands on the page that reflects what just changed.
+              // Land the bar before leaving: a finished job reads as 100%,
+              // then the view moves on to where the job said it was going.
+              var fill = main.querySelector(".job .bar .fill");
+              if (fill) fill.style.width = "100%";
+              stopPolling();
               go(location.href, null, false);
               setTimeout(function () { go(job.target || "/", null, true); }, 900);
               return;
