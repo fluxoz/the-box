@@ -54,6 +54,12 @@ printf '%s' "$BOX_ORDERS_B64" | base64 -d > "$ORDERS" 2>/dev/null \
   || die "could not decode the orders embedded in the command (BOX_ORDERS_B64)."
 grep -q '"erase_disk"[[:space:]]*:[[:space:]]*true' "$ORDERS" \
   || die "orders do not consent to erase_disk:true — refusing to serve an installer that wipes machines."
+# Same ceiling as the takeover: the orders ride each client's kernel command
+# line (~2048 bytes on x86-64, ~230 already used by the installer's params).
+orders_b64_probe=$(base64 -w0 "$ORDERS")
+[ "${#orders_b64_probe}" -le 1750 ] \
+  || die "your orders are too large for the netboot kernel command line (~2KB). \
+Flash the image from https://thebox.build and boot each machine from the same stick, or trim SSH keys."
 
 # ---- tools -----------------------------------------------------------------
 ensure_dnsmasq() {
