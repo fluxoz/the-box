@@ -374,6 +374,11 @@ in
       # deployed): a Box that cannot build is a Box that refuses half the
       # repositories people actually have.
       virtualisation.podman.enable = true;
+      # Short image names ("postgres:16" — what everyone types) resolve like
+      # Docker's would. Without a search list podman refuses them outright,
+      # which is how the first real container deploy on a Box failed: "no
+      # unqualified-search registries are defined in registries.conf".
+      virtualisation.containers.registries.search = [ "docker.io" ];
 
       systemd.services.boxd = {
         description = "The Box daemon";
