@@ -895,6 +895,9 @@ fn run_channel(paths: &Paths, action: ChannelCmd) -> Result<()> {
             };
             // Only rebuild/switch when there's actually a new release, unless
             // forced — otherwise the timer would needlessly re-switch each run.
+            // Force also arrives as a marker file: the MCP layer delegates to
+            // this oneshot through systemctl, which carries no arguments.
+            let force = force || boxd::channel::take_force_marker(paths);
             let bump = if force {
                 true
             } else {

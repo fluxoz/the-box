@@ -558,9 +558,16 @@ in
       # the update dies. System-wide, so it holds for root units and SSH
       # operators alike — the fix that used to be a hand-written
       # /root/.gitconfig on the first real Pi.
+      #
+      # BOTH directories, not just os-config: the os-config flake takes the
+      # data dir itself as a git+file input, which root only re-fetches when
+      # the config repo's rev changed since the last fetch — so listing only
+      # os-config held until the first deploy-then-update on one box, where
+      # the pin advance died on the parent repo ("not owned by current user").
       environment.etc.gitconfig.text = ''
         [safe]
         	directory = ${cfg.dataDir}/os-config
+        	directory = ${cfg.dataDir}
       '';
 
       # The boxd CLI is on PATH and defaults to the box's data dir, so an

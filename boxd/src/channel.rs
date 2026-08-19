@@ -202,6 +202,19 @@ pub fn bump_pin(repo: &Path) -> Result<()> {
     nix(&update_args(repo), "nix flake update the-box").map(|_| ())
 }
 
+/// Where a caller that cannot pass arguments through `systemctl start` (the
+/// MCP layer delegating to the root oneshot) leaves "force": as a file. Found
+/// live: `channel_update {force:true}` reported done while the oneshot had
+/// short-circuited on pin == upstream and switched nothing.
+pub fn force_marker(paths: &Paths) -> PathBuf {
+    paths.data_dir.join(".channel-update-force")
+}
+
+/// Consume the force marker: true exactly once per drop.
+pub fn take_force_marker(paths: &Paths) -> bool {
+    std::fs::remove_file(force_marker(paths)).is_ok()
+}
+
 /// Where the channel stands: the pinned revision, the upstream revision, and
 /// whether they differ.
 #[derive(Debug, Clone, Serialize)]
