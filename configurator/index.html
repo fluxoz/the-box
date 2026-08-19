@@ -9,7 +9,7 @@
 .caret{transition:transform .15s}
 .caret--open{transform:rotate(90deg)}
 .cmdbox{display:flex;gap:8px;align-items:flex-start;margin:12px 0 4px}
-.cmdbox code{flex:1;min-width:0;overflow-x:auto;white-space:nowrap;padding:8px 10px;border:1px solid var(--hair,#333);border-radius:4px;background:var(--panel,#111);font-size:.82em}
+.cmdbox code{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:8px 10px;border:1px solid var(--line);border-radius:4px;background:var(--bg);font-size:.82em}
 .cav-secret{color:var(--critical,#d5543f)}
 /* ============================ TOKENS ============================ */
 :root {
@@ -147,6 +147,9 @@ header.top {
   display: grid; grid-template-columns: 320px 1fr; gap: 34px; align-items: start;
   margin-top: 34px;
 }
+/* Grid items default to min-width:auto, so one nowrap command line was
+   widening the whole column past the viewport. */
+.console > * { min-width: 0; }
 @media (max-width: 860px) { .console { grid-template-columns: 1fr; gap: 20px; } }
 
 /* ---- MANIFEST (left) ---- */

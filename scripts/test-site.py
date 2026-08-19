@@ -320,6 +320,12 @@ def main() -> int:
         page.click("#cp-cmd")
         check(page.eval_on_selector("#cp-cmd", "b => b.textContent") == "Copied",
               "configurator copy buttons flip to a Copied state")
+        # The base64 rider once widened the whole page; the command must
+        # truncate inside its box, never blow the layout out sideways.
+        overflow = page.evaluate(
+            "() => document.documentElement.scrollWidth - document.documentElement.clientWidth"
+        )
+        check(overflow <= 0, "the command does not widen the page", f"overflow {overflow}px")
         cfg_win_cmd = page.text_content("#win-cmd") or ""
         check("BOX_ORDERS_B64='" in sh_cmd and "install.sh" in sh_cmd,
               "arming yields a curl command with orders embedded", sh_cmd[:70])
