@@ -60,6 +60,11 @@ Without `boxd`, the identical flow with shell tools:
          "enrollment_code_hash": "$HASH" }
        JSON
 
+   Optional: `"static_ip": { "address": "192.168.1.50/24", "gateway":
+   "192.168.1.1", "dns": ["1.1.1.1"] }` pins the LAN address at first boot
+   (only `address` required; DNS defaults to the gateway). `"wifi":
+   { "ssid": "...", "password": "..." }` joins Wi-Fi instead of ethernet.
+
 2. Ship the orders and run the takeover installer over SSH. It kexecs into the
    installer, so the SSH connection drops mid-command. That is expected.
    Connecting as root (shown here); as a sudo user, use `sudo BOX_ORDERS_B64=$B64 sh`:

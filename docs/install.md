@@ -26,6 +26,7 @@ staging UI exactly once, or an agent writes a JSON file. Same file either way.
   "disk": "auto",
   "hostname": "auto",
   "wifi": { "ssid": "HomeNet", "password": "..." },
+  "static_ip": { "address": "192.168.1.50/24", "gateway": "192.168.1.1", "dns": ["1.1.1.1"] },
   "ssh_authorized_keys": ["ssh-ed25519 AAAA... agent@controller"],
   "cloudflare_tunnel_token": "eyJh...",
   "min_disk_gb": 8,
@@ -40,6 +41,7 @@ staging UI exactly once, or an agent writes a JSON file. Same file either way.
 | `disk` | `"auto"` | Target disk. `"auto"` or an explicit path (prefer `/dev/disk/by-id/...`). |
 | `hostname` | `"box"` | mDNS name. `"auto"` derives `box-<6 chars of machine-id>` — use for batch installs so machines don't collide on `box.local`. |
 | `wifi` | none | Materialized as a NetworkManager profile on first boot. Ethernet needs nothing. |
+| `static_ip` | DHCP | Pins the LAN address at first boot: `address` (IPv4/prefix, required), `gateway`, `dns` (list; defaults to the gateway). Applies to Wi-Fi when `wifi` is set, otherwise to wired. |
 | `ssh_authorized_keys` | `[]` | Keys land in `/etc/box/authorized_keys`; password auth is disabled everywhere. This is how agents keep managing the Box after install. |
 | `cloudflare_tunnel_token` | none | Seeds boxd's secret store on first boot: the Box comes up already publicly reachable. |
 | `min_disk_gb` | `8` | Auto-selection ignores smaller disks. |

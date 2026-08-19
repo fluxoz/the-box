@@ -28,6 +28,11 @@ The install handoff. JSON. Fields:
   code. Seeded into the Box's auth store at first boot so the Box is pairable
   from first boot with no SSH: redeem the plaintext code (§4) for a session token.
 - wifi (object, optional): { "ssid": "...", "password": "..." } for Wi-Fi.
+- static_ip (object, optional): { "address": "192.168.1.50/24", "gateway":
+  "192.168.1.1", "dns": ["1.1.1.1"] } pins the LAN address at first boot.
+  Only "address" (IPv4 with prefix) is required; DNS defaults to the gateway.
+  Applies to the Wi-Fi connection when wifi is set, otherwise to wired.
+  Default: DHCP.
 - storage (object, optional): { "layout": "single" | "mirror" | "pool",
   "min_disk_gb": N }. Default: single, largest internal disk. You may instead set
   "disk": "/dev/disk/by-id/..." to name an explicit device.

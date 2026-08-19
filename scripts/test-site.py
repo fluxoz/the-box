@@ -280,6 +280,11 @@ def main() -> int:
         page.click("label:has(input[name=namemode][value=custom])")
         page.fill("#hostname", "kitchen-rack-long-name-32-chars")
         page.dispatch_event("#hostname", "input")
+        # With only a name set (no static address yet), the claim link is the
+        # mDNS form.
+        local_link = page.get_attribute("#claimlink", "href") or ""
+        check("kitchen-rack-long-name-32-chars.local" in local_link,
+              "naming the Box produces a .local claim link", local_link[:60])
         # Everything filled: Wi-Fi with a max-length WPA passphrase, a
         # real-sized Cloudflare tunnel token, minimum disk, force, power off.
         # The commands this produces must still fit their transports.
@@ -287,6 +292,13 @@ def main() -> int:
         page.fill("#ssid", "A-Real-Household-Network-Name")
         page.fill("#wpass", "p" * 63)
         page.dispatch_event("#wpass", "input")
+        page.click("label:has(input[name=addrmode][value=static])")
+        page.fill("#staddr", "192.168.1.50/24")
+        page.dispatch_event("#staddr", "input")
+        page.fill("#stgw", "192.168.1.1")
+        page.dispatch_event("#stgw", "input")
+        page.fill("#stdns", "1.1.1.1, 9.9.9.9")
+        page.dispatch_event("#stdns", "input")
         page.click("label:has(input[name=expmode][value=cf])")
         page.fill("#cftoken", "eyJhIjoi" + "x" * 240)
         page.dispatch_event("#cftoken", "input")
@@ -296,8 +308,10 @@ def main() -> int:
         page.click("label:has(input[name=finish][value=poweroff])")
         page.click(".arm:has(#force)")
         link = page.get_attribute("#claimlink", "href") or ""
-        check(cfg_code and cfg_code in link and "kitchen-rack-long-name-32-chars.local" in link,
-              "naming the Box produces a claim link with its code", link[:60])
+        # A static address wins over <name>.local in the claim link: the IP
+        # works even from machines that cannot resolve mDNS.
+        check(cfg_code and cfg_code in link and "http://192.168.1.50:2693" in link,
+              "a static address produces an IP claim link with its code", link[:60])
         orders_text = page.evaluate(
             "() => document.querySelector('#json')?.innerText"
             " || document.querySelector('#jsonout')?.innerText || ''"
@@ -319,6 +333,10 @@ def main() -> int:
                   and parsed.get("min_disk_gb") == 100 and parsed.get("force") is True
                   and parsed.get("finish") == "poweroff",
                   "every option reaches the orders")
+            check(parsed.get("static_ip") == {"address": "192.168.1.50/24",
+                                              "gateway": "192.168.1.1",
+                                              "dns": ["1.1.1.1", "9.9.9.9"]},
+                  "the static address reaches the orders", repr(parsed.get("static_ip")))
             check(bool(parsed.get("ssh_authorized_keys")), "the generated key reaches the orders")
             check(len(str(parsed.get("enrollment_code_hash", ""))) == 64,
                   "the orders carry a full pairing hash")
