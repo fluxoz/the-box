@@ -194,9 +194,39 @@ main:focus, main h2:focus { outline: none; }
   0%   { margin-left: -34%; }
   100% { margin-left: 100%; }
 }
+/* Determinate mode: the fill tracks history's estimate for this job kind,
+   moved by the script every half second. The sweep is only for first runs,
+   where no honest estimate exists yet. */
+.job .bar.det .fill {
+  animation: none; margin-left: 0; transition: width .5s linear;
+}
 .job .phase {
   font-family: var(--mono); font-size: 12px; letter-spacing: .06em;
   text-transform: uppercase; color: var(--brass); margin: 0;
+}
+/* The steps a job has taken, each with its real duration. */
+.job .phases {
+  list-style: none; margin: .7rem 0 0; padding: 0;
+  font-family: var(--mono); font-size: 12px; letter-spacing: .04em;
+  border: 1px solid var(--line); border-radius: 3px; background: var(--panel-2);
+}
+.job .phases li {
+  display: flex; gap: .55rem; align-items: baseline;
+  padding: .34rem .7rem; color: var(--dim);
+}
+.job .phases li + li { border-top: 1px solid var(--line); }
+.job .phases li .t { margin-left: auto; font-size: 11px; color: var(--dim); }
+.job .phases li.done::before { content: "\2713"; color: var(--ok); }
+.job .phases li.now { color: var(--brass); }
+.job .phases li.now .t { color: var(--brass); }
+.job .phases li.now::before {
+  content: "\25CF"; color: var(--brass-bright);
+  animation: phase-pulse 1.2s ease-in-out infinite;
+}
+@keyframes phase-pulse { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .job .bar.det .fill { transition: none; }
+  .job .phases li.now::before { animation: none; }
 }
 .joblog, pre.logs {
   margin-top: 1rem; max-height: 16rem; overflow-y: auto;

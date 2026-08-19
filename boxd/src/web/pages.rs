@@ -322,20 +322,46 @@ pub async fn job_view(
     let running = job.state == crate::jobs::State::Running;
     let failed = job.state == crate::jobs::State::Failed;
 
+    // History-informed progress: the median of this kind's recent runs, so the
+    // bar moves at the pace this box has actually shown — and sweeps
+    // indeterminately on a first run rather than inventing a number.
+    let expected = job.expected_secs.filter(|e| *e > 0);
     let body = html! {
         section.job data-job=(job.id) data-state=(format!("{:?}", job.state).to_lowercase())
-                    data-target=(job.target) {
+                    data-target=(job.target) data-elapsed=(job.elapsed_secs(now))
+                    data-expected=[expected] {
             div.section-head {
                 h2 { (job.label) }
-                span.muted { (job.elapsed_secs(now)) "s" }
+                span.muted {
+                    (job.elapsed_secs(now)) "s"
+                    @if let Some(exp) = expected { " · ~" (exp) "s typical" }
+                }
             }
             @if running {
-                div.bar { div.fill {} }
+                @if let Some(exp) = expected {
+                    @let pct = (job.elapsed_secs(now) * 100 / exp).clamp(2, 92);
+                    div.bar.det { div.fill style=(format!("width:{pct}%")) {} }
+                } @else {
+                    div.bar { div.fill {} }
+                }
                 p.phase { (job.phase) }
             } @else if failed {
                 div.flash.err { (job.message) }
             } @else {
                 div.flash.ok { (job.message) }
+            }
+            @if !job.phase_history.is_empty() {
+                ol.phases {
+                    @for (i, mark) in job.phase_history.iter().enumerate() {
+                        @let end = job.phase_history.get(i + 1).map(|m| m.started_unix)
+                            .or(job.finished_unix).unwrap_or(now);
+                        @let last = i + 1 == job.phase_history.len();
+                        li.now[running && last] .done[!(running && last)] {
+                            (mark.name)
+                            span.t { ((end - mark.started_unix).max(0)) "s" }
+                        }
+                    }
+                }
             }
             @if !job.log.is_empty() {
                 pre.joblog { @for line in &job.log { (line) "\n" } }
