@@ -1661,6 +1661,13 @@ pub(crate) async fn execute_as(
                         // MCP-driven update — the polkit-blessed unit is the
                         // same path the dashboard's "Update now" takes.
                         if crate::ostier::update_unit_available() {
+                            if force {
+                                // systemctl start carries no arguments; leave
+                                // force where the oneshot looks for it, or it
+                                // short-circuits on "pin is current" and this
+                                // job reports success having switched nothing.
+                                std::fs::write(crate::channel::force_marker(&paths), b"1")?;
+                            }
                             progress.phase("handing the switch to the system updater");
                             crate::ostier::run_update_unit()?;
                             let release = platform_release().unwrap_or_else(|| "unknown".into());
