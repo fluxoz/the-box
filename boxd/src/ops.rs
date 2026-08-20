@@ -345,9 +345,18 @@ pub fn deploy(
     // A catalog preset (e.g. "postgres") resolves to its base primitive with the
     // preset's defaults, under any params the caller passed.
     if let Some(entry) = catalog::for_data_dir(&paths.data_dir).get(&req.template) {
+        let preset_id = req.template.clone();
         let (base, params) = catalog::resolve(entry, &req.params);
         req.template = base;
         req.params = params;
+        // A preset writes its data path with its own id in it
+        // (/var/lib/box/postgres), because that is all a static file can
+        // say. But the data belongs to the SERVICE: deploy the same preset
+        // twice under two names and both were pointed at one directory,
+        // where two databases quietly corrupted each other. Rewrite the
+        // platform's own data area to the service's own directory; paths the
+        // operator chose elsewhere (/mnt/photos) are left exactly as given.
+        retarget_platform_volumes(&mut req.params, &preset_id, &req.name);
     }
 
     // Some params are syntax, not data: they land in generated Nix unquoted,
@@ -397,6 +406,15 @@ pub fn deploy(
                 .map(|v| v.trim().is_empty() || is_placeholder(v))
                 .unwrap_or(false);
             if weak && looks_secret(key) {
+                // A service redeployed (a changed setting, a new image tag)
+                // keeps its data - so it must keep its credentials too.
+                // Minting a fresh password against an existing database
+                // locks the operator out of their own data, silently.
+                let slot = credential_slot(&req.name, key);
+                if let Ok(Some(existing)) = crate::secrets::get(paths, &slot) {
+                    *value = Value::String(existing);
+                    continue;
+                }
                 let secret = generated_secret_matching(value.as_str().unwrap_or(""))?;
                 generated.push((key.clone(), secret.clone()));
                 *value = Value::String(secret);
@@ -413,11 +431,7 @@ pub fn deploy(
     // The copy lives in boxd's own encrypted store (see crate::secrets), so it
     // is readable by the console, which already has full authority anyway.
     for (key, value) in &generated {
-        let slot = format!(
-            "service-{}-{}",
-            req.name,
-            key.to_ascii_lowercase().replace('_', "-")
-        );
+        let slot = credential_slot(&req.name, key);
         if let Err(e) = crate::secrets::set(paths, &slot, value) {
             tracing::warn!("could not record generated credential {slot}: {e:#}");
         }
@@ -783,6 +797,47 @@ fn generated_secret_matching(placeholder: &str) -> Result<String> {
     Ok(s)
 }
 
+/// Point a preset's `/var/lib/box/<preset-id>[/sub]` host paths at this
+/// Where a generated credential for a service is remembered.
+fn credential_slot(service: &str, key: &str) -> String {
+    format!(
+        "service-{}-{}",
+        service,
+        key.to_ascii_lowercase().replace('_', "-")
+    )
+}
+
+/// Only the preset-id segment is replaced, so subdirectories
+/// (`/tandoor/data`) and sibling directories (`sillytavern-config`,
+/// `sillytavern-data`) keep their shape instead of collapsing onto one path.
+fn retarget_platform_volumes(params: &mut Value, preset_id: &str, service: &str) {
+    const ROOT: &str = "/var/lib/box/";
+    if preset_id == service {
+        return;
+    }
+    let Some(vols) = params.get_mut("volumes").and_then(Value::as_array_mut) else {
+        return;
+    };
+    let from = format!("{ROOT}{preset_id}");
+    let to = format!("{ROOT}{service}");
+    for v in vols.iter_mut() {
+        let Some(text) = v.as_str() else { continue };
+        // host[:container[:opts]] - only the host side is ours to rewrite.
+        let (host, tail) = match text.split_once(':') {
+            Some((h, t)) => (h, Some(t)),
+            None => (text, None),
+        };
+        let Some(rest) = host.strip_prefix(&from) else {
+            continue;
+        };
+        let host = format!("{to}{rest}");
+        *v = Value::String(match tail {
+            Some(t) => format!("{host}:{t}"),
+            None => host,
+        });
+    }
+}
+
 fn is_placeholder(value: &str) -> bool {
     let v = value.to_ascii_lowercase();
     v.contains("change") || v.contains("replace") || v.contains("example") || v == "password"
@@ -953,6 +1008,42 @@ mod tests {
     #[test]
     fn placeholder_credentials_are_replaced_with_generated_ones() {
         assert!(is_placeholder("change-me-please"));
+        // Two services from one preset must not share a data directory.
+        let mut p = serde_json::json!({"volumes": [
+            "/var/lib/box/postgres:/var/lib/postgresql/data",
+            "/var/lib/box/tandoor/mediafiles:/opt/recipes/mediafiles:U",
+            "/mnt/photos:/photos:ro",
+        ]});
+        retarget_platform_volumes(&mut p, "postgres", "blog-db");
+        let got: Vec<&str> = p["volumes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        assert_eq!(got[0], "/var/lib/box/blog-db:/var/lib/postgresql/data");
+        assert_eq!(
+            got[1], "/var/lib/box/tandoor/mediafiles:/opt/recipes/mediafiles:U",
+            "another preset's path is not this preset's to rewrite"
+        );
+        assert_eq!(
+            got[2], "/mnt/photos:/photos:ro",
+            "an operator's own path is untouched"
+        );
+        // Sibling directories keep their suffixes instead of collapsing.
+        let mut q = serde_json::json!({"volumes": [
+            "/var/lib/box/sillytavern-config:/home/node/app/config",
+            "/var/lib/box/sillytavern-data:/home/node/app/data",
+        ]});
+        retarget_platform_volumes(&mut q, "sillytavern", "chat");
+        let g: Vec<&str> = q["volumes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        assert_eq!(g[0], "/var/lib/box/chat-config:/home/node/app/config");
+        assert_eq!(g[1], "/var/lib/box/chat-data:/home/node/app/data");
         // An app that demands an exact key length gets one: the preset's
         // placeholder length is the specification.
         let exact = generated_secret_matching("change-me-to-32-chars-exactly-ok").unwrap();
