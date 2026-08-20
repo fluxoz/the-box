@@ -43,18 +43,39 @@ pub struct DumpPlan {
     pub file: String,
 }
 
-/// The engine table. Matching is on the image name, deliberately narrow:
-/// a false positive would exec nonsense inside someone's container, a false
-/// negative just means file-level backup — so only unmistakable names match.
-pub fn plan_for(name: &str, image: &str) -> Option<DumpPlan> {
-    let base = image
+/// The last path segment of an image ref, without the tag — "postgres" from
+/// "docker.io/library/postgres:16".
+pub fn image_base(image: &str) -> &str {
+    image
         .rsplit('/')
         .next()
         .unwrap_or(image)
         .split(':')
         .next()
-        .unwrap_or(image);
-    let (engine, container_cmd, ext) = match base {
+        .unwrap_or(image)
+}
+
+/// (engine, the port it actually listens on) for unmistakable database
+/// images — what the deploy form's "80 is typical" default must not be
+/// allowed to sabotage. Matching is deliberately narrow, like [`plan_for`].
+pub fn db_default_port(image: &str) -> Option<(&'static str, u16)> {
+    Some(match image_base(image) {
+        "postgres" | "postgresql" | "pgvector" | "timescaledb" => ("postgres", 5432),
+        "mysql" | "mariadb" => ("mysql", 3306),
+        "redis" | "valkey" => ("redis", 6379),
+        "mongo" | "mongodb" => ("mongodb", 27017),
+        "clickhouse" | "clickhouse-server" => ("clickhouse", 8123),
+        "memcached" => ("memcached", 11211),
+        "etcd" => ("etcd", 2379),
+        _ => return None,
+    })
+}
+
+/// The engine table. Matching is on the image name, deliberately narrow:
+/// a false positive would exec nonsense inside someone's container, a false
+/// negative just means file-level backup — so only unmistakable names match.
+pub fn plan_for(name: &str, image: &str) -> Option<DumpPlan> {
+    let (engine, container_cmd, ext) = match image_base(image) {
         "postgres" | "postgresql" | "pgvector" | "timescaledb" => (
             "postgres",
             // pg_dumpall carries roles + all databases; the image's own env

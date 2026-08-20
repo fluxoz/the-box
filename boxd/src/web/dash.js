@@ -315,6 +315,32 @@
   var origSwap2 = new MutationObserver(function () { applySwitches(document); });
   origSwap2.observe(main, { childList: true });
 
+  // Typing a known database image fills its real port and flips reach to
+  // "only my other apps" — visibly, in the form, where the person can still
+  // disagree. The server applies the same port default when the field is
+  // left blank, so JS-off deploys are covered too.
+  var DB_PORTS = { postgres: 5432, postgresql: 5432, pgvector: 5432, timescaledb: 5432,
+    mysql: 3306, mariadb: 3306, redis: 6379, valkey: 6379, mongo: 27017, mongodb: 27017,
+    clickhouse: 8123, "clickhouse-server": 8123, memcached: 11211, etcd: 2379 };
+  document.addEventListener("input", function (e) {
+    if (!e.target.matches || !e.target.matches("input[name=image]")) return;
+    var form = e.target.closest("form");
+    var portEl = form && form.querySelector("input[name=container_port]");
+    if (!portEl) return;
+    var base = e.target.value.trim().split("/").pop().split(":")[0];
+    var port = DB_PORTS[base];
+    var sel = form.querySelector("select[name=expose]");
+    if (port) {
+      if (!portEl.value || portEl.dataset.auto) { portEl.value = port; portEl.dataset.auto = "1"; }
+      if (sel && !sel.dataset.touched) sel.value = "internal";
+    } else if (portEl.dataset.auto) {
+      portEl.value = ""; delete portEl.dataset.auto;
+    }
+  });
+  document.addEventListener("change", function (e) {
+    if (e.target.matches && e.target.matches("select[name=expose]")) e.target.dataset.touched = "1";
+  });
+
   // Arm for the page we loaded on; swap() re-arms after every view change.
   watchJob();
   watchLive();
@@ -425,6 +451,13 @@
     var msg = document.getElementById("keysigninmsg");
     return post("/pair/key/start", {}, false)
       .then(function (j) {
+        if (j && j.none) {
+          // A fresh Box: nothing enrolled, nothing to prompt for.
+          if (mediation === "conditional") return;
+          say(msg, "No security keys are enrolled on this Box yet - pair with a code first, then add one under Devices.", true);
+          if (btn) btn.disabled = false;
+          return;
+        }
         var req = { publicKey: reviveRequest(j.challenge) };
         if (mediation === "conditional") {
           conditionalAbort = new AbortController();
@@ -435,7 +468,7 @@
           return post("/pair/key/finish", { handle: j.handle, response: serialize(cred) }, true);
         });
       })
-      .then(function (j) { location.href = j.next || "/"; })
+      .then(function (j) { if (j) location.href = j.next || "/"; })
       .catch(function (err) {
         if (err && err.name === "AbortError") return; // superseded, not failed
         if (mediation === "conditional") return;
