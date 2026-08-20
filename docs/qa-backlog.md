@@ -44,3 +44,6 @@ Full agent reports: the 8/19 session transcript.
 - Box OS CLI parity: `boxd channel update` over SSH fails ("git" not on
   root PATH; unit-private). Either ship git in systemPackages or make the
   CLI delegate to the update unit like the console does.
+- Pending approvals do not survive a platform update (the job registry marks
+  them interrupted but the approvals queue entry just vanishes; the agent
+  polls forever). Persist or expire them explicitly with a message.
