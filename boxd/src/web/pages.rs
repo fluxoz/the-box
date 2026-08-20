@@ -259,6 +259,12 @@ pub async fn index(
                                 }
                                 td {
                                     @match &status.url {
+                                        // A 127.0.0.1 link is dead from every
+                                        // browser except one running on the Box
+                                        // itself; print it, don't link it.
+                                        Some(u) if u.contains("127.0.0.1") => {
+                                            span.muted { "on the Box: " code { (u) } }
+                                        },
                                         Some(u) => { a href=(u) target="_blank" { (u) } },
                                         None => { span.muted { "no web address" } },
                                     }
@@ -516,7 +522,7 @@ pub async fn new_service_form(
                 label {
                     "Name"
                     span.hint { "What you will call it on this Box. Fine as it is." }
-                    input type="text" name="name" required value=(entry.id) pattern="[a-z0-9-]+" autofocus;
+                    input type="text" name="name" required value=(entry.id) pattern="[-a-z0-9]+" autofocus;
                 }
                 button.btn type="submit" { "Deploy " (entry.title) }
 
@@ -550,7 +556,7 @@ pub async fn new_service_form(
                 label {
                     "Name"
                     span.hint { "Used in the address on your Box, like /sites/my-site/." }
-                    input type="text" name="name" required placeholder="my-site" pattern="[a-z0-9-]+" autofocus;
+                    input type="text" name="name" required placeholder="my-site" pattern="[-a-z0-9]+" autofocus;
                 }
                 label {
                     "The page"
@@ -578,7 +584,7 @@ pub async fn new_service_form(
                 input type="hidden" name="template" value="container";
                 label {
                     "Name"
-                    input type="text" name="name" required placeholder="my-app" pattern="[a-z0-9-]+" autofocus;
+                    input type="text" name="name" required placeholder="my-app" pattern="[-a-z0-9]+" autofocus;
                 }
                 label {
                     "Image"
@@ -631,7 +637,7 @@ pub async fn new_service_form(
                 input type="hidden" name="template" value="reverse-proxied-app";
                 label {
                     "Name"
-                    input type="text" name="name" required placeholder="my-app" pattern="[a-z0-9-]+" autofocus;
+                    input type="text" name="name" required placeholder="my-app" pattern="[-a-z0-9]+" autofocus;
                 }
                 label {
                     "How to start it"
@@ -909,10 +915,21 @@ pub async fn create_service(
         Err(msg) => return err_redirect(&anyhow::anyhow!(msg)),
     };
     let name = request.name.clone();
+    // The new-service form must not silently overwrite: same-name deploys are
+    // UPDATE semantics for agents and the service page, but from a form named
+    // "Deploy your first service" a name reuse replaced a live site with the
+    // placeholder. Refuse and point at the existing service.
+    if let Ok(config) = BoxConfig::load(&state.paths) {
+        if config.find(&name).is_some() {
+            return err_redirect(&anyhow::anyhow!(
+                "a service named {name:?} already exists - open /service/{name} to change it, or pick another name"
+            ));
+        }
+    }
     // A deploy runs a build; it does not belong inside the request. Start it and
     // send the browser to the job view, which follows the phases live.
     let jobs = state.jobs.clone();
-    let id = jobs.start("deploy", format!("Deploying {name}"), "/", move |p| {
+    let id = jobs.start("deploy", format!("Deploying {name}"), format!("/service/{name}"), move |p| {
         p.phase("waiting for other changes to finish");
         let _guard = state.apply_lock.lock().unwrap_or_else(|e| e.into_inner());
         p.phase(format!("building generation for {name}"));
@@ -941,10 +958,12 @@ pub async fn delete_service(
                 let _guard = state.apply_lock.lock().unwrap_or_else(|e| e.into_inner());
                 p.phase(format!("rebuilding without {name}"));
                 let info = ops::delete_service(&state.paths, state.builder.as_ref(), &name)?;
+                {
                 Ok(format!(
                     "Deleted {name} - now at generation #{}",
                     info.number
                 ))
+                }
             })
     };
     Redirect::to(&format!("/jobs/{id}"))
@@ -2107,7 +2126,7 @@ fn channel_form(current: Option<&ChannelConfig>) -> Markup {
         form.stack method="post" action="/system/channel" {
             label {
                 "Host id"
-                input type="text" name="host_id" required value=(host_id) pattern="[a-z0-9-]+";
+                input type="text" name="host_id" required value=(host_id) pattern="[-a-z0-9]+";
             }
             label {
                 "Platform channel " span.muted { "(a flake ref; ours by default, or your fork/mirror/pin)" }
@@ -2760,13 +2779,14 @@ fn devices_page_full(
                                     form method="post" action={ "/devices/" (s.id) "/autonomy" } {
                                         input type="hidden" name="on" value="true";
                                         button type="submit" title="Destructive operations from this session wait for your tap on the Approvals page. Click to let it act alone." {
-                                            "Needs approval"
+                                            "Leashed - grant autonomy"
                                         }
                                     }
                                 }
                             }
                             td {
-                                form method="post" action={ "/devices/" (s.id) "/revoke" } {
+                                form method="post" action={ "/devices/" (s.id) "/revoke" }
+                                     onsubmit="return confirm('Revoke this session? Whatever uses it signs out immediately.')" {
                                     button.danger type="submit" { "Revoke" }
                                 }
                             }
@@ -3459,7 +3479,8 @@ pub async fn approvals(
         p.muted {
             "Agents run this Box, but destructive operations - erasing a machine, deleting a "
             "service, restoring over live data - wait here for you unless you have granted a "
-            "session autonomy in the device list. Approving runs exactly what was asked; "
+            "session autonomy in the device list. Actions you take yourself in this console "
+            "run directly; the gate is for agents. Approving runs exactly what was asked; "
             "denying tells the agent no."
         }
         @if pending.is_empty() {

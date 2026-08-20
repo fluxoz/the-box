@@ -47,6 +47,19 @@ Minimal orders for an agent provision:
       "enrollment_code_hash": "<sha256 of your one-time code>" }
 
 
+### Authority note
+
+`tools/list` on your Box is the authority for what tools exist and their
+schemas; this file documents the common core, not all of them. Port 2693 in
+examples is the DEFAULT management port - substitute your Box's actual port
+everywhere. Destructive tools (delete_service, backup_restore,
+provision_machine) QUEUE for a human tap on the console's Approvals page
+unless your session was granted autonomy: you get {"pending_approval": id}
+back - poll approval_status with that id, and do not re-submit. Platform
+updates ARE driven over MCP: channel_check reports, channel_update applies
+(it delegates the switch to the Box's root updater; pass force:true only when
+channel_check tells you to).
+
 ## 2. The installer (install.sh)
 
 https://thebox.build/install.sh is an x86_64 in-place takeover. It fetches the
@@ -131,8 +144,10 @@ booting:
 
 ## 4. Pairing: get a session token
 
-POST http://BOX:2693/pair/redeem (public path). Body: form-encoded `code=<code>`.
-The one-time code is consumed on use (single-use; replays fail).
+POST http://BOX:2693/pair/redeem (public path). Body: form-encoded
+`code=<code>&label=<who>` OR JSON `{"code":"...","label":"..."}` - both work;
+`label` names the session in the console's device list. The one-time code is
+consumed on use (single-use; replays fail).
 
 - With `Accept: application/json` → responds `{"token":"...","label":"agent"}`.
   Use the token as a Bearer credential (§5). This is the agent path.
@@ -155,7 +170,8 @@ pairing flow, and the favicon) requires a valid session, supplied as either:
 - Authorization: Bearer <token>     (agents)
 - Cookie: box_session=<token>       (browsers)
 
-Loopback, non-proxied requests (e.g. an SSH tunnel to the Box) are trusted
+Loopback-as-the-Box-sees-it, non-proxied requests (an SSH -L tunnel
+terminating ON the Box) are trusted
 without a token. Tokens are stored SHA-256-hashed; each is a named "device" the
 operator can list and revoke.
 
@@ -169,7 +185,8 @@ Stateless (no SSE session required). Standard methods:
 - notifications/initialized → acknowledged (HTTP 202, no body).
 - tools/list → { tools: [...] }.
 - tools/call → { name, arguments } → result. Tool-level failures come back as a
-  result with "isError": true (not a protocol error).
+  result with "isError": true. (Missing/invalid ARGUMENTS are the exception:
+  those are JSON-RPC -32602 protocol errors, per spec.)
 
 Envelope example (list tools):
 
@@ -185,8 +202,8 @@ Call example (deploy):
 
 Deploy / change (each activates a new atomic generation):
 
-- deploy_static_site: create/update a static site. args: name (required; 1–32
-  chars a-z 0-9 '-'), index_html (single-page HTML) OR source_path (a directory
+- deploy_static_site: create/update a static site. args: name (required; 1-32
+  chars a-z 0-9 '-', not starting or ending with '-'), index_html (single-page HTML) OR source_path (a directory
   on the Box to copy as the site root), domain (optional public domain for tunnel
   traffic, e.g. site.example.com).
 - deploy: create/update a service from any template. args: name (required),

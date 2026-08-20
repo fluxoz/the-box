@@ -540,6 +540,14 @@ pub fn deploy(
             info.number, req.name, req.template
         ),
     );
+    // In ops, not in the callers: every door (console, MCP, webhook sync,
+    // CLI) writes the same journal, or "what changed?" answers differently
+    // depending on who asked.
+    crate::journal::record(
+        paths,
+        "deploy",
+        format!("deployed {} ({}); generation #{}", req.name, req.template, info.number),
+    );
 
     // The second speed. The fast path above builds the generation (content +
     // manifest + modules); a structural change also has to be applied to the
@@ -663,6 +671,11 @@ pub fn delete_service(paths: &Paths, builder: &dyn Builder, name: &str) -> Resul
     history::commit_soft(
         paths,
         &format!("generation #{}: delete {}", info.number, name),
+    );
+    crate::journal::record(
+        paths,
+        "delete",
+        format!("deleted {name}; generation #{}", info.number),
     );
     // Deleting is always structural: the config no longer has the service, but
     // until the OS tier catches up, nginx keeps serving it — a "deleted" site
@@ -834,7 +847,7 @@ pub fn rollback(paths: &Paths, number: u64) -> Result<GenerationInfo> {
     util::chown_tree_like(&paths.data_dir, &paths.sources_dir());
     history::commit_soft(
         paths,
-        &format!("generation #{}: rollback (restored)", current.number),
+        &format!("rolled back: generation #{} is running again", current.number),
     );
     crate::journal::record(
         paths,
