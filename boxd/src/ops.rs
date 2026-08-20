@@ -960,7 +960,10 @@ mod tests {
         // A short shrug of a placeholder does not weaken the generator.
         let shrug = generated_secret_matching("change-me-please").unwrap();
         assert!(shrug.chars().count() >= 24, "{shrug}");
-        assert!(exact.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'), "{exact}");
+        assert!(
+            exact.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'),
+            "{exact}"
+        );
         assert!(is_placeholder("REPLACE_ME"));
         assert!(is_placeholder("example"));
         assert!(!is_placeholder("s7f3a91c2b"));
