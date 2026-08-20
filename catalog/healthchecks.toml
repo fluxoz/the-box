@@ -13,6 +13,8 @@ expose = "proxied"
 volumes = ["/var/lib/box/healthchecks:/data:U"]
 
 [params.env]
+# Django refuses any Host it was not told about; the Box proxies by name.
+ALLOWED_HOSTS = "*"
 # Embedded database keeps it a single container.
 DB = "sqlite"
 DB_NAME = "/data/hc.sqlite"

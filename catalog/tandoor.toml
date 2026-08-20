@@ -15,6 +15,9 @@ volumes = [
 ]
 
 [params.env]
+# Django refuses any Host it was not told about, and the Box proxies by
+# service name, so accept what reaches it on your own network.
+ALLOWED_HOSTS = "*"
 # Pin the bundled web server to the port this preset proxies.
 TANDOOR_PORT = "8080"
 DB_ENGINE = "django.db.backends.sqlite3"

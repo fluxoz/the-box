@@ -397,7 +397,7 @@ pub fn deploy(
                 .map(|v| v.trim().is_empty() || is_placeholder(v))
                 .unwrap_or(false);
             if weak && looks_secret(key) {
-                let secret = generated_secret()?;
+                let secret = generated_secret_matching(value.as_str().unwrap_or(""))?;
                 generated.push((key.clone(), secret.clone()));
                 *value = Value::String(secret);
             }
@@ -758,6 +758,31 @@ fn looks_secret(key: &str) -> bool {
 
 /// Catalog presets ship obvious stand-ins so the file reads clearly. Treat
 /// those as "not set" rather than as a credential.
+/// A generated credential that respects a length the app demands.
+///
+/// Some apps refuse to boot unless a key is EXACTLY n characters (Laravel's
+/// APP_KEY is 32, and Firefly III inherits that). A preset author encodes
+/// that requirement the only way a TOML placeholder can: by being exactly
+/// that long. So when a placeholder is long enough to be deliberate, the
+/// generated secret matches its length rather than the generator's natural
+/// one. Found by deploying every catalog preset and reading what the app
+/// actually said: "Unsupported cipher or incorrect key length", from a key
+/// the platform itself had substituted.
+fn generated_secret_matching(placeholder: &str) -> Result<String> {
+    let want = placeholder.trim().chars().count();
+    let mut s = generated_secret()?;
+    // Below this, a placeholder is a shrug ("change-me-please"), not a
+    // specification, and the generator's own strength wins.
+    if want >= 24 && s.chars().count() != want {
+        while s.chars().count() < want {
+            s.push('-');
+            s.push_str(&generated_secret()?);
+        }
+        s = s.chars().take(want).collect();
+    }
+    Ok(s)
+}
+
 fn is_placeholder(value: &str) -> bool {
     let v = value.to_ascii_lowercase();
     v.contains("change") || v.contains("replace") || v.contains("example") || v == "password"
@@ -928,6 +953,14 @@ mod tests {
     #[test]
     fn placeholder_credentials_are_replaced_with_generated_ones() {
         assert!(is_placeholder("change-me-please"));
+        // An app that demands an exact key length gets one: the preset's
+        // placeholder length is the specification.
+        let exact = generated_secret_matching("change-me-to-32-chars-exactly-ok").unwrap();
+        assert_eq!(exact.chars().count(), 32, "{exact}");
+        // A short shrug of a placeholder does not weaken the generator.
+        let shrug = generated_secret_matching("change-me-please").unwrap();
+        assert!(shrug.chars().count() >= 24, "{shrug}");
+        assert!(exact.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'), "{exact}");
         assert!(is_placeholder("REPLACE_ME"));
         assert!(is_placeholder("example"));
         assert!(!is_placeholder("s7f3a91c2b"));
