@@ -579,8 +579,12 @@ in
       # operator who SSHes in can just run `boxd auth enroll`, `boxd status`,
       # etc. — no wrapper, no --data-dir. (Auth writes chown to the data dir
       # owner so a code minted by root is readable by the boxd service.)
-      # restic backs the `boxd backup` client-side-encrypted backups.
-      environment.systemPackages = [ cfg.package pkgs.restic ];
+      # restic backs the `boxd backup` client-side-encrypted backups; age is
+      # the secrets store's cipher — WITHOUT it every CLI secret read fails
+      # ("no backup key set" from `backup run`, a dead `cloud enroll`), while
+      # the boxd unit works, because only the unit's private PATH carried it.
+      # Found live on the first real `boxd cloud enroll` over SSH.
+      environment.systemPackages = [ cfg.package pkgs.restic pkgs.age ];
       environment.variables.BOXD_DATA_DIR = "${cfg.dataDir}";
 
       # Advertise this Box on the LAN so peers can discover it (the fleet view).
