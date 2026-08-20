@@ -142,7 +142,10 @@ pub fn run_dumps(paths: &Paths, config: &BoxConfig) -> Result<Vec<String>> {
             plan.container_cmd,
             tmp.display()
         );
-        let status = Command::new("sh")
+        // /bin/sh, absolutely: POSIX guarantees it on NixOS, and the backup
+        // units' PATH does not carry a shell - "sh: No such file" failed the
+        // first dump on a real Box while every listed binary was present.
+        let status = Command::new("/bin/sh")
             .arg("-c")
             .arg(&shell)
             .status()
