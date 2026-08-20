@@ -1,0 +1,12 @@
+id = "localai"
+title = "LocalAI (models on your own hardware)"
+description = "An OpenAI-compatible server that runs chat, audio, and image models locally, with a web page for browsing and installing models from its gallery. The image ships with no models, so expect multi-gigabyte downloads as you install them. Works on CPU; smaller models are the realistic choice without a GPU."
+category = "AI"
+base = "container"
+icon = "spark"
+
+[params]
+image = "docker.io/localai/localai:latest"
+container_port = 8080
+expose = "proxied"
+volumes = ["/var/lib/box/localai:/build/models"]

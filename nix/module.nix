@@ -90,15 +90,27 @@ let
     domain = site.domain;
   };
 
+  # What a proxied web app needs to actually work behind us. Bare proxyPass
+  # sends Host: 127.0.0.1:<port> and no Upgrade header, which breaks two
+  # whole classes of app: Django-style CSRF checks reject the login POST
+  # (the Host does not match the site), and anything websocket-driven never
+  # connects at all (Home Assistant's UI, Node-RED, live dashboards). Found
+  # by catalog authors reading our nginx before their presets could work.
+  proxyTo = port: {
+    proxyPass = "http://127.0.0.1:${toString port}";
+    proxyWebsockets = true;
+    recommendedProxySettings = true;
+  };
+
   appVhost = app: {
     serverName = if app.domain != null then app.domain else null;
-    locations."/".proxyPass = "http://127.0.0.1:${toString app.port}";
+    locations."/" = proxyTo app.port;
     domain = app.domain;
   };
 
   proxyVhost = name: c: {
     serverName = if c.domain != null then c.domain else name;
-    locations."/".proxyPass = "http://127.0.0.1:${toString c.port}";
+    locations."/" = proxyTo c.port;
     domain = c.domain;
   };
 
@@ -661,6 +673,7 @@ in
     (lib.mkIf (cfg.sites != { } || cfg.apps != { }) {
       services.nginx = {
         enable = true;
+        recommendedProxySettings = true;
         # TWO PLANES, and which one a request arrives on is the whole security
         # boundary:
         #
@@ -720,7 +733,19 @@ in
         virtualisation.podman.enable = true;
         virtualisation.oci-containers.backend = "podman";
         virtualisation.oci-containers.containers = lib.mapAttrs (name: c: {
-          inherit (c) image environment volumes cmd;
+          inherit (c) image environment cmd;
+          # Bind mounts get podman's :U (chown to the container's own user).
+          # The host dirs are created root:0755, and every image that drops
+          # privileges (uid 1000 node apps, uid 999 databases, distroless)
+          # crash-looped on an unwritable data dir - three catalog authors hit
+          # the same wall independently. Per-service dirs belong to their
+          # service, so the chown is correct, not a concession.
+          volumes = map (v:
+            let parts = lib.splitString ":" v;
+            in if !(lib.hasPrefix "/" v) then v
+               else if lib.length parts >= 3 then
+                 (if lib.hasInfix "U" (lib.last parts) then v else v + ",U")
+               else v + ":U") c.volumes;
           # Device strings pass straight through podman's --device: CDI names
           # on an nvidia box, /dev/dri on an amd one (set by the gpu axis).
           devices = lib.optionals c.gpu cfg.gpuContainerDevices;
@@ -755,6 +780,7 @@ in
         # appear on the plane the tunnel reaches (see the sites/apps block).
         services.nginx = lib.mkIf anyProxied {
           enable = true;
+          recommendedProxySettings = true;
           virtualHosts =
             let proxied = lib.filterAttrs (_: c: c.mode == "proxied") cfg.containers;
             in

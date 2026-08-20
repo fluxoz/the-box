@@ -1,0 +1,13 @@
+id = "questdb"
+title = "QuestDB"
+description = "A fast time series database that speaks SQL. Its REST API and web console share port 9000 and have no login, so it stays inside your Box."
+category = "Databases"
+base = "container"
+icon = "clock"
+
+[params]
+# QuestDB ships no rolling major tag, so this pins the newest mature release.
+image = "docker.io/questdb/questdb:9.4.3"
+container_port = 9000
+expose = "internal"
+volumes = ["/var/lib/box/questdb:/var/lib/questdb"]

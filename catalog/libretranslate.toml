@@ -1,0 +1,16 @@
+id = "libretranslate"
+title = "LibreTranslate"
+description = "A self-hosted translation service with a plain web page and an API, powered by Argos Translate models. Nothing you translate leaves your Box. First start downloads models for the languages listed in LT_LOAD_ONLY (about 1GB for the default set); remove that setting to fetch every language, which is many gigabytes."
+category = "AI"
+base = "container"
+icon = "globe"
+
+[params]
+image = "docker.io/libretranslate/libretranslate:latest"
+container_port = 5000
+expose = "proxied"
+volumes = ["/var/lib/box/libretranslate:/home/libretranslate/.local"]
+
+[params.env]
+# Language pairs to download on first start; trim or extend to taste.
+LT_LOAD_ONLY = "en,es,fr,de,it,pt"

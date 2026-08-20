@@ -1,0 +1,17 @@
+id = "langflow"
+title = "Langflow visual AI builder"
+description = "A visual builder for LLM pipelines and agents: drag components onto a canvas, wire them up, and publish the result as an API. It stores flows in its own bundled database, and local backends like Ollama on this Box plug in as components. No account needed on a private Box."
+category = "AI"
+base = "container"
+icon = "flow"
+
+[params]
+image = "docker.io/langflowai/langflow:latest"
+container_port = 7860
+expose = "proxied"
+volumes = ["/var/lib/box/langflow:/app/langflow"]
+
+[params.env]
+# Keep flows and the sqlite database on the mounted volume.
+LANGFLOW_CONFIG_DIR = "/app/langflow"
+LANGFLOW_SAVE_DB_IN_CONFIG_DIR = "true"

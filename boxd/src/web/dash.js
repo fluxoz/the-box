@@ -341,6 +341,24 @@
     if (e.target.matches && e.target.matches("select[name=expose]")) e.target.dataset.touched = "1";
   });
 
+  // The catalog filter: typing narrows the preset cards, and category
+  // headers hide when everything under them is filtered out.
+  document.addEventListener("input", function (e) {
+    if (!e.target.matches || !e.target.matches("#catalog-filter")) return;
+    var q = e.target.value.trim().toLowerCase();
+    document.querySelectorAll("section.pick[data-cat]").forEach(function (sec) {
+      var any = false;
+      sec.querySelectorAll("a.card[data-filter]").forEach(function (card) {
+        var hit = !q || card.getAttribute("data-filter").indexOf(q) >= 0;
+        card.style.display = hit ? "" : "none";
+        if (hit) any = true;
+      });
+      sec.style.display = any ? "" : "none";
+      var head = sec.previousElementSibling;
+      if (head && head.classList.contains("cat-head")) head.style.display = any ? "" : "none";
+    });
+  });
+
   // Arm for the page we loaded on; swap() re-arms after every view change.
   watchJob();
   watchLive();

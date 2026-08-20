@@ -1,0 +1,11 @@
+id = "cyberchef"
+title = "CyberChef"
+description = "The cyber swiss army knife: encode, decode, hash, parse and convert data in the browser. Entirely static and offline once loaded, with nothing to configure and no account. It has no login page, so keep it on your own network."
+category = "Dev Tools"
+base = "container"
+icon = "wrench"
+
+[params]
+image = "docker.io/mpepping/cyberchef:latest"
+container_port = 8000
+expose = "proxied"

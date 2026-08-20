@@ -1,0 +1,17 @@
+id = "mailpit"
+title = "Mailpit email testing"
+description = "A pretend mail server for development. Apps deliver to its SMTP listener on port 1025 inside the container, and every message lands in this web inbox instead of a real mailbox."
+category = "Dev Tools"
+base = "container"
+icon = "mail"
+
+[params]
+# Mailpit ships no rolling major tag; the minor tag tracks patch releases.
+image = "docker.io/axllent/mailpit:v1.30"
+container_port = 8025
+expose = "proxied"
+volumes = ["/var/lib/box/mailpit:/data"]
+
+[params.env]
+# Keep caught mail across restarts instead of the in-memory default.
+MP_DATABASE = "/data/mailpit.db"

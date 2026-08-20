@@ -1,0 +1,12 @@
+id = "rethinkdb"
+title = "RethinkDB"
+description = "A document database that pushes live changefeeds to your apps as data changes. Drivers connect on port 28015. Nothing outside your Box can reach it."
+category = "Databases"
+base = "container"
+icon = "db"
+
+[params]
+image = "docker.io/library/rethinkdb:2"
+container_port = 28015
+expose = "internal"
+volumes = ["/var/lib/box/rethinkdb:/data"]

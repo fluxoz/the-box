@@ -1,0 +1,24 @@
+id = "firefly-iii"
+title = "Firefly III personal finance"
+description = "Personal finance with accounts, budgets, bills, and proper reports; more structure than Actual, and a little more work. Runs on its built in sqlite database, so no separate database container is needed. APP_KEY must be exactly 32 characters; change it before deploying, then register your account on the first visit."
+category = "Home"
+base = "container"
+icon = "chart"
+
+[params]
+# version-6 tracks the current stable major release.
+image = "docker.io/fireflyiii/core:version-6"
+container_port = 8080
+expose = "proxied"
+# :U because the image runs as www-data, which must own these directories.
+volumes = [
+  "/var/lib/box/firefly-iii/database:/var/www/html/storage/database:U",
+  "/var/lib/box/firefly-iii/upload:/var/www/html/storage/upload:U",
+]
+
+[params.env]
+DB_CONNECTION = "sqlite"
+
+[params.secret_env]
+# Firefly refuses anything that is not exactly 32 characters long.
+APP_KEY = "change-me-to-32-chars-exactly-ok"

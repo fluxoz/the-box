@@ -6,7 +6,7 @@ base = "container"
 icon = "compass"
 
 [params]
-image = "qdrant/qdrant"
+image = "docker.io/qdrant/qdrant:latest"
 container_port = 6333
 expose = "internal"
 volumes = ["/var/lib/box/qdrant:/qdrant/storage"]

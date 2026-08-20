@@ -1,0 +1,12 @@
+id = "babybuddy"
+title = "Baby Buddy baby tracker"
+description = "Track a newborn's feeds, sleep, nappies, and tummy time, so tired parents can hand over without guesswork. Works well from a phone browser. Log in with admin and admin, and change the password first thing."
+category = "Home"
+base = "container"
+icon = "clock"
+
+[params]
+image = "lscr.io/linuxserver/babybuddy:latest"
+container_port = 8000
+expose = "proxied"
+volumes = ["/var/lib/box/babybuddy:/config"]

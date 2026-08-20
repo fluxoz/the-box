@@ -1,0 +1,13 @@
+id = "prometheus"
+title = "Prometheus metrics"
+description = "The standard time-series database for metrics: services expose numbers, Prometheus scrapes and stores them. It ships scraping only itself; edit its config to add your own targets, and use Grafana as the friendly face. It has no login page, so only services on the Box itself can reach it."
+category = "Monitoring"
+base = "container"
+icon = "db"
+
+[params]
+image = "docker.io/prom/prometheus:v3"
+container_port = 9090
+expose = "internal"
+# :U hands the data dir to the container's non-root user on first start.
+volumes = ["/var/lib/box/prometheus:/prometheus:U"]

@@ -1,0 +1,12 @@
+id = "uptime-kuma"
+title = "Uptime Kuma monitoring"
+description = "Watches your sites and services and tells you when they go down, with a clean status dashboard and lots of notification channels. On first visit you create the admin account, then add your first monitor."
+category = "Monitoring"
+base = "container"
+icon = "clock"
+
+[params]
+image = "docker.io/louislam/uptime-kuma:1"
+container_port = 3001
+expose = "proxied"
+volumes = ["/var/lib/box/uptime-kuma:/app/data"]

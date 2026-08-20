@@ -336,8 +336,8 @@ fn gh_post(token: &str, url: &str, payload: &Value) -> Result<Value> {
         .context("running curl against the GitHub API")?;
     let text = String::from_utf8_lossy(&out.stdout);
     let (body, status) = text.rsplit_once('\n').unwrap_or((text.as_ref(), ""));
-    let value: Value = serde_json::from_str(body.trim())
-        .context("GitHub returned something that is not JSON")?;
+    let value: Value =
+        serde_json::from_str(body.trim()).context("GitHub returned something that is not JSON")?;
     if !matches!(status.trim(), "200" | "201") {
         bail!(
             "GitHub said no (HTTP {}): {}",

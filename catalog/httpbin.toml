@@ -1,0 +1,12 @@
+id = "httpbin"
+title = "httpbin request inspector"
+description = "A little HTTP service that echoes back whatever you send it: headers, methods, status codes, delays. Handy as a test target for workflows and scripts running on the Box. It has no login page, so only services on the Box itself can reach it."
+category = "Dev Tools"
+base = "container"
+icon = "globe"
+
+[params]
+# The maintained Go rewrite of httpbin; no rolling major tag, pinned minor.
+image = "docker.io/mccutchen/go-httpbin:2.25"
+container_port = 8080
+expose = "internal"

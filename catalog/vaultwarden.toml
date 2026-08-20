@@ -1,0 +1,15 @@
+id = "vaultwarden"
+title = "Vaultwarden password manager"
+description = "A lightweight server for the Bitwarden apps and browser extensions, holding your passwords on your own machine. Browsers only unlock vaults over HTTPS, so publish this service through the Box's public door and use that address; the plain LAN address will load but refuse to log in. Sign up for your account first, then set SIGNUPS_ALLOWED to false so nobody else can."
+category = "Security"
+base = "container"
+icon = "key"
+
+[params]
+image = "docker.io/vaultwarden/server:latest"
+container_port = 80
+expose = "proxied"
+volumes = ["/var/lib/box/vaultwarden:/data"]
+
+[params.env]
+SIGNUPS_ALLOWED = "true"

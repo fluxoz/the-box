@@ -1,0 +1,12 @@
+id = "homebridge"
+title = "Homebridge HomeKit bridge"
+description = "Brings non HomeKit accessories into Apple's Home app through community plugins. Fair warning: iPhones find bridges via mDNS broadcasts, which do not reach into a container yet, so pairing with the Home app will most likely fail until the Box supports host networking; the web interface works fine for installing plugins and preparing your setup. Log in with admin and admin, then change it."
+category = "Home"
+base = "container"
+icon = "key"
+
+[params]
+image = "docker.io/homebridge/homebridge:latest"
+container_port = 8581
+expose = "proxied"
+volumes = ["/var/lib/box/homebridge:/homebridge"]

@@ -1,0 +1,12 @@
+id = "homebox"
+title = "HomeBox home inventory"
+description = "An inventory for the things you own: where they are, what they cost, serial numbers, warranties, and manuals. Create your account on the first visit. Small and quick, with its database kept on the Box."
+category = "Home"
+base = "container"
+icon = "bucket"
+
+[params]
+image = "ghcr.io/sysadminsmedia/homebox:latest"
+container_port = 7745
+expose = "proxied"
+volumes = ["/var/lib/box/homebox:/data"]

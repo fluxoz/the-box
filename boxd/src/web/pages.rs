@@ -420,21 +420,38 @@ pub async fn new_service(
     Query(flash): Query<Flash>,
 ) -> Html<String> {
     let catalog = crate::catalog::for_data_dir(&state.paths.data_dir);
+    // Grouped before the markup: a hundred presets is a catalog, not a list.
+    let mut by_cat: std::collections::BTreeMap<&str, Vec<&crate::catalog::CatalogEntry>> =
+        Default::default();
+    for e in catalog.values() {
+        let cat = if e.category.is_empty() {
+            "Other"
+        } else {
+            e.category.as_str()
+        };
+        by_cat.entry(cat).or_default().push(e);
+    }
     let body = html! {
         h2 { "Deploy a service" }
         p.muted { "Pick what to run. Every deploy builds a new generation and activates it atomically, so anything here is reversible from Generations." }
         @if !catalog.is_empty() {
-            div.section-head { h3 { "Ready to run" } }
-            section.cards.pick {
-                @for entry in catalog.values() {
-                    a.card href={ "/services/new/" (entry.id) } {
-                        // entry.icon is deliberately not rendered: the values are
-                        // names ("elephant", "bucket"), and the design system
-                        // allows inline SVG only — no emoji, no pictographs. It
-                        // stays in the schema for a future SVG mapping.
-                        h3 { (entry.title) }
-                        p.muted { (first_sentence(&entry.description)) }
-                        @if !entry.category.is_empty() { span.badge { (entry.category) } }
+            div.section-head {
+                h3 { "Ready to run" }
+                span.muted { (catalog.len()) " services" }
+            }
+            input type="search" id="catalog-filter" placeholder="Filter: postgres, photos, mqtt…"
+                  autocomplete="off" style="max-width:26rem";
+            @for (cat, entries) in &by_cat {
+                div.section-head.cat-head { h3 { (cat) } span.muted { (entries.len()) } }
+                section.cards.pick data-cat=(cat) {
+                    @for entry in entries {
+                        a.card data-filter=(format!("{} {} {}", entry.id, entry.title.to_lowercase(), entry.category.to_lowercase())) href={ "/services/new/" (entry.id) } {
+                            // entry.icon stays unrendered: the design system
+                            // allows inline SVG only; the name is schema for a
+                            // future mapping.
+                            h3 { (entry.title) }
+                            p.muted { (first_sentence(&entry.description)) }
+                        }
                     }
                 }
             }
@@ -844,11 +861,24 @@ pub async fn service_access(
         return err_redirect(&anyhow::anyhow!("no service named {name}"));
     };
     let is_container = svc.template == "container";
-    let image = svc.params.get("image").and_then(|v| v.as_str()).unwrap_or("");
-    let looks_like_db = ["postgres", "mysql", "mariadb", "redis", "valkey", "mongo",
-        "clickhouse", "memcached", "etcd"]
-        .iter()
-        .any(|d| image.contains(d));
+    let image = svc
+        .params
+        .get("image")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let looks_like_db = [
+        "postgres",
+        "mysql",
+        "mariadb",
+        "redis",
+        "valkey",
+        "mongo",
+        "clickhouse",
+        "memcached",
+        "etcd",
+    ]
+    .iter()
+    .any(|d| image.contains(d));
     let mut params = match svc.params.clone() {
         serde_json::Value::Object(m) => m,
         _ => serde_json::Map::new(),
@@ -895,14 +925,22 @@ pub async fn service_access(
     };
     let jobs = state.jobs.clone();
     let target = format!("/service/{name}");
-    let id = jobs.start("deploy", format!("Changing access for {name}"), target, move |p| {
-        p.phase("waiting for other changes to finish");
-        let _guard = state.apply_lock.lock().unwrap_or_else(|e| e.into_inner());
-        p.phase(format!("rebuilding with the new access for {name}"));
-        let info = ops::deploy(&state.paths, state.builder.as_ref(), request)?;
-        p.phase("applied");
-        Ok(format!("Access updated - now at generation #{}", info.number))
-    });
+    let id = jobs.start(
+        "deploy",
+        format!("Changing access for {name}"),
+        target,
+        move |p| {
+            p.phase("waiting for other changes to finish");
+            let _guard = state.apply_lock.lock().unwrap_or_else(|e| e.into_inner());
+            p.phase(format!("rebuilding with the new access for {name}"));
+            let info = ops::deploy(&state.paths, state.builder.as_ref(), request)?;
+            p.phase("applied");
+            Ok(format!(
+                "Access updated - now at generation #{}",
+                info.number
+            ))
+        },
+    );
     Redirect::to(&format!("/jobs/{id}"))
 }
 
@@ -929,17 +967,22 @@ pub async fn create_service(
     // A deploy runs a build; it does not belong inside the request. Start it and
     // send the browser to the job view, which follows the phases live.
     let jobs = state.jobs.clone();
-    let id = jobs.start("deploy", format!("Deploying {name}"), format!("/service/{name}"), move |p| {
-        p.phase("waiting for other changes to finish");
-        let _guard = state.apply_lock.lock().unwrap_or_else(|e| e.into_inner());
-        p.phase(format!("building generation for {name}"));
-        let info = ops::deploy(&state.paths, state.builder.as_ref(), request)?;
-        p.phase("activated");
-        Ok(format!(
-            "Deployed {name} - now at generation #{}",
-            info.number
-        ))
-    });
+    let id = jobs.start(
+        "deploy",
+        format!("Deploying {name}"),
+        format!("/service/{name}"),
+        move |p| {
+            p.phase("waiting for other changes to finish");
+            let _guard = state.apply_lock.lock().unwrap_or_else(|e| e.into_inner());
+            p.phase(format!("building generation for {name}"));
+            let info = ops::deploy(&state.paths, state.builder.as_ref(), request)?;
+            p.phase("activated");
+            Ok(format!(
+                "Deployed {name} - now at generation #{}",
+                info.number
+            ))
+        },
+    );
     Redirect::to(&format!("/jobs/{id}"))
 }
 
@@ -959,10 +1002,10 @@ pub async fn delete_service(
                 p.phase(format!("rebuilding without {name}"));
                 let info = ops::delete_service(&state.paths, state.builder.as_ref(), &name)?;
                 {
-                Ok(format!(
-                    "Deleted {name} - now at generation #{}",
-                    info.number
-                ))
+                    Ok(format!(
+                        "Deleted {name} - now at generation #{}",
+                        info.number
+                    ))
                 }
             })
     };
@@ -1702,10 +1745,9 @@ pub async fn create_config_repo_github(
     if name.is_empty() || token.is_empty() {
         return redirect("err", "a repo name and a GitHub token are both required");
     }
-    let result = blocking(move || {
-        crate::history::create_github_config_repo(&state.paths, &token, &name)
-    })
-    .await;
+    let result =
+        blocking(move || crate::history::create_github_config_repo(&state.paths, &token, &name))
+            .await;
     match result {
         Ok(html_url) => redirect(
             "ok",
@@ -3041,14 +3083,27 @@ pub async fn service_detail(
         .get("expose")
         .and_then(|v| v.as_str())
         .unwrap_or(if is_container { "internal" } else { "lan" });
-    let image = svc.params.get("image").and_then(|v| v.as_str()).unwrap_or("");
+    let image = svc
+        .params
+        .get("image")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     // Not authorization — a hint. Raw-protocol services have no login page to
     // hide behind and no HTTP for the proxy to front, so they get direct-port
     // LAN exposure and a sterner warning.
-    let looks_like_db = ["postgres", "mysql", "mariadb", "redis", "valkey", "mongo",
-        "clickhouse", "memcached", "etcd"]
-        .iter()
-        .any(|d| image.contains(d));
+    let looks_like_db = [
+        "postgres",
+        "mysql",
+        "mariadb",
+        "redis",
+        "valkey",
+        "mongo",
+        "clickhouse",
+        "memcached",
+        "etcd",
+    ]
+    .iter()
+    .any(|d| image.contains(d));
     let mode_now = if svc.domain.is_some() && svc.public {
         "public"
     } else if is_container && expose == "internal" {

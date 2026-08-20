@@ -1729,10 +1729,7 @@ pub(crate) async fn execute_as(
                         .and_then(Value::as_str)
                         .unwrap_or_default()
                         .to_string(),
-                    gateway: s
-                        .get("gateway")
-                        .and_then(Value::as_str)
-                        .map(str::to_string),
+                    gateway: s.get("gateway").and_then(Value::as_str).map(str::to_string),
                     dns: s
                         .get("dns")
                         .and_then(Value::as_array)

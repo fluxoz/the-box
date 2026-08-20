@@ -75,8 +75,8 @@ fn main() -> Result<()> {
         Cmd::Probe => plan::probe_cmd(),
         Cmd::Plan { orders, out } => plan::plan_cmd(&orders, &out),
         Cmd::ValidateOrders { orders } => {
-            let text = std::fs::read_to_string(&orders)
-                .with_context(|| format!("reading {orders}"))?;
+            let text =
+                std::fs::read_to_string(&orders).with_context(|| format!("reading {orders}"))?;
             let value: serde_json::Value =
                 serde_json::from_str(&text).with_context(|| format!("parsing {orders}"))?;
             match box_core::orders::validate_for_install(&value) {

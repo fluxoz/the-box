@@ -1,0 +1,23 @@
+id = "sonarqube"
+title = "SonarQube code analysis"
+description = "Static analysis for your projects: bugs, code smells and coverage, with an embedded database that suits a single team. The image is a large download and the app wants a few GB of RAM. Log in as admin/admin and change the password on first visit."
+category = "Dev Tools"
+base = "container"
+icon = "search"
+
+[params]
+image = "docker.io/library/sonarqube:community"
+container_port = 9000
+expose = "proxied"
+# :U hands each dir to the container's non-root user on first start.
+volumes = [
+  "/var/lib/box/sonarqube/data:/opt/sonarqube/data:U",
+  "/var/lib/box/sonarqube/extensions:/opt/sonarqube/extensions:U",
+  "/var/lib/box/sonarqube/logs:/opt/sonarqube/logs:U",
+]
+
+[params.env]
+# The embedded Elasticsearch refuses to start without kernel tuning
+# (vm.max_map_count); this skips those bootstrap checks, which is the
+# supported mode for a small self-hosted instance.
+SONAR_ES_BOOTSTRAP_CHECKS_DISABLE = "true"

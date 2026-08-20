@@ -1,0 +1,18 @@
+id = "linkding"
+title = "linkding bookmarks"
+description = "A tidy self-hosted bookmark manager with tags, search and browser extensions. Log in as admin with the password set below, then change it in the settings."
+category = "Productivity"
+base = "container"
+icon = "globe"
+
+[params]
+image = "docker.io/sissbruecker/linkding:latest"
+container_port = 9090
+expose = "proxied"
+volumes = ["/var/lib/box/linkding:/etc/linkding/data"]
+
+[params.env]
+LD_SUPERUSER_NAME = "admin"
+
+[params.secret_env]
+LD_SUPERUSER_PASSWORD = "change-me-please"

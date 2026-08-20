@@ -1,0 +1,13 @@
+id = "nats"
+title = "NATS"
+description = "A small, fast message bus for your apps, with JetStream persistence switched on. Nothing outside your Box can reach it."
+category = "Dev Tools"
+base = "container"
+icon = "spark"
+
+[params]
+image = "docker.io/library/nats:2"
+container_port = 4222
+expose = "internal"
+volumes = ["/var/lib/box/nats:/data"]
+cmd = ["-js", "-sd", "/data"]

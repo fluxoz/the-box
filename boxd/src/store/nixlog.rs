@@ -121,17 +121,14 @@ impl NixLog {
                 let fields = msg.get("fields").and_then(Value::as_array);
                 match typ {
                     RES_BUILD_LOG_LINE | RES_POST_BUILD_LOG_LINE => {
-                        if let Some(line) =
-                            fields.and_then(|f| f.first()).and_then(Value::as_str)
-                        {
+                        if let Some(line) = fields.and_then(|f| f.first()).and_then(Value::as_str) {
                             self.keep(line, watch);
                         }
                     }
                     // A builder moving to its next phase (unpackPhase,
                     // buildPhase…) — the signal quiet builds still give.
                     RES_SET_PHASE => {
-                        if let Some(phase) =
-                            fields.and_then(|f| f.first()).and_then(Value::as_str)
+                        if let Some(phase) = fields.and_then(|f| f.first()).and_then(Value::as_str)
                         {
                             self.keep(&format!("── {phase}"), watch);
                         }
@@ -231,10 +228,15 @@ mod tests {
             log.line(raw, Some(&sink));
         }
         let lines = sink.lines.lock().unwrap();
-        assert!(lines.iter().any(|l| l.contains("building /nix/store/abc-hello.drv")));
+        assert!(lines
+            .iter()
+            .any(|l| l.contains("building /nix/store/abc-hello.drv")));
         assert!(lines.iter().any(|l| l == "configuring"));
         assert!(lines.iter().any(|l| l == "builder failed"));
-        assert!(lines.iter().any(|l| l == "warning: dirty tree"), "ANSI stripped: {lines:?}");
+        assert!(
+            lines.iter().any(|l| l == "warning: dirty tree"),
+            "ANSI stripped: {lines:?}"
+        );
         let units = sink.units.lock().unwrap();
         assert_eq!(units.first(), Some(&(1, 4)), "builds aggregate alone");
         assert_eq!(units.last(), Some(&(3, 14)), "builds + copies combined");
@@ -248,8 +250,14 @@ mod tests {
         let mut log = NixLog::new();
         log.line("@nix {not json", Some(&sink));
         log.line("", Some(&sink));
-        log.line(r#"@nix {"action":"result","id":9,"type":105,"fields":[1,2]}"#, Some(&sink));
-        assert!(sink.units.lock().unwrap().is_empty(), "unknown activity id counts nothing");
+        log.line(
+            r#"@nix {"action":"result","id":9,"type":105,"fields":[1,2]}"#,
+            Some(&sink),
+        );
+        assert!(
+            sink.units.lock().unwrap().is_empty(),
+            "unknown activity id counts nothing"
+        );
         assert!(sink.lines.lock().unwrap().is_empty());
     }
 }

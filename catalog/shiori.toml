@@ -1,0 +1,12 @@
+id = "shiori"
+title = "Shiori bookmark archive"
+description = "Bookmarks that keep a readable copy of each page, so links still work when the original disappears. Log in as shiori with password gopher and change it on your first visit."
+category = "Productivity"
+base = "container"
+icon = "book"
+
+[params]
+image = "ghcr.io/go-shiori/shiori:latest"
+container_port = 8080
+expose = "proxied"
+volumes = ["/var/lib/box/shiori:/shiori"]

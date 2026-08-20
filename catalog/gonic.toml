@@ -1,0 +1,18 @@
+id = "gonic"
+title = "gonic music server (Subsonic)"
+description = "A tiny Subsonic-compatible music server for your own collection, great with apps like Symfonium or play:Sub. Put music in /var/lib/box/gonic/music on the Box. The first login is admin with password admin; change it right away in the web screen."
+category = "Media"
+base = "container"
+icon = "music"
+
+[params]
+image = "docker.io/sentriz/gonic:latest"
+container_port = 80
+expose = "proxied"
+volumes = [
+  "/var/lib/box/gonic/data:/data",
+  "/var/lib/box/gonic/music:/music",
+  "/var/lib/box/gonic/podcasts:/podcasts",
+  "/var/lib/box/gonic/playlists:/playlists",
+  "/var/lib/box/gonic/cache:/cache",
+]

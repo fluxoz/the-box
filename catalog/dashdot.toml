@@ -1,0 +1,11 @@
+id = "dashdot"
+title = "dash. server dashboard"
+description = "A clean live readout of this machine: CPU, memory, storage, network and uptime, in a page you can leave open on a spare screen. Read-only and has no login page, so keep it on your own network. Some figures show container limits rather than the whole host."
+category = "Monitoring"
+base = "container"
+icon = "chart"
+
+[params]
+image = "docker.io/mauricenino/dashdot:latest"
+container_port = 3001
+expose = "proxied"

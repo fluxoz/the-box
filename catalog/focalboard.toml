@@ -1,0 +1,13 @@
+id = "focalboard"
+title = "Focalboard project boards"
+description = "Trello style boards for projects and planning, running as a single container with its own database. Create your account on the first visit. Fair warning: upstream development has wound down, so it works today but do not expect new features."
+category = "Productivity"
+base = "container"
+icon = "doc"
+
+[params]
+image = "docker.io/mattermost/focalboard:latest"
+container_port = 8000
+expose = "proxied"
+# :U because the image runs as nobody, which must own its data directory.
+volumes = ["/var/lib/box/focalboard:/opt/focalboard/data:U"]

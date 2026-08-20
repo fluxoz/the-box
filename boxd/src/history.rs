@@ -140,7 +140,10 @@ pub fn deploy_key_paths(paths: &Paths) -> (PathBuf, PathBuf) {
 /// (well-known constants for the big hosts, TOFU keyscan otherwise), so a
 /// later DNS hijack of the git host cannot swap the repo out from under us.
 pub fn known_hosts_path(paths: &Paths) -> PathBuf {
-    paths.data_dir.join("secrets").join("config-push.known-hosts")
+    paths
+        .data_dir
+        .join("secrets")
+        .join("config-push.known-hosts")
 }
 
 /// Mint (or return) the Box's config-push deploy key; returns the public line.
@@ -154,7 +157,10 @@ pub fn ensure_deploy_key(paths: &Paths) -> Result<String> {
             .output()
             .context("running ssh-keygen (is openssh installed?)")?;
         if !out.status.success() {
-            bail!("ssh-keygen failed: {}", String::from_utf8_lossy(&out.stderr));
+            bail!(
+                "ssh-keygen failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
         }
         crate::util::chown_like(&paths.data_dir, &key);
         crate::util::chown_like(&paths.data_dir, &pubkey);

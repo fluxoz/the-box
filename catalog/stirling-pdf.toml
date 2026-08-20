@@ -1,0 +1,12 @@
+id = "stirling-pdf"
+title = "Stirling PDF toolbox"
+description = "Merge, split, compress, convert and OCR PDFs in your browser; files never leave the Box. There is no login page, so anyone on your home network can use it. The image is a large download on first start, around a gigabyte."
+category = "Productivity"
+base = "container"
+icon = "doc"
+
+[params]
+image = "docker.io/frooodle/s-pdf:latest"
+container_port = 8080
+expose = "proxied"
+volumes = ["/var/lib/box/stirling-pdf/configs:/configs"]

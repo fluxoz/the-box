@@ -1,0 +1,13 @@
+id = "piper-tts"
+title = "Piper voice (Wyoming protocol)"
+description = "A lightweight neural text-to-speech engine speaking the Wyoming protocol that Home Assistant's voice pipeline expects. This is a raw network protocol rather than a web page, so it is exposed directly for devices on your LAN to reach on port 10200. It downloads the selected voice (about 60MB) on first start; edit cmd to pick another voice."
+category = "AI"
+base = "container"
+icon = "music"
+
+[params]
+image = "docker.io/rhasspy/wyoming-piper:latest"
+container_port = 10200
+expose = "exposed"
+cmd = ["--voice", "en_US-lessac-medium"]
+volumes = ["/var/lib/box/piper-tts:/data"]

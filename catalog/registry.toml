@@ -1,0 +1,12 @@
+id = "registry"
+title = "Container image registry"
+description = "A private registry for container images, so builds on your Box can push and pull without going out to Docker Hub. It has no login page, so only services on the Box itself can reach it."
+category = "Dev Tools"
+base = "container"
+icon = "bucket"
+
+[params]
+image = "docker.io/library/registry:2"
+container_port = 5000
+expose = "internal"
+volumes = ["/var/lib/box/registry:/var/lib/registry"]

@@ -1,0 +1,22 @@
+id = "healthchecks"
+title = "Healthchecks cron monitoring"
+description = "Watches your cron jobs and backups: each job pings a URL when it runs, and Healthchecks alerts you when a ping goes quiet. Sign-up needs a mail server it does not have, so create your login once from the Box shell with 'podman exec -it <service> /opt/healthchecks/manage.py createsuperuser'. Change the secret key from its default."
+category = "Monitoring"
+base = "container"
+icon = "clock"
+
+[params]
+image = "docker.io/healthchecks/healthchecks:v4.3"
+container_port = 8000
+expose = "proxied"
+# :U hands the data dir to the container's non-root user on first start.
+volumes = ["/var/lib/box/healthchecks:/data:U"]
+
+[params.env]
+# Embedded database keeps it a single container.
+DB = "sqlite"
+DB_NAME = "/data/hc.sqlite"
+
+[params.secret_env]
+# Django's session-signing key; any long random string.
+SECRET_KEY = "change-me-please"

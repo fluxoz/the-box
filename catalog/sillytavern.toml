@@ -1,0 +1,21 @@
+id = "sillytavern"
+title = "SillyTavern chat frontend"
+description = "A heavily customizable chat frontend for character and roleplay conversations, built for local backends like Ollama and llama.cpp as well as cloud APIs. Pick a model backend in its API connections panel after deploy. It ships with no login here, so anyone on your network can open it."
+category = "AI"
+base = "container"
+icon = "chat"
+
+[params]
+image = "ghcr.io/sillytavern/sillytavern:latest"
+container_port = 8000
+expose = "proxied"
+volumes = [
+  "/var/lib/box/sillytavern-config:/home/node/app/config",
+  "/var/lib/box/sillytavern-data:/home/node/app/data",
+]
+
+[params.env]
+# Accept connections from outside the container; the IP whitelist would
+# otherwise reject everything the Box's proxy forwards.
+SILLYTAVERN_LISTEN = "true"
+SILLYTAVERN_WHITELISTMODE = "false"

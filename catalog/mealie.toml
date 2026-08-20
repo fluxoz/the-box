@@ -1,0 +1,13 @@
+id = "mealie"
+title = "Mealie recipe manager"
+description = "A recipe box, meal planner, and shopping list for the household. Paste a link from nearly any recipe site and it imports cleanly. Sign in as changeme@example.com with password MyPassword, and change both straight away."
+category = "Home"
+base = "container"
+icon = "book"
+
+[params]
+# Mealie publishes no rolling major tag, only exact versions and latest.
+image = "ghcr.io/mealie-recipes/mealie:latest"
+container_port = 9000
+expose = "proxied"
+volumes = ["/var/lib/box/mealie:/app/data"]

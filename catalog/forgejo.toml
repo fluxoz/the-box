@@ -1,0 +1,17 @@
+id = "forgejo"
+title = "Forgejo git hosting"
+description = "The community-run fork of Gitea, from the people behind Codeberg: git hosting with issues, pull requests and a built-in database. First visit shows an install page; keep the defaults and create your admin account. Push and pull over HTTP(S), the SSH port is not mapped."
+category = "Dev Tools"
+base = "container"
+icon = "code"
+
+[params]
+# 11 is the current long-term-support line.
+image = "codeberg.org/forgejo/forgejo:11"
+container_port = 3000
+expose = "proxied"
+volumes = ["/var/lib/box/forgejo:/data"]
+
+[params.env]
+# Pre-select the embedded database on the install page.
+FORGEJO__database__DB_TYPE = "sqlite3"

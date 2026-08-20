@@ -1,0 +1,15 @@
+id = "komga"
+title = "Komga comics & manga server"
+description = "A media server for comics, manga and PDFs with a clean web reader and per-user progress. Put your files in /var/lib/box/komga/data on the Box; the first visit asks you to create the admin login and add that folder as a library."
+category = "Media"
+base = "container"
+icon = "book"
+
+[params]
+image = "docker.io/gotson/komga:1.x"
+container_port = 25600
+expose = "proxied"
+volumes = [
+  "/var/lib/box/komga/config:/config",
+  "/var/lib/box/komga/data:/data",
+]

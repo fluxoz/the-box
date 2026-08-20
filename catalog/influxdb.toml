@@ -1,0 +1,26 @@
+id = "influxdb"
+title = "InfluxDB"
+description = "A time series database for metrics and sensor readings. On first start it sets itself up with the login, organization and bucket below, so change both change-me secrets at deploy. Nothing outside your Box can reach it."
+category = "Databases"
+base = "container"
+icon = "chart"
+
+[params]
+image = "docker.io/library/influxdb:2"
+container_port = 8086
+expose = "internal"
+volumes = [
+  "/var/lib/box/influxdb:/var/lib/influxdb2",
+  "/var/lib/box/influxdb-config:/etc/influxdb2",
+]
+
+[params.env]
+# One-time automatic setup on a fresh volume; ignored after that.
+DOCKER_INFLUXDB_INIT_MODE = "setup"
+DOCKER_INFLUXDB_INIT_USERNAME = "admin"
+DOCKER_INFLUXDB_INIT_ORG = "box"
+DOCKER_INFLUXDB_INIT_BUCKET = "default"
+
+[params.secret_env]
+DOCKER_INFLUXDB_INIT_PASSWORD = "change-me-please"
+DOCKER_INFLUXDB_INIT_ADMIN_TOKEN = "change-me-admin-token"

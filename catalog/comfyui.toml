@@ -1,0 +1,13 @@
+id = "comfyui"
+title = "ComfyUI image generation"
+description = "The node-based workbench for Stable Diffusion and other image models. First start sets up ComfyUI and its Python stack, which is a large download, and you still need to place model checkpoints in the models folder under /var/lib/box/comfyui before you can generate anything. Needs an NVIDIA GPU."
+category = "AI"
+base = "container"
+icon = "photo"
+
+[params]
+image = "docker.io/yanwk/comfyui-boot:cu124-slim"
+container_port = 8188
+expose = "proxied"
+gpu = true
+volumes = ["/var/lib/box/comfyui:/root"]

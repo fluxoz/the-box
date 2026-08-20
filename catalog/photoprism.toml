@@ -1,0 +1,18 @@
+id = "photoprism"
+title = "PhotoPrism photo library"
+description = "Browse, search and organize your photo collection with on-device AI tagging, no cloud involved. Put photos in /var/lib/box/photoprism/originals on the Box and log in as admin with the password set below, then change it. The image is a large download on first start, well over a gigabyte."
+category = "Media"
+base = "container"
+icon = "photo"
+
+[params]
+image = "docker.io/photoprism/photoprism:latest"
+container_port = 2342
+expose = "proxied"
+volumes = [
+  "/var/lib/box/photoprism/storage:/photoprism/storage",
+  "/var/lib/box/photoprism/originals:/photoprism/originals",
+]
+
+[params.secret_env]
+PHOTOPRISM_ADMIN_PASSWORD = "change-me-please"

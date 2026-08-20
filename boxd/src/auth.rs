@@ -152,16 +152,15 @@ fn load_checked(paths: &Paths) -> Result<Store> {
             Err(anyhow::Error::from(e)).with_context(|| format!("reading {}", file.display()))
         }
         Ok(text) => {
-            let mut store: Store =
-                serde_json::from_str(&text).with_context(|| format!("parsing {}", file.display()))?;
+            let mut store: Store = serde_json::from_str(&text)
+                .with_context(|| format!("parsing {}", file.display()))?;
             // Backfill for Boxes claimed before `claimed_at` existed. Without
             // this, an already-owned Box carries no record of being claimed, so
             // revoking its last device would drop it back to "never claimed"
             // and reopen first-run claim to the network — the exact hole the
             // field was added to close, left open on every Box already out
             // there. Anything holding an operator credential has been claimed.
-            if store.claimed_at.is_none()
-                && (!store.sessions.is_empty() || !store.keys.is_empty())
+            if store.claimed_at.is_none() && (!store.sessions.is_empty() || !store.keys.is_empty())
             {
                 store.claimed_at = Some(now());
             }
@@ -196,8 +195,7 @@ fn save(paths: &Paths, store: &Store) -> Result<()> {
         f.sync_all()
             .with_context(|| format!("flushing {}", tmp.display()))?;
     }
-    std::fs::rename(&tmp, &file)
-        .with_context(|| format!("replacing {}", file.display()))?;
+    std::fs::rename(&tmp, &file).with_context(|| format!("replacing {}", file.display()))?;
     std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600))?;
     // Match the data dir's owner so a code minted by an operator running
     // `boxd auth enroll` as root over SSH is still readable by the boxd

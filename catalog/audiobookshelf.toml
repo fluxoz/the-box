@@ -1,0 +1,17 @@
+id = "audiobookshelf"
+title = "Audiobookshelf audiobooks & podcasts"
+description = "Your audiobook and podcast library with progress sync and mobile apps. Put audiobooks in /var/lib/box/audiobookshelf/audiobooks on the Box; the first visit asks you to create the admin account."
+category = "Media"
+base = "container"
+icon = "book"
+
+[params]
+image = "ghcr.io/advplyr/audiobookshelf:latest"
+container_port = 80
+expose = "proxied"
+volumes = [
+  "/var/lib/box/audiobookshelf/config:/config",
+  "/var/lib/box/audiobookshelf/metadata:/metadata",
+  "/var/lib/box/audiobookshelf/audiobooks:/audiobooks",
+  "/var/lib/box/audiobookshelf/podcasts:/podcasts",
+]

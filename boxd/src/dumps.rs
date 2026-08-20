@@ -94,6 +94,12 @@ pub fn plan_for(name: &str, image: &str) -> Option<DumpPlan> {
             "redis-cli --rdb -",
             "rdb",
         ),
+        "mongo" | "mongodb" => (
+            "mongodb",
+            // One consistent archive of every database, to stdout.
+            "mongodump --archive --quiet",
+            "mongodump.archive",
+        ),
         _ => return None,
     };
     Some(DumpPlan {

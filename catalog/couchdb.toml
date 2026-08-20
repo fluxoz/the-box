@@ -1,0 +1,18 @@
+id = "couchdb"
+title = "CouchDB"
+description = "A document database that replicates well with offline-first apps, for your other services to use. Change the admin password when you deploy it. Nothing outside your Box can reach it."
+category = "Databases"
+base = "container"
+icon = "db"
+
+[params]
+image = "docker.io/library/couchdb:3"
+container_port = 5984
+expose = "internal"
+volumes = ["/var/lib/box/couchdb:/opt/couchdb/data"]
+
+[params.env]
+COUCHDB_USER = "admin"
+
+[params.secret_env]
+COUCHDB_PASSWORD = "change-me-please"

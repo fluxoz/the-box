@@ -1,0 +1,21 @@
+id = "nextcloud"
+title = "Nextcloud files & calendar"
+description = "Your own file cloud with sharing, contacts, calendar and mobile sync. It runs on its built-in SQLite database, which is fine for one household. The first start takes a few minutes to install; log in as admin with the password set below, then change it."
+category = "Files & Sync"
+base = "container"
+icon = "cloud"
+
+[params]
+image = "docker.io/library/nextcloud:34-apache"
+container_port = 80
+expose = "proxied"
+volumes = ["/var/lib/box/nextcloud:/var/www/html"]
+
+[params.env]
+SQLITE_DATABASE = "nextcloud"
+NEXTCLOUD_ADMIN_USER = "admin"
+# Accept whatever address the Box serves it on; tighten later in config.php.
+NEXTCLOUD_TRUSTED_DOMAINS = "*"
+
+[params.secret_env]
+NEXTCLOUD_ADMIN_PASSWORD = "change-me-please"

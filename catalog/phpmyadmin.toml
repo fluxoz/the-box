@@ -1,0 +1,17 @@
+id = "phpmyadmin"
+title = "phpMyAdmin"
+description = "The classic web admin for MySQL and MariaDB. Enter your database server's address and credentials on the login page. It keeps no data of its own."
+category = "Dev Tools"
+base = "container"
+icon = "wrench"
+
+[params]
+image = "docker.io/library/phpmyadmin:5"
+# Moved off the image's default port 80, which the platform reserves.
+container_port = 8080
+expose = "proxied"
+
+[params.env]
+APACHE_PORT = "8080"
+# Show a server field on the login page instead of assuming one fixed host.
+PMA_ARBITRARY = "1"

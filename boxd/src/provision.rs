@@ -464,7 +464,11 @@ mod tests {
 
         // Gateway/DNS omitted: the keys must be absent, not null — firstboot
         // reads them with `// empty`.
-        let bare = StaticIp { address: "10.0.0.7/16".into(), gateway: None, dns: vec![] };
+        let bare = StaticIp {
+            address: "10.0.0.7/16".into(),
+            gateway: None,
+            dns: vec![],
+        };
         let o = build_orders("auto", &keys, &"a".repeat(64), None, Some(&bare));
         assert!(o["static_ip"].get("gateway").is_none());
         assert!(o["static_ip"].get("dns").is_none());
@@ -474,7 +478,11 @@ mod tests {
     fn a_bad_static_address_is_refused_before_anything_ships() {
         // The pre-flight validator is what keeps a typo from becoming a
         // machine that kexec'd and went dark refusing its orders.
-        let s = StaticIp { address: "192.168.1.50".into(), gateway: None, dns: vec![] };
+        let s = StaticIp {
+            address: "192.168.1.50".into(),
+            gateway: None,
+            dns: vec![],
+        };
         let keys = vec!["ssh-ed25519 AAAA... agent".to_string()];
         let o = build_orders("auto", &keys, &"a".repeat(64), None, Some(&s));
         assert!(box_core::orders::validate_for_install(&o).is_err());

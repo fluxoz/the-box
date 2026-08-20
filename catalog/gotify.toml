@@ -1,0 +1,15 @@
+id = "gotify"
+title = "Gotify push notifications"
+description = "A small self-hosted push server with a web UI and Android app: create an application token, then anything on your Box can send you messages with one HTTP call. Log in as admin with the password set here, and change it from the default."
+category = "Monitoring"
+base = "container"
+icon = "chat"
+
+[params]
+image = "docker.io/gotify/server:2"
+container_port = 80
+expose = "proxied"
+volumes = ["/var/lib/box/gotify:/app/data"]
+
+[params.secret_env]
+GOTIFY_DEFAULTUSER_PASS = "change-me-please"

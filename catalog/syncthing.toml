@@ -1,0 +1,12 @@
+id = "syncthing"
+title = "Syncthing file sync"
+description = "Keeps folders in sync between your devices without any cloud in the middle. This preset serves the control screen; the Box does not open Syncthing's direct transfer port, so devices connect through Syncthing's public relays, which works fine but is slower than direct LAN sync. Set a GUI password in Settings on your first visit."
+category = "Files & Sync"
+base = "container"
+icon = "flow"
+
+[params]
+image = "docker.io/syncthing/syncthing:2"
+container_port = 8384
+expose = "proxied"
+volumes = ["/var/lib/box/syncthing:/var/syncthing"]

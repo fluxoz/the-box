@@ -1,0 +1,19 @@
+id = "meilisearch"
+title = "Meilisearch"
+description = "A friendly search engine that gives your apps instant, typo-tolerant search. Set your own master key at deploy; apps present it to use the API. Nothing outside your Box can reach it."
+category = "Databases"
+base = "container"
+icon = "search"
+
+[params]
+image = "docker.io/getmeili/meilisearch:v1"
+container_port = 7700
+expose = "internal"
+volumes = ["/var/lib/box/meilisearch:/meili_data"]
+
+[params.env]
+MEILI_ENV = "production"
+
+# Must be at least 16 characters or Meilisearch refuses to start.
+[params.secret_env]
+MEILI_MASTER_KEY = "change-me-master-key"

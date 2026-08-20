@@ -1,0 +1,17 @@
+id = "homepage"
+title = "Homepage service dashboard"
+description = "A tidy start page for everything running on your Box, driven by a few YAML files in /var/lib/box/homepage; it writes starter files on first run and reloads as you edit. Host checking is disabled in this preset because a Box answers by different names on different networks, which is reasonable behind the Box's LAN only proxy."
+category = "Home"
+base = "container"
+icon = "globe"
+
+[params]
+image = "ghcr.io/gethomepage/homepage:v2"
+container_port = 3000
+expose = "proxied"
+volumes = ["/var/lib/box/homepage:/app/config"]
+
+[params.env]
+# Homepage refuses requests whose Host it does not recognize; the Box's
+# name varies per network, so turn the check off behind the LAN proxy.
+HOMEPAGE_ALLOWED_HOSTS = "*"
