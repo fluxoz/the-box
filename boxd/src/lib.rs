@@ -21,6 +21,7 @@ pub mod cfapi;
 pub mod channel;
 pub mod cloud;
 pub mod config;
+pub mod dumps;
 pub mod connect;
 pub mod fleet;
 pub mod forge;

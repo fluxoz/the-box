@@ -456,19 +456,36 @@ in
         after = [ "network-online.target" "boxd.service" ];
         wants = [ "network-online.target" ];
         # age: boxd decrypts the (encrypted-at-rest) backup password on demand
-        # for restic via RESTIC_PASSWORD_COMMAND.
-        path = [ pkgs.restic pkgs.openssh pkgs.age ];
+        # for restic via RESTIC_PASSWORD_COMMAND. podman: database dumps exec
+        # inside the containers before restic runs.
+        path = [ pkgs.restic pkgs.openssh pkgs.age pkgs.podman ];
         environment.HOME = "/root";
         serviceConfig = {
           Type = "oneshot";
-          # Root, because the backup set is manifest-derived and includes state
-          # only root can read (/etc/box/install-config.json is 0600 root, and a
-          # container's volumes are usually root-owned). As boxd this failed on
-          # every due run: restic exited non-zero, so the freshness marker was
-          # never written and retention never ran. boxd only ever sees the
-          # marker, which `backup::run` hands back to the data dir's owner.
+          # Root, because service volumes belong to their containers' uids and
+          # dumps exec into root-run containers. As boxd this failed on every
+          # due run: restic exited non-zero, so the freshness marker was never
+          # written and retention never ran. boxd only ever sees the marker,
+          # which `backup::run` hands back to the data dir's owner.
           User = "root";
           ExecStart = "${lib.getExe cfg.package} --data-dir ${cfg.dataDir} backup run --if-due";
+        };
+      };
+      # The same backup, on demand: what the dashboard's "Backup now" and the
+      # MCP backup_now tool start (polkit lets boxd start exactly this), with
+      # its journal tailed into the console job. Without this unit the console
+      # path ran in-process as the boxd user — which cannot read container
+      # volumes or exec dumps, the exact hole the root unit exists to close.
+      systemd.services.boxd-backup-now = {
+        description = "The Box on-demand backup";
+        after = [ "network-online.target" ];
+        wants = [ "network-online.target" ];
+        path = [ pkgs.restic pkgs.openssh pkgs.age pkgs.podman ];
+        environment.HOME = "/root";
+        serviceConfig = {
+          Type = "oneshot";
+          User = "root";
+          ExecStart = "${lib.getExe cfg.package} --data-dir ${cfg.dataDir} backup run";
         };
       };
       systemd.timers.boxd-backup = {
@@ -526,14 +543,15 @@ in
         };
       };
 
-      # Let the unprivileged boxd user START (only) these two units, so a deploy
-      # or the dashboard's "Update now" can trigger the root reconcile without
-      # granting boxd broad control over the system.
+      # Let the unprivileged boxd user START (only) these units, so a deploy,
+      # the dashboard's "Update now" or "Backup now" can trigger the root
+      # oneshot without granting boxd broad control over the system.
       security.polkit.extraConfig = ''
         polkit.addRule(function(action, subject) {
           if (action.id == "org.freedesktop.systemd1.manage-units" &&
               (action.lookup("unit") == "boxd-channel-update.service" ||
-               action.lookup("unit") == "boxd-os-apply.service") &&
+               action.lookup("unit") == "boxd-os-apply.service" ||
+               action.lookup("unit") == "boxd-backup-now.service") &&
               subject.user == "boxd") {
             return polkit.Result.YES;
           }

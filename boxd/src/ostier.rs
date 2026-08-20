@@ -172,15 +172,20 @@ fn last_unit_log(unit: &str) -> String {
 /// profile needs root, and boxd is not root. The polkit rule that lets boxd
 /// start it ships with the platform module.
 pub const UPDATE_UNIT: &str = "boxd-channel-update.service";
+pub const BACKUP_NOW_UNIT: &str = "boxd-backup-now.service";
 
-pub fn update_unit_available() -> bool {
+pub fn unit_available(unit: &str) -> bool {
     Command::new("systemctl")
-        .args(["cat", UPDATE_UNIT])
+        .args(["cat", unit])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
+}
+
+pub fn update_unit_available() -> bool {
+    unit_available(UPDATE_UNIT)
 }
 
 /// Run the platform update through the root oneshot, blocking until it
@@ -192,8 +197,15 @@ pub fn update_unit_available() -> bool {
 /// duration and hand each line to `line`, which is how the console's job view
 /// shows a platform update doing something rather than a bar and silence.
 pub fn run_update_unit(line: impl Fn(&str) + Send + 'static) -> Result<()> {
+    run_unit_streaming(UPDATE_UNIT, line)
+}
+
+/// Run any root oneshot while tailing its journal into `line` — how a job
+/// view shows privileged work (updates, backups) happening rather than a bar
+/// and silence.
+pub fn run_unit_streaming(unit: &str, line: impl Fn(&str) + Send + 'static) -> Result<()> {
     let mut tail = Command::new("journalctl")
-        .args(["-f", "-n", "0", "-o", "cat", "-u", UPDATE_UNIT])
+        .args(["-f", "-n", "0", "-o", "cat", "-u", unit])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
@@ -212,9 +224,9 @@ pub fn run_update_unit(line: impl Fn(&str) + Send + 'static) -> Result<()> {
     });
 
     let out = Command::new("systemctl")
-        .args(["start", UPDATE_UNIT])
+        .args(["start", unit])
         .output()
-        .with_context(|| format!("starting {UPDATE_UNIT}"));
+        .with_context(|| format!("starting {unit}"));
 
     if let Some(mut t) = tail {
         let _ = t.kill();
@@ -230,11 +242,11 @@ pub fn run_update_unit(line: impl Fn(&str) + Send + 'static) -> Result<()> {
     }
     let detail = String::from_utf8_lossy(&out.stderr).trim().to_string();
     let detail = if detail.is_empty() {
-        last_unit_log(UPDATE_UNIT)
+        last_unit_log(unit)
     } else {
         detail
     };
-    bail!("the platform update failed: {detail}")
+    bail!("{unit} failed: {detail}")
 }
 
 /// `nix build` args for a per-box system's toplevel from its generated repo.

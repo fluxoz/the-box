@@ -1319,8 +1319,10 @@ pub async fn backup(State(state): State<SharedState>, Query(flash): Query<Flash>
     let body = html! {
         h2 { "Backup" }
         p.muted {
-            "Encrypted on this Box before anything leaves it. Nobody, including us, "
-            "can read your backups. Your services' data is included automatically."
+            "Two halves make a recreatable Box. Your services' DATA (volumes, "
+            "database dumps) goes to the storage below, encrypted on this Box "
+            "first. Your CONFIG and secrets go to the git remote at the bottom. "
+            "With both, a lost Box is rebuilt with Recreate."
         }
 
         @if ready {
@@ -1407,6 +1409,13 @@ pub async fn backup(State(state): State<SharedState>, Query(flash): Query<Flash>
         }
 
         @let remote = crate::history::remote(&state.paths);
+        @if ready && remote.is_none() {
+            div.flash.err {
+                "Data without config is half a Box: backups are running, but your "
+                "config has no git remote, so this Box cannot be recreated from "
+                "them. Set the remote below."
+            }
+        }
         section {
             div.section-head {
                 h2 { "Config repo" }
@@ -1749,7 +1758,7 @@ pub async fn run_backup_now(State(state): State<SharedState>) -> Redirect {
                 .clone()
                 .ok_or_else(|| anyhow::anyhow!("no backup configured"))?;
             p.phase(format!("sending to {}", bc.backend.kind));
-            crate::backup::run(&paths, &config, &bc)?;
+            crate::backup::run_for_job(&paths, &config, &bc, p)?;
             Ok("Backup complete".to_string())
         });
     Redirect::to(&format!("/jobs/{id}"))
