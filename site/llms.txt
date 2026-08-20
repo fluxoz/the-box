@@ -45,6 +45,13 @@ If `boxd` is installed locally, one command runs the whole flow and prints
 
     boxd provision root@TARGET_IP --ssh-key ~/.ssh/id_ed25519.pub --json
 
+Port 2693 below is the default management port; substitute yours. Destructive
+tools (delete_service, backup_restore, provision_machine) queue for a human
+tap on the console's Approvals page unless the session has autonomy - you get
+a pending_approval id back; poll approval_status, never re-submit. Updates:
+channel_check reports, channel_update applies. `tools/list` on the Box is the
+authority for the full tool set.
+
 Add `--static-ip 192.168.1.50/24 --gateway 192.168.1.1` (and repeatable
 `--dns 1.1.1.1`) to pin the new Box's LAN address; provisioning then waits
 for the Box at that address instead of the target's old DHCP lease.

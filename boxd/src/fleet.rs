@@ -73,11 +73,22 @@ pub fn self_health(paths: &Paths) -> CoarseHealth {
             .map(|age| age > chrono::Duration::days(1))
             .unwrap_or(true)
     });
+    // "ok" must mean the system is actually keeping its promises. A pending
+    // or failed OS apply means declared services are not running — the fleet
+    // map saying OK next to a dashboard full of NOT RUNNING was a QA finding,
+    // not a hypothetical.
+    let health = if generation.is_none() {
+        "new"
+    } else if crate::ostier::is_pending(paths) {
+        "degraded"
+    } else {
+        "ok"
+    };
     CoarseHealth {
         id: name.clone(),
         name,
         version: env!("CARGO_PKG_VERSION").to_string(),
-        health: (if generation.is_some() { "ok" } else { "new" }).to_string(),
+        health: health.to_string(),
         generation,
         services,
         backup_stale,

@@ -363,6 +363,11 @@ in
       users.users.boxd = {
         isSystemUser = true;
         group = "boxd";
+        # journalctl access: service_logs (console + MCP) reads unit journals,
+        # and without this group EVERY log read returned a permissions error -
+        # "read the logs rather than guessing" was documentation for a tool
+        # that could not read anything. Found by agent-QA on a real Box.
+        extraGroups = [ "systemd-journal" ];
         # Rootless podman (the build sandbox) needs subordinate id ranges to
         # map user namespaces from. A range no normal user reaches.
         subUidRanges = [{ startUid = 300000; count = 65536; }];
