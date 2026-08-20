@@ -17,5 +17,8 @@ volumes = [
 ]
 
 [params.env]
+# Vikunja refuses to start with CORS enabled and no public URL, and the
+# Box proxies by service name, so there is none to give it up front.
+VIKUNJA_CORS_ENABLE = "false"
 # Default is a file inside the container; keep the database on a volume.
 VIKUNJA_DATABASE_PATH = "/db/vikunja.db"
