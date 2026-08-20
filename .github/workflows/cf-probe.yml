@@ -1,0 +1,19 @@
+# Temporary: probe what the CI Cloudflare token can see (names/booleans only,
+# no secrets in output). Delete after the cloud.thebox.build go-live.
+name: cf-probe
+on: workflow_dispatch
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: What can this token do
+        env:
+          T: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -e
+          curl -fsS -H "Authorization: Bearer $T" \
+            https://api.cloudflare.com/client/v4/user/tokens/verify \
+            | python3 -c 'import json,sys; d=json.load(sys.stdin); print("verify:", d["result"]["status"])' || echo "verify: FAILED"
+          curl -fsS -H "Authorization: Bearer $T" \
+            "https://api.cloudflare.com/client/v4/zones?per_page=50" \
+            | python3 -c 'import json,sys; d=json.load(sys.stdin); print("zones:", [z["name"] for z in d.get("result") or []])' || echo "zones: DENIED"
