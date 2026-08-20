@@ -41,3 +41,6 @@ Full agent reports: the 8/19 session transcript.
   glitches remain in a few spots.
 - llms docs: 32 of 50 tools still undocumented (authority note added; write
   the reference when the surface settles).
+- Box OS CLI parity: `boxd channel update` over SSH fails ("git" not on
+  root PATH; unit-private). Either ship git in systemPackages or make the
+  CLI delegate to the update unit like the console does.
