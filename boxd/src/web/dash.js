@@ -341,22 +341,52 @@
     if (e.target.matches && e.target.matches("select[name=expose]")) e.target.dataset.touched = "1";
   });
 
-  // The catalog filter: typing narrows the preset cards, and category
-  // headers hide when everything under them is filtered out.
-  document.addEventListener("input", function (e) {
-    if (!e.target.matches || !e.target.matches("#catalog-filter")) return;
-    var q = e.target.value.trim().toLowerCase();
-    document.querySelectorAll("section.pick[data-cat]").forEach(function (sec) {
-      var any = false;
-      sec.querySelectorAll("a.card[data-filter]").forEach(function (card) {
-        var hit = !q || card.getAttribute("data-filter").indexOf(q) >= 0;
-        card.style.display = hit ? "" : "none";
-        if (hit) any = true;
-      });
+  // The catalog filter: typing narrows the cards, empties categories
+  // disappear, and the count says what you are looking at. Delegated, so a
+  // view swapped in by the navigation layer needs no re-arm.
+  function runFilter(input) {
+    var q = input.value.trim().toLowerCase();
+    var shown = 0, total = 0;
+    var sections = document.querySelectorAll("section.pick[data-cat]");
+    for (var i = 0; i < sections.length; i++) {
+      var sec = sections[i], any = 0;
+      var cards = sec.querySelectorAll("a.card[data-filter]");
+      for (var k = 0; k < cards.length; k++) {
+        total++;
+        var hit = !q || cards[k].getAttribute("data-filter").indexOf(q) >= 0;
+        cards[k].style.display = hit ? "" : "none";
+        if (hit) { any++; shown++; }
+      }
       sec.style.display = any ? "" : "none";
       var head = sec.previousElementSibling;
-      if (head && head.classList.contains("cat-head")) head.style.display = any ? "" : "none";
-    });
+      if (head && head.classList.contains("cat-head")) {
+        head.style.display = any ? "" : "none";
+        var n = head.querySelector(".muted");
+        if (n) {
+          if (!n.dataset.all) n.dataset.all = n.textContent.trim();
+          n.textContent = q ? any + " of " + n.dataset.all : n.dataset.all;
+        }
+      }
+    }
+    var count = document.getElementById("catalog-count");
+    if (count) count.textContent = q ? shown + " of " + total : "";
+    var empty = document.getElementById("catalog-empty");
+    if (empty) empty.classList.toggle("on", q !== "" && shown === 0);
+  }
+  document.addEventListener("input", function (e) {
+    if (e.target && e.target.id === "catalog-filter") runFilter(e.target);
+  });
+  document.addEventListener("keydown", function (e) {
+    var f = document.getElementById("catalog-filter");
+    if (!f) return;
+    // "/" jumps to the search the way every tool with a lot of things does.
+    if (e.key === "/" && document.activeElement !== f && !e.metaKey && !e.ctrlKey) {
+      e.preventDefault();
+      f.focus();
+    } else if (e.key === "Escape" && document.activeElement === f) {
+      f.value = "";
+      runFilter(f);
+    }
   });
 
   // Arm for the page we loaded on; swap() re-arms after every view change.
