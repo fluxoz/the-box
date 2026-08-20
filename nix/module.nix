@@ -458,7 +458,12 @@ in
         # age: boxd decrypts the (encrypted-at-rest) backup password on demand
         # for restic via RESTIC_PASSWORD_COMMAND. podman: database dumps exec
         # inside the containers before restic runs.
-        path = [ pkgs.restic pkgs.openssh pkgs.age pkgs.podman ];
+        # Everything backup.rs shells out to, explicitly: restic; ssh (sftp
+        # repos); age (secret decrypt); podman (dumps); curl (endpoint probe);
+        # coreutils (dump timeout); systemd (is-active). A NixOS unit gets
+        # NOTHING it does not list — "curl: No such file" took down the first
+        # on-demand run on a real Box.
+        path = [ pkgs.restic pkgs.openssh pkgs.age pkgs.podman pkgs.curl pkgs.coreutils pkgs.systemd ];
         environment.HOME = "/root";
         serviceConfig = {
           Type = "oneshot";
@@ -480,7 +485,12 @@ in
         description = "The Box on-demand backup";
         after = [ "network-online.target" ];
         wants = [ "network-online.target" ];
-        path = [ pkgs.restic pkgs.openssh pkgs.age pkgs.podman ];
+        # Everything backup.rs shells out to, explicitly: restic; ssh (sftp
+        # repos); age (secret decrypt); podman (dumps); curl (endpoint probe);
+        # coreutils (dump timeout); systemd (is-active). A NixOS unit gets
+        # NOTHING it does not list — "curl: No such file" took down the first
+        # on-demand run on a real Box.
+        path = [ pkgs.restic pkgs.openssh pkgs.age pkgs.podman pkgs.curl pkgs.coreutils pkgs.systemd ];
         environment.HOME = "/root";
         serviceConfig = {
           Type = "oneshot";
