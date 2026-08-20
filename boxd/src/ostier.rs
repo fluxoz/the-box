@@ -412,11 +412,41 @@ pub fn activate(profile: &str, toplevel: &Path, action: Action) -> Result<()> {
         "registering the system generation",
     )?;
     let (program, args) = switch_command(toplevel, action);
-    run(
-        &program.display().to_string(),
-        &args,
-        "switch-to-configuration",
-    )
+    let out = Command::new(program.display().to_string())
+        .args(&args)
+        .output()
+        .context("running switch-to-configuration")?;
+    switch_outcome(out.status.code(), &String::from_utf8_lossy(&out.stderr))
+}
+
+/// What a switch-to-configuration exit code MEANS, kept pure so the one
+/// judgement call in the OS tier is testable.
+///
+/// Exit 4 is "the system activated, but some units failed to (re)start". That
+/// is a SERVICE being unhealthy, not the system failing to switch - and
+/// treating it as a failed switch is how one crash-looping container wedged an
+/// entire Box: every later deploy rolled back and platform updates refused
+/// until someone found and deleted the offender. A broken service is reported
+/// and left broken; the system keeps the configuration the operator asked for.
+pub fn switch_outcome(code: Option<i32>, stderr: &str) -> Result<()> {
+    match code {
+        Some(0) => Ok(()),
+        Some(4) => {
+            let units: Vec<&str> = stderr
+                .lines()
+                .map(str::trim)
+                .filter(|l| l.contains("units failed"))
+                .collect();
+            let detail = if units.is_empty() {
+                "(see systemctl --failed)".to_string()
+            } else {
+                units.join("; ")
+            };
+            tracing::warn!("the system switched, but some units are unhealthy: {detail}");
+            Ok(())
+        }
+        _ => bail!("switch-to-configuration failed:\n{stderr}"),
+    }
 }
 
 /// Roll the system profile back one generation and activate the prior system.
@@ -492,6 +522,23 @@ mod tests {
         );
         let rb = rollback_args(SYSTEM_PROFILE);
         assert_eq!(rb, vec!["-p", "/nix/var/nix/profiles/system", "--rollback"]);
+    }
+
+    #[test]
+    fn a_broken_service_does_not_wedge_the_system() {
+        // Exit 4: activated, some units unhealthy. The deploy stands.
+        ostier_switch_ok(switch_outcome(
+            Some(4),
+            "warning: the following units failed: podman-n8n.service\n",
+        ));
+        // A real activation failure still fails.
+        assert!(switch_outcome(Some(1), "boom").is_err());
+        assert!(switch_outcome(None, "killed").is_err());
+        ostier_switch_ok(switch_outcome(Some(0), ""));
+    }
+
+    fn ostier_switch_ok(r: Result<()>) {
+        assert!(r.is_ok(), "{r:?}");
     }
 
     #[test]
