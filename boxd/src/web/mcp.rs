@@ -1026,7 +1026,7 @@ pub(crate) async fn execute_as(
                     "backup",
                     move |progress| {
                         progress.phase("backing up");
-                        crate::backup::run(&paths, &config, &bc)?;
+                        crate::backup::run_for_job(&paths, &config, &bc, progress)?;
                         Ok("backup complete".to_string())
                     },
                 );

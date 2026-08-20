@@ -1,9 +1,11 @@
-//! Client-side-encrypted backups via restic, to a user-provided backend (the
-//! bring-your-own free tier). What to back up is derived from the service
-//! manifest — the Box's config/secrets/auth plus each service's declared state
-//! dirs — so adding a stateful service protects its data with no path list to
-//! maintain. The Nix store and generations are deliberately NOT backed up: they
-//! rebuild from the (backed-up) config.
+//! Client-side-encrypted DATA backups via restic, to a user-provided backend
+//! (bring-your-own free tier) or Box Cloud. What to back up is derived from
+//! the service manifest — each service's declared state dirs plus the
+//! database dumps — so adding a stateful service protects its data with no
+//! path list to maintain. Config, secrets and identity are deliberately NOT
+//! here: they travel in the config repo (a git remote the operator owns), and
+//! the OS rebuilds from them. Config in git + data in storage = a
+//! recreatable Box.
 //!
 //! The repo password is generated on the Box, shown once for the recovery kit,
 //! and never leaves. We hand restic the *storage* credentials, never the key —
@@ -56,7 +58,12 @@ fn random_hex(bytes: usize) -> Result<String> {
 /// dirs, plus explicit extras. Missing paths are dropped (a service may not
 /// have created its dir yet).
 pub fn backup_paths(paths: &Paths, config: &BoxConfig, bc: &BackupConfig) -> Vec<PathBuf> {
-    let mut p = vec![paths.data_dir.clone(), PathBuf::from("/etc/box")];
+    // DATA only. The Box's config, secrets and identity travel in the config
+    // repo (the git remote the operator owns) — that is the recreate half.
+    // When the data dir and /etc/box rode in here too, "backup" meant
+    // everything and nothing, and restoring was archaeology. The contract is
+    // now one sentence: config in git + data in storage = a recreatable Box.
+    let mut p = vec![crate::dumps::dumps_dir(paths)];
     p.extend(service_state_dirs(config, None));
     p.extend(bc.extra_paths.iter().map(PathBuf::from));
     p.sort();
@@ -84,7 +91,9 @@ pub fn service_includes(config: &BoxConfig, name: &str) -> Vec<String> {
         .collect()
 }
 
-/// `--include` list to restore just the Box's config/secrets/auth.
+/// `--include` list for the config scope — meaningful only against OLD
+/// snapshots (made before backups became data-only). Kept so a pre-doctrine
+/// snapshot can still be mined; new snapshots simply contain none of this.
 pub fn config_includes(paths: &Paths) -> Vec<String> {
     vec![paths.data_dir.display().to_string(), "/etc/box".to_string()]
 }
@@ -100,6 +109,8 @@ pub fn resolve_scope(paths: &Paths, config: &BoxConfig, scope: &str) -> Result<V
     match scope.trim() {
         "all" => Ok(Vec::new()),
         "" => bail!("a restore scope is required: \"all\", \"config\", or the name of a service"),
+        // Config lives in the config repo now (git remote, Recreate); this
+        // scope only finds anything in snapshots made before that split.
         "config" => Ok(config_includes(paths)),
         svc => {
             if config.find(svc).is_none() {
@@ -267,17 +278,57 @@ pub fn ensure_init(paths: &Paths, bc: &BackupConfig) -> Result<()> {
 /// Take a snapshot, then apply the retention policy.
 pub fn run(paths: &Paths, config: &BoxConfig, bc: &BackupConfig) -> Result<()> {
     ensure_init(paths, bc)?;
+    // Databases first: dump through their own tooling, fail loudly if a dump
+    // fails. The dumps dir then rides in the backup set.
+    for line in crate::dumps::run_dumps(paths, config)? {
+        println!("{line}");
+    }
     let targets = backup_paths(paths, config, bc);
     if targets.is_empty() {
-        bail!("nothing to back up (no config/state dirs exist yet)");
+        bail!("nothing to back up (no service data exists yet)");
     }
+    // --json so every consumer up the chain gets the truth as it happens:
+    // status lines carry real (bytes_done, total_bytes) — the console's
+    // progress bar — and the summary carries what a snapshot actually holds.
+    // stdout passes through (the root unit's stdout is the journal, which the
+    // console job tails); stderr is kept for the failure message.
     let mut c = restic(paths, bc)?;
-    c.args(["backup", "--tag", "box"]);
+    c.args(["backup", "--json", "--tag", "box"]);
     for t in &targets {
         c.arg(t);
     }
-    if !c.status()?.success() {
-        bail!("restic backup failed");
+    c.stdout(std::process::Stdio::inherit());
+    c.stderr(std::process::Stdio::piped());
+    let mut child = c.spawn().context("starting restic")?;
+    let mut stderr_tail = String::new();
+    if let Some(mut e) = child.stderr.take() {
+        use std::io::Read;
+        let _ = e.read_to_string(&mut stderr_tail);
+        // restic reports unreadable files here; surface them in the journal
+        // even on success-adjacent paths.
+        for l in stderr_tail.lines() {
+            eprintln!("{l}");
+        }
+    }
+    let status = child.wait().context("waiting for restic")?;
+    if !status.success() {
+        // Exit 3 is restic's "snapshot saved but some files were unreadable".
+        // That USED to pass silently as a saved snapshot; a backup that is
+        // missing files is a failed backup, full stop.
+        let tail: String = stderr_tail
+            .lines()
+            .rev()
+            .take(8)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>()
+            .join("\n");
+        bail!(
+            "restic backup failed (exit {:?}) — nothing was marked as backed up.\n{}",
+            status.code(),
+            tail
+        );
     }
     // Cheap marker so health can report backup freshness without shelling out
     // to restic on every (public, frequent) /health poll. The scheduled backup
@@ -296,6 +347,73 @@ pub fn run(paths: &Paths, config: &BoxConfig, bc: &BackupConfig) -> Result<()> {
         ),
     );
     prune(paths, bc)
+}
+
+/// One line of the backup runner's output, reduced to what a job view needs.
+/// restic's `--json` stream is chatty; only three things matter to a person:
+/// how far along it is, what it did, and what went wrong.
+pub enum ResticEvent {
+    /// Real progress: (bytes_done, total_bytes) — the measured bar.
+    Progress(u64, u64),
+    /// A line worth keeping in the job log.
+    Line(String),
+    /// Chatter (per-second repeats, empty lines) — drop it.
+    Noise,
+}
+
+pub fn restic_json_event(line: &str) -> ResticEvent {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+        let t = line.trim();
+        return if t.is_empty() {
+            ResticEvent::Noise
+        } else {
+            ResticEvent::Line(t.to_string())
+        };
+    };
+    match v.get("message_type").and_then(|m| m.as_str()) {
+        Some("status") => ResticEvent::Progress(
+            v["bytes_done"].as_u64().unwrap_or(0),
+            v["total_bytes"].as_u64().unwrap_or(0),
+        ),
+        Some("summary") => ResticEvent::Line(format!(
+            "backed up {} files, {:.1} MiB processed, {:.1} MiB added",
+            v["total_files_processed"].as_u64().unwrap_or(0),
+            v["total_bytes_processed"].as_u64().unwrap_or(0) as f64 / 1048576.0,
+            v["data_added"].as_u64().unwrap_or(0) as f64 / 1048576.0,
+        )),
+        Some("error") => ResticEvent::Line(format!(
+            "error: {}",
+            v["error"]["message"].as_str().unwrap_or("unknown")
+        )),
+        _ => ResticEvent::Noise,
+    }
+}
+
+/// Run a backup with the privileges it actually needs. On a Box, that is the
+/// root on-demand unit (container volumes belong to container uids; dumps
+/// exec into root-run containers) with its journal tailed into the job —
+/// progress lines become the measured bar, everything else becomes the log.
+/// Off-Box (dev, tests, a root shell) it runs in-process.
+pub fn run_for_job(
+    paths: &Paths,
+    config: &BoxConfig,
+    bc: &BackupConfig,
+    progress: &crate::jobs::Progress,
+) -> Result<()> {
+    if crate::ostier::unit_available(crate::ostier::BACKUP_NOW_UNIT) {
+        progress.phase("handing the backup to the system runner");
+        let p = progress.clone();
+        return crate::ostier::run_unit_streaming(crate::ostier::BACKUP_NOW_UNIT, move |l| {
+            match restic_json_event(l) {
+                ResticEvent::Progress(done, total) if total > 0 => {
+                    crate::store::BuildWatch::units(&p, done, total)
+                }
+                ResticEvent::Line(text) => p.log(text),
+                _ => {}
+            }
+        });
+    }
+    run(paths, config, bc)
 }
 
 /// Path of the "last successful backup" timestamp marker.
@@ -425,6 +543,27 @@ mod tests {
     //! due-check either skips backups or hammers the backend.
     use super::*;
     use crate::config::Retention;
+
+    #[test]
+    fn restic_json_lines_become_progress_log_or_silence() {
+        match restic_json_event(r#"{"message_type":"status","bytes_done":5,"total_bytes":10}"#) {
+            ResticEvent::Progress(5, 10) => {}
+            _ => panic!("status must become progress"),
+        }
+        match restic_json_event(r#"{"message_type":"summary","total_files_processed":9,"total_bytes_processed":2097152,"data_added":1048576}"#) {
+            ResticEvent::Line(l) => assert!(l.contains("9 files") && l.contains("2.0 MiB"), "{l}"),
+            _ => panic!("summary must become a log line"),
+        }
+        match restic_json_event("postgres: postgres dumped (1234 bytes)") {
+            ResticEvent::Line(l) => assert!(l.contains("dumped")),
+            _ => panic!("plain lines pass through"),
+        }
+        assert!(matches!(restic_json_event(""), ResticEvent::Noise));
+        assert!(matches!(
+            restic_json_event(r#"{"message_type":"verbose_status"}"#),
+            ResticEvent::Noise
+        ));
+    }
 
     #[test]
     fn a_tls_failure_names_the_r2_activation_step() {
@@ -571,12 +710,20 @@ mod tests {
         ];
 
         let got = backup_paths(&paths, &config, &b);
-        assert!(got.contains(&data), "always backs up the data dir");
+        // The doctrine split: config/secrets/identity live in the config
+        // repo, NOT the storage backup. The data dir must never ride along.
+        assert!(!got.contains(&data), "the data dir is config-repo territory");
         assert!(got.contains(&extra_present), "includes existing extras");
         assert!(
             !got.iter()
                 .any(|p| p.to_string_lossy().contains("nonexistent")),
             "drops paths that don't exist yet"
         );
+
+        // Dumps ride along once they exist.
+        let dumps = crate::dumps::dumps_dir(&paths);
+        std::fs::create_dir_all(&dumps).unwrap();
+        let got = backup_paths(&paths, &config, &b);
+        assert!(got.contains(&dumps), "database dumps are part of the data");
     }
 }
