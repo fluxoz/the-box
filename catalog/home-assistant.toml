@@ -9,4 +9,8 @@ icon = "house"
 image = "ghcr.io/home-assistant/home-assistant:stable"
 container_port = 8123
 expose = "proxied"
+# Home Assistant answers 400 to every request that carries forwarded headers
+# until its configuration.yaml names the proxy as trusted, so this Box hands
+# it a plain proxy instead.
+proxy_forwarded = false
 volumes = ["/var/lib/box/home-assistant:/config"]

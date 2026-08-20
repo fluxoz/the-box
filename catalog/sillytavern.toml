@@ -1,6 +1,6 @@
 id = "sillytavern"
 title = "SillyTavern chat frontend"
-description = "A heavily customizable chat frontend for character and roleplay conversations, built for local backends like Ollama and llama.cpp as well as cloud APIs. Pick a model backend in its API connections panel after deploy. It ships with no login here, so anyone on your network can open it."
+description = "A heavily customizable chat frontend for character and roleplay conversations, built for local backends like Ollama and llama.cpp as well as cloud APIs. Pick a model backend in its API connections panel after deploy. It is protected with a username and password the Box generates for you (user 'box'; the password is on the service page)."
 category = "AI"
 base = "container"
 icon = "chat"
@@ -15,7 +15,13 @@ volumes = [
 ]
 
 [params.env]
-# Accept connections from outside the container; the IP whitelist would
-# otherwise reject everything the Box's proxy forwards.
+# SillyTavern refuses to start when it can be reached from anywhere with no
+# protection at all, which is the right instinct. Basic auth satisfies it,
+# and the Box generates the password.
 SILLYTAVERN_LISTEN = "true"
 SILLYTAVERN_WHITELISTMODE = "false"
+SILLYTAVERN_BASICAUTHMODE = "true"
+SILLYTAVERN_BASICAUTHUSER_USERNAME = "box"
+
+[params.secret_env]
+SILLYTAVERN_BASICAUTHUSER_PASSWORD = "change-me-please"

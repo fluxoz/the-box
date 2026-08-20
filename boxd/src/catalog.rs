@@ -190,6 +190,21 @@ mod lint {
         }
         let entries = load(&[dir.to_path_buf()]);
         assert!(entries.len() >= 8, "catalog went missing?");
+        // A preset that does not parse is SKIPPED by the loader with a log
+        // line, so a lint that only inspects what loaded would pass while a
+        // broken file shipped. Count the files instead: every .toml here must
+        // have become an entry.
+        let files = std::fs::read_dir(dir)
+            .unwrap()
+            .flatten()
+            .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("toml"))
+            .count();
+        assert_eq!(
+            files,
+            entries.len(),
+            "{} preset file(s) failed to parse and were silently skipped",
+            files - entries.len()
+        );
         for (id, e) in &entries {
             let ctx = format!("catalog/{id}.toml");
             assert_eq!(&e.id, id, "{ctx}: id must match the filename");

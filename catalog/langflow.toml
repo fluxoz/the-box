@@ -12,6 +12,9 @@ expose = "proxied"
 volumes = ["/var/lib/box/langflow:/app/langflow"]
 
 [params.env]
+# Without this Langflow expects a superuser to exist already and its worker
+# exits before serving anything.
+LANGFLOW_AUTO_LOGIN = "true"
 # Keep flows and the sqlite database on the mounted volume.
 LANGFLOW_CONFIG_DIR = "/app/langflow"
 LANGFLOW_SAVE_DB_IN_CONFIG_DIR = "true"
