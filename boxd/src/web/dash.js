@@ -116,7 +116,11 @@
         if (push) history.pushState({}, "", res.url);
         swap(res.html, res.url);
       })
-      .catch(function () { location.href = url; })
+      .catch(function () {
+        // Never replay a POST as a GET navigation; reload shows the truth of
+        // wherever the server actually left us.
+        if (opts && opts.method === "POST") { location.reload(); } else { location.href = url; }
+      })
       .finally(function () {
         setBusy(false);
         // Re-enable only once the action has actually finished, so a slow
@@ -140,6 +144,10 @@
     if (e.defaultPrevented) return;
     var form = e.target;
     if (!form || form.method.toLowerCase() !== "post") return;
+    // Auth ceremonies (pairing) opt out: Set-Cookie + redirect belongs to the
+    // browser's native form handling, not a fetch — a swallowed error here
+    // once burned a one-time code while looking like nothing happened.
+    if (form.hasAttribute("data-native")) return;
     var url;
     try { url = new URL(form.getAttribute("action") || location.href, location.href); } catch (_) { return; }
     if (!isLocalDoc(url, null)) return;

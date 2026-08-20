@@ -2394,7 +2394,7 @@ pub async fn pair(
                             pre.copyable { code { "curl -fsSL https://thebox.build/connect | sh" } }
                             details style="margin-top:1.5rem" {
                                 summary.muted { "Have a pairing code instead?" }
-                                form.stack method="post" action="/pair/redeem" style="margin-top:.8rem" {
+                                form.stack data-native method="post" action="/pair/redeem" style="margin-top:.8rem" {
                                     label {
                                         "Pairing code"
                                         input type="text" name="code" required
@@ -2435,7 +2435,7 @@ pub async fn pair(
                                 }
                                 p.muted style="margin-bottom:1.2rem" { "or enter a pairing code" }
                             }
-                            form.stack method="post" action="/pair/redeem" {
+                            form.stack data-native method="post" action="/pair/redeem" {
                                 label {
                                     "Pairing code"
                                     input type="text" name="code" required autofocus
