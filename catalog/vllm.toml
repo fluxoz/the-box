@@ -1,0 +1,14 @@
+id = "vllm"
+title = "vLLM (GPU model serving)"
+description = "High-throughput LLM serving with an OpenAI-compatible API, the engine to reach for when Ollama is not fast enough and you have real GPU memory to spend. Needs an NVIDIA GPU. First start downloads the configured model from Hugging Face (the default is about 3GB); edit cmd to serve a different one."
+category = "AI"
+base = "container"
+icon = "spark"
+
+[params]
+image = "docker.io/vllm/vllm-openai:latest"
+container_port = 8000
+expose = "internal"
+gpu = true
+cmd = ["--model", "Qwen/Qwen2.5-1.5B-Instruct"]
+volumes = ["/var/lib/box/vllm:/root/.cache/huggingface"]

@@ -1,0 +1,11 @@
+id = "it-tools"
+title = "IT-Tools handy toolbox"
+description = "A page full of small utilities: converters, generators, hashes, QR codes, network helpers and more, all running locally. There is no login page, so anyone on your home network can use it. It keeps nothing, so there is nothing to set up."
+category = "Productivity"
+base = "container"
+icon = "wrench"
+
+[params]
+image = "docker.io/corentinth/it-tools:latest"
+container_port = 80
+expose = "proxied"

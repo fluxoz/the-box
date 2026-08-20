@@ -1,0 +1,12 @@
+id = "metube"
+title = "MeTube video downloader"
+description = "Paste a video link, get the file: a web front end for yt-dlp that saves into /var/lib/box/metube on the Box. There is no login page, so anyone on your home network can queue downloads."
+category = "Media"
+base = "container"
+icon = "film"
+
+[params]
+image = "ghcr.io/alexta69/metube:latest"
+container_port = 8081
+expose = "proxied"
+volumes = ["/var/lib/box/metube:/downloads"]

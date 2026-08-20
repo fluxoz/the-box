@@ -546,7 +546,10 @@ pub fn deploy(
     crate::journal::record(
         paths,
         "deploy",
-        format!("deployed {} ({}); generation #{}", req.name, req.template, info.number),
+        format!(
+            "deployed {} ({}); generation #{}",
+            req.name, req.template, info.number
+        ),
     );
 
     // The second speed. The fast path above builds the generation (content +
@@ -847,7 +850,10 @@ pub fn rollback(paths: &Paths, number: u64) -> Result<GenerationInfo> {
     util::chown_tree_like(&paths.data_dir, &paths.sources_dir());
     history::commit_soft(
         paths,
-        &format!("rolled back: generation #{} is running again", current.number),
+        &format!(
+            "rolled back: generation #{} is running again",
+            current.number
+        ),
     );
     crate::journal::record(
         paths,

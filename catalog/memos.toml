@@ -1,0 +1,12 @@
+id = "memos"
+title = "Memos notes"
+description = "A quick self-hosted place for notes and daily logs, in the shape of a private microblog. Stores everything in a local sqlite file, so one container is the whole install. The first account you create becomes the owner."
+category = "Productivity"
+base = "container"
+icon = "note"
+
+[params]
+image = "docker.io/neosmemo/memos:0.24"
+container_port = 5230
+expose = "proxied"
+volumes = ["/var/lib/box/memos:/var/opt/memos"]

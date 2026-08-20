@@ -1,0 +1,15 @@
+id = "clickhouse"
+title = "ClickHouse"
+description = "A column store built for fast analytics over very large tables. It answers queries over HTTP on port 8123 as the default user with no password, which stays inside your Box. The image is a download of roughly a gigabyte."
+category = "Databases"
+base = "container"
+icon = "chart"
+
+[params]
+image = "docker.io/clickhouse/clickhouse-server:24"
+container_port = 8123
+expose = "internal"
+volumes = ["/var/lib/box/clickhouse:/var/lib/clickhouse"]
+
+# Internal-only (loopback), so the passwordless default user is safe here;
+# set CLICKHOUSE_PASSWORD in the secret env to require one.

@@ -1,0 +1,16 @@
+id = "jellyfin"
+title = "Jellyfin media server"
+description = "Stream your movies, shows and music to any device on your network, with apps for TVs, phones and browsers. Put your files in /var/lib/box/jellyfin/media on the Box and the first-run wizard will walk you through naming your libraries."
+category = "Media"
+base = "container"
+icon = "film"
+
+[params]
+image = "docker.io/jellyfin/jellyfin:10"
+container_port = 8096
+expose = "proxied"
+volumes = [
+  "/var/lib/box/jellyfin/config:/config",
+  "/var/lib/box/jellyfin/cache:/cache",
+  "/var/lib/box/jellyfin/media:/media",
+]

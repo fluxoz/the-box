@@ -64,7 +64,6 @@ pub fn ensure_enrollment(orders: &mut Value) -> std::io::Result<Option<String>> 
     Ok(Some(code))
 }
 
-
 /// Would an installer accept these orders and run unattended?
 ///
 /// The single source of truth for that question. It exists because the
@@ -130,7 +129,10 @@ pub fn validate_for_install(orders: &Value) -> Result<(), String> {
                 return Err("each SSH key must be a single non-empty line".into());
             }
             if !(k.starts_with("ssh-") || k.starts_with("ecdsa-") || k.starts_with("sk-")) {
-                return Err(format!("{:?} does not look like an OpenSSH public key", &k[..k.len().min(24)]));
+                return Err(format!(
+                    "{:?} does not look like an OpenSSH public key",
+                    &k[..k.len().min(24)]
+                ));
             }
         }
     }
@@ -186,7 +188,9 @@ pub fn validate_for_install(orders: &Value) -> Result<(), String> {
     if let Some(st) = o.get("storage").and_then(Value::as_object) {
         let layout = st.get("layout").and_then(Value::as_str).unwrap_or_default();
         if !matches!(layout, "single" | "mirror" | "pool" | "ask") {
-            return Err(format!("storage.layout {layout:?} is not one this installer knows"));
+            return Err(format!(
+                "storage.layout {layout:?} is not one this installer knows"
+            ));
         }
     }
 
@@ -239,7 +243,12 @@ mod install_validation_tests {
         assert!(validate_for_install(&o).is_err());
 
         // No owner: the Box would boot claimable by whoever asks first.
-        for bad in [json!(null), json!(""), json!("deadbeef"), json!("g".repeat(64))] {
+        for bad in [
+            json!(null),
+            json!(""),
+            json!("deadbeef"),
+            json!("g".repeat(64)),
+        ] {
             let mut o = good();
             o["enrollment_code_hash"] = bad;
             assert!(validate_for_install(&o).is_err(), "must refuse a bad hash");
@@ -266,17 +275,21 @@ mod install_validation_tests {
         // A static address that isn't strictly IPv4/CIDR could rewrite the
         // NetworkManager keyfile firstboot writes it into.
         for bad in [
-            json!({ "address": "192.168.1.50" }),                       // no prefix
-            json!({ "address": "192.168.1.50/33" }),                    // prefix out of range
-            json!({ "address": "192.168.1.50/24\nid=evil" }),           // injection
-            json!({ "address": "192.168.1.256/24" }),                   // bad octet
+            json!({ "address": "192.168.1.50" }),             // no prefix
+            json!({ "address": "192.168.1.50/33" }),          // prefix out of range
+            json!({ "address": "192.168.1.50/24\nid=evil" }), // injection
+            json!({ "address": "192.168.1.256/24" }),         // bad octet
             json!({ "address": "192.168.1.50/24", "gateway": "router" }),
             json!({ "address": "192.168.1.50/24", "dns": ["8.8.8.8", "not-an-ip"] }),
-            json!({ "address": "192.168.1.50/24", "dns": "8.8.8.8" }),  // not an array
+            json!({ "address": "192.168.1.50/24", "dns": "8.8.8.8" }), // not an array
         ] {
             let mut o = good();
             o["static_ip"] = bad;
-            assert!(validate_for_install(&o).is_err(), "must refuse {:?}", o["static_ip"]);
+            assert!(
+                validate_for_install(&o).is_err(),
+                "must refuse {:?}",
+                o["static_ip"]
+            );
         }
         // Gateway and DNS are optional; address alone is a valid static setup.
         let mut o = good();

@@ -1,0 +1,21 @@
+id = "vikunja"
+title = "Vikunja to-do lists"
+description = "Shared to do lists, kanban boards, and projects for the household, backed by its built in sqlite database. Create your account on the first visit. Registration stays open by default, so anyone on your network can make an account too; worth knowing on a shared LAN."
+category = "Productivity"
+base = "container"
+icon = "note"
+
+[params]
+# Vikunja publishes no rolling major tag, only exact versions and latest.
+image = "docker.io/vikunja/vikunja:latest"
+container_port = 3456
+expose = "proxied"
+# :U because the image runs as uid 1000, which must own its data.
+volumes = [
+  "/var/lib/box/vikunja/db:/db:U",
+  "/var/lib/box/vikunja/files:/app/vikunja/files:U",
+]
+
+[params.env]
+# Default is a file inside the container; keep the database on a volume.
+VIKUNJA_DATABASE_PATH = "/db/vikunja.db"

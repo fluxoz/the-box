@@ -1,0 +1,16 @@
+id = "neo4j"
+title = "Neo4j graph database"
+description = "A graph database for richly connected data. Drivers speak the Bolt protocol on port 7687; change the password half of NEO4J_AUTH when you deploy it. Nothing outside your Box can reach it."
+category = "Databases"
+base = "container"
+icon = "flow"
+
+[params]
+image = "docker.io/library/neo4j:5"
+container_port = 7687
+expose = "internal"
+volumes = ["/var/lib/box/neo4j:/data"]
+
+# username/password in one value, the image's own convention.
+[params.secret_env]
+NEO4J_AUTH = "neo4j/change-me-please"

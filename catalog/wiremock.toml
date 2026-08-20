@@ -1,0 +1,13 @@
+id = "wiremock"
+title = "WireMock API mocking"
+description = "Serves canned API responses so you can develop against services that do not exist yet, or are unpleasant to hit for real. Configure stubs through its admin API or by dropping JSON files in /var/lib/box/wiremock/mappings. It has no login page, so only services on the Box itself can reach it."
+category = "Dev Tools"
+base = "container"
+icon = "wrench"
+
+[params]
+# 3x is WireMock's rolling major-version tag.
+image = "docker.io/wiremock/wiremock:3x"
+container_port = 8080
+expose = "internal"
+volumes = ["/var/lib/box/wiremock:/home/wiremock:U"]

@@ -1,0 +1,11 @@
+id = "kokoro"
+title = "Kokoro text to speech"
+description = "A fast local text-to-speech server with natural voices and an OpenAI-compatible speech endpoint, so apps like Open WebUI can use it as their voice. It runs fine on CPU and keeps no state worth backing up. No login page, so it stays internal for other services on this Box to use."
+category = "AI"
+base = "container"
+icon = "music"
+
+[params]
+image = "ghcr.io/remsky/kokoro-fastapi-cpu:latest"
+container_port = 8880
+expose = "internal"

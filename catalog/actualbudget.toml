@@ -1,0 +1,13 @@
+id = "actualbudget"
+title = "Actual Budget budgeting"
+description = "Envelope style budgeting with a fast, private ledger that stays on your Box. On the first visit you set a server password, then create your budget file; import bank statements or enter transactions as you go."
+category = "Home"
+base = "container"
+icon = "chart"
+
+[params]
+# Actual versions by calendar date and publishes no rolling major tag.
+image = "docker.io/actualbudget/actual-server:latest"
+container_port = 5006
+expose = "proxied"
+volumes = ["/var/lib/box/actualbudget:/data"]

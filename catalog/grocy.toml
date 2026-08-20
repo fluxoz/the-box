@@ -1,0 +1,12 @@
+id = "grocy"
+title = "Grocy pantry and chore tracker"
+description = "Keeps track of what is in the pantry and freezer, with best before dates, shopping lists, chores, and batteries. Everything runs on the Box with its own built in database. Log in with admin and admin, then change the password."
+category = "Home"
+base = "container"
+icon = "note"
+
+[params]
+image = "lscr.io/linuxserver/grocy:latest"
+container_port = 80
+expose = "proxied"
+volumes = ["/var/lib/box/grocy:/config"]

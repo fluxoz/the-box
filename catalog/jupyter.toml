@@ -1,0 +1,15 @@
+id = "jupyter"
+title = "Jupyter notebook"
+description = "The standard notebook environment for Python, data work, and experiments, running on your own hardware. Log in with the token set below and change it before you deploy. Notebooks saved under the work folder survive restarts; install extra packages with pip from inside a notebook."
+category = "Dev Tools"
+base = "container"
+icon = "note"
+
+[params]
+image = "quay.io/jupyter/minimal-notebook:latest"
+container_port = 8888
+expose = "proxied"
+volumes = ["/var/lib/box/jupyter:/home/jovyan/work"]
+
+[params.secret_env]
+JUPYTER_TOKEN = "change-me-please"

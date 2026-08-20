@@ -1,0 +1,12 @@
+id = "dokuwiki"
+title = "DokuWiki plain-file wiki"
+description = "A dependable wiki that stores every page as a plain text file, with no database to tend. After the first start, open the service's address with /install.php on the end to pick a name and create the admin account."
+category = "Productivity"
+base = "container"
+icon = "doc"
+
+[params]
+image = "lscr.io/linuxserver/dokuwiki:latest"
+container_port = 80
+expose = "proxied"
+volumes = ["/var/lib/box/dokuwiki:/config"]

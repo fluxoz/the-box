@@ -6,7 +6,7 @@ base = "container"
 icon = "elephant"
 
 [params]
-image = "postgres:16"
+image = "docker.io/library/postgres:16"
 container_port = 5432
 expose = "internal"
 volumes = ["/var/lib/box/postgres:/var/lib/postgresql/data"]

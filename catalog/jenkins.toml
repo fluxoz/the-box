@@ -1,0 +1,13 @@
+id = "jenkins"
+title = "Jenkins CI"
+description = "The veteran CI server, running builds on its built-in node. The image is a sizeable download, and the first-run setup wizard fetches the plugins you pick, which takes a while. Unlock it with the code in /var/lib/box/jenkins/secrets/initialAdminPassword on the Box."
+category = "Dev Tools"
+base = "container"
+icon = "gear"
+
+[params]
+image = "docker.io/jenkins/jenkins:lts-jdk17"
+container_port = 8080
+expose = "proxied"
+# :U hands the home dir to the container's non-root user on first start.
+volumes = ["/var/lib/box/jenkins:/var/jenkins_home:U"]

@@ -47,3 +47,18 @@ Full agent reports: the 8/19 session transcript.
 - Pending approvals do not survive a platform update (the job registry marks
   them interrupted but the approvals queue entry just vanishes; the agent
   polls forever). Persist or expire them explicitly with a message.
+
+## Platform gaps surfaced by catalog authoring (2026-08-19 night)
+- Volume ownership vs non-root images: root:0755 host dirs crash uid-1000+
+  images (elasticsearch, opensearch, surrealdb, pgadmin). Presets can use the
+  podman :U mount flag today; consider :U (or matching chown) as the template
+  default for per-service dirs.
+- Single-port publishing: generated containers expose exactly one port, so
+  rabbitmq AMQP 5672 and mailpit SMTP 1025 are unreachable from other
+  services. Template needs an extra_ports param.
+- No capability/socket grants: wg-easy (NET_ADMIN), netdata (/proc,/sys),
+  dozzle (container socket) are un-presetable. A "trusted preset" axis with
+  explicit capability grants would unlock the tier.
+- Host-port pinning: presets cannot pin a host port, which breaks
+  advertised-listener protocols (kafka) and makes raw-protocol services
+  (mqtt) land on unpredictable ports.

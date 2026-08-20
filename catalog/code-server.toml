@@ -1,0 +1,16 @@
+id = "code-server"
+title = "code-server (VS Code in the browser)"
+description = "The full VS Code editor served from your Box, so any laptop or tablet on your network becomes a dev machine. Sign in with the password you set here, and change it from the default before you do."
+category = "Dev Tools"
+base = "container"
+icon = "code"
+
+[params]
+# linuxserver publishes no rolling major tag, only exact versions and latest.
+image = "docker.io/linuxserver/code-server:latest"
+container_port = 8443
+expose = "proxied"
+volumes = ["/var/lib/box/code-server:/config"]
+
+[params.secret_env]
+PASSWORD = "change-me-please"

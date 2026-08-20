@@ -1,0 +1,20 @@
+id = "searxng"
+title = "SearXNG private search"
+description = "A metasearch engine that queries the big search providers for you and returns combined results with no tracking and no ads. It also works as the web search backend for chat UIs like Open WebUI. Set your own secret before you rely on it."
+category = "Productivity"
+base = "container"
+icon = "search"
+
+[params]
+image = "docker.io/searxng/searxng:latest"
+container_port = 8080
+expose = "proxied"
+volumes = ["/var/lib/box/searxng:/etc/searxng"]
+
+[params.env]
+# The built-in rate limiter needs a Redis/Valkey service; keep it off on a
+# private Box.
+SEARXNG_LIMITER = "false"
+
+[params.secret_env]
+SEARXNG_SECRET = "change-me-please"

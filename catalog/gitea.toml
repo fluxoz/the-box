@@ -1,0 +1,16 @@
+id = "gitea"
+title = "Gitea git hosting"
+description = "Your own git server with a web UI, issues, pull requests and CI hooks, storing everything in a built-in database. On first visit it shows a short install page; keep the defaults and create your admin account. Push and pull over HTTP(S), the SSH port is not mapped."
+category = "Dev Tools"
+base = "container"
+icon = "code"
+
+[params]
+image = "docker.io/gitea/gitea:1"
+container_port = 3000
+expose = "proxied"
+volumes = ["/var/lib/box/gitea:/data"]
+
+[params.env]
+# Pre-select the embedded database on the install page.
+GITEA__database__DB_TYPE = "sqlite3"

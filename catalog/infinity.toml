@@ -1,0 +1,13 @@
+id = "infinity"
+title = "Infinity embeddings server"
+description = "Serves text embedding and reranking models over an OpenAI-compatible API, the piece a RAG setup needs next to its vector database. It downloads the default embedding model (about 130MB) on first start; edit cmd to serve a different model from Hugging Face. No login page, so it stays internal for other services on this Box."
+category = "AI"
+base = "container"
+icon = "search"
+
+[params]
+image = "docker.io/michaelf34/infinity:latest"
+container_port = 7997
+expose = "internal"
+cmd = ["v2", "--model-id", "BAAI/bge-small-en-v1.5", "--port", "7997"]
+volumes = ["/var/lib/box/infinity:/app/.cache"]

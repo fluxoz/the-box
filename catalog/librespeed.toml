@@ -1,0 +1,17 @@
+id = "librespeed"
+title = "LibreSpeed speed test"
+description = "A speed test page served by your Box, for measuring your local network instead of your internet plan: open it from any device and see what your wiring and Wi-Fi actually deliver. The test page itself has no login by design; the saved-results page is protected by the password set here."
+category = "Networking"
+base = "container"
+icon = "globe"
+
+[params]
+# linuxserver publishes no rolling major tag, only exact versions and latest.
+image = "docker.io/linuxserver/librespeed:latest"
+container_port = 80
+expose = "proxied"
+volumes = ["/var/lib/box/librespeed:/config"]
+
+[params.secret_env]
+# Guards the stored-results page.
+PASSWORD = "change-me-please"

@@ -1,0 +1,18 @@
+id = "ntfy"
+title = "ntfy push notifications"
+description = "Send push notifications to your phone with a plain HTTP request; scripts, cron jobs and monitors on the Box can all use it. Point the ntfy app at your Box and subscribe to a topic. Out of the box anyone on your network can publish and read, so treat topic names like passwords."
+category = "Monitoring"
+base = "container"
+icon = "mail"
+
+[params]
+image = "docker.io/binwiederhier/ntfy:v2"
+container_port = 80
+expose = "proxied"
+cmd = ["serve"]
+volumes = ["/var/lib/box/ntfy:/var/cache/ntfy"]
+
+[params.env]
+NTFY_BEHIND_PROXY = "true"
+# Persist messages so subscribers catch up after reconnecting.
+NTFY_CACHE_FILE = "/var/cache/ntfy/cache.db"

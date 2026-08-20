@@ -550,7 +550,9 @@ mod tests {
             ResticEvent::Progress(5, 10) => {}
             _ => panic!("status must become progress"),
         }
-        match restic_json_event(r#"{"message_type":"summary","total_files_processed":9,"total_bytes_processed":2097152,"data_added":1048576}"#) {
+        match restic_json_event(
+            r#"{"message_type":"summary","total_files_processed":9,"total_bytes_processed":2097152,"data_added":1048576}"#,
+        ) {
             ResticEvent::Line(l) => assert!(l.contains("9 files") && l.contains("2.0 MiB"), "{l}"),
             _ => panic!("summary must become a log line"),
         }
@@ -712,7 +714,10 @@ mod tests {
         let got = backup_paths(&paths, &config, &b);
         // The doctrine split: config/secrets/identity live in the config
         // repo, NOT the storage backup. The data dir must never ride along.
-        assert!(!got.contains(&data), "the data dir is config-repo territory");
+        assert!(
+            !got.contains(&data),
+            "the data dir is config-repo territory"
+        );
         assert!(got.contains(&extra_present), "includes existing extras");
         assert!(
             !got.iter()

@@ -133,7 +133,11 @@ fn config_history_tracks_generations() {
 
     let hist = boxd::history::log(&paths, 20).unwrap();
     assert_eq!(hist.len(), 3);
-    assert!(hist[0].message.contains("rolled back"), "{}", hist[0].message);
+    assert!(
+        hist[0].message.contains("rolled back"),
+        "{}",
+        hist[0].message
+    );
     assert!(hist.iter().any(|h| h.message.contains("deploy a")));
     assert!(hist.iter().any(|h| h.message.contains("deploy b")));
 }

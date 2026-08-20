@@ -1,0 +1,11 @@
+id = "drawio"
+title = "draw.io diagrams"
+description = "The full draw.io diagram editor for flowcharts, network maps and architecture drawings, served from your own machine. There are no accounts and nothing is stored on the Box; diagrams save to files you download or to your browser's storage."
+category = "Productivity"
+base = "container"
+icon = "chart"
+
+[params]
+image = "docker.io/jgraph/drawio:latest"
+container_port = 8080
+expose = "proxied"

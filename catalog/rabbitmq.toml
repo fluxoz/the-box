@@ -1,0 +1,21 @@
+id = "rabbitmq"
+title = "RabbitMQ"
+description = "The RabbitMQ message broker with its management console. Sign in with the login you set at deploy, and change the password default. The console is what is served here; the AMQP listener stays on port 5672 inside the container."
+category = "Dev Tools"
+base = "container"
+icon = "flow"
+
+[params]
+image = "docker.io/library/rabbitmq:4-management"
+container_port = 15672
+expose = "proxied"
+volumes = ["/var/lib/box/rabbitmq:/var/lib/rabbitmq"]
+
+[params.env]
+# The container's hostname changes on every recreate, and RabbitMQ names its
+# data directory after the node; pinning the node name keeps the data.
+RABBITMQ_NODENAME = "rabbit@localhost"
+RABBITMQ_DEFAULT_USER = "box"
+
+[params.secret_env]
+RABBITMQ_DEFAULT_PASS = "change-me-please"

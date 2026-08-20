@@ -1,0 +1,17 @@
+id = "mysql"
+title = "MySQL"
+description = "The classic MySQL database for your other apps to use. Change the root password when you deploy it. Nothing outside your Box can reach it."
+category = "Databases"
+base = "container"
+icon = "db"
+
+[params]
+image = "docker.io/library/mysql:8.4"
+container_port = 3306
+expose = "internal"
+volumes = ["/var/lib/box/mysql:/var/lib/mysql"]
+
+# Automatic backups run mysqldump inside the container and read this value,
+# so keep the key name; set your own password at deploy.
+[params.secret_env]
+MYSQL_ROOT_PASSWORD = "change-me-please"

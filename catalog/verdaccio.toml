@@ -1,0 +1,13 @@
+id = "verdaccio"
+title = "Verdaccio npm registry"
+description = "A lightweight private npm registry that also caches packages from npmjs.org, so installs keep working when the internet does not. Point npm at it with 'npm set registry' and create your user with 'npm adduser'."
+category = "Dev Tools"
+base = "container"
+icon = "bucket"
+
+[params]
+image = "docker.io/verdaccio/verdaccio:6"
+container_port = 4873
+expose = "proxied"
+# :U hands the storage dir to the container's non-root user on first start.
+volumes = ["/var/lib/box/verdaccio:/verdaccio/storage:U"]

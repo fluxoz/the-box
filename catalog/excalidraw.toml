@@ -1,0 +1,11 @@
+id = "excalidraw"
+title = "Excalidraw whiteboard"
+description = "A hand-drawn style whiteboard for sketches and diagrams. There are no accounts and nothing is stored on the Box; each drawing lives in the browser that made it until you export it as a file."
+category = "Productivity"
+base = "container"
+icon = "note"
+
+[params]
+image = "docker.io/excalidraw/excalidraw:latest"
+container_port = 80
+expose = "proxied"

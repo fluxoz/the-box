@@ -1,0 +1,25 @@
+id = "tandoor"
+title = "Tandoor recipes"
+description = "Recipe manager with meal planning, shopping lists, and shared cookbooks. This preset runs Tandoor's single container mode with a built in sqlite database, so there is no separate database to manage. Set SECRET_KEY to something long and random before deploying; the first visit walks you through creating the admin account."
+category = "Home"
+base = "container"
+icon = "doc"
+
+[params]
+image = "docker.io/vabene1111/recipes:2"
+container_port = 8080
+expose = "proxied"
+volumes = [
+  "/var/lib/box/tandoor/data:/opt/recipes/data",
+  "/var/lib/box/tandoor/mediafiles:/opt/recipes/mediafiles",
+]
+
+[params.env]
+# Pin the bundled web server to the port this preset proxies.
+TANDOOR_PORT = "8080"
+DB_ENGINE = "django.db.backends.sqlite3"
+# Tandoor reuses this variable as the sqlite file path when DB_ENGINE is sqlite.
+POSTGRES_DB = "/opt/recipes/data/db.sqlite3"
+
+[params.secret_env]
+SECRET_KEY = "change-me-to-a-long-random-string"

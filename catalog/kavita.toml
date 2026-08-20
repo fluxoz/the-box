@@ -1,0 +1,15 @@
+id = "kavita"
+title = "Kavita book & comic reader"
+description = "A fast reader for ebooks, comics and manga with a built-in library and reading progress. Put your files in /var/lib/box/kavita/books on the Box; the first visit creates the admin account and points a library at that folder."
+category = "Media"
+base = "container"
+icon = "book"
+
+[params]
+image = "docker.io/jvmilazz0/kavita:latest"
+container_port = 5000
+expose = "proxied"
+volumes = [
+  "/var/lib/box/kavita/config:/kavita/config",
+  "/var/lib/box/kavita/books:/books",
+]

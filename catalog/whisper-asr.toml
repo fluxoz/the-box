@@ -1,0 +1,16 @@
+id = "whisper-asr"
+title = "Whisper speech to text"
+description = "A speech recognition API built on OpenAI's Whisper: send it audio, get back text or subtitles. It downloads the transcription model on first start (the default base model is about 150MB; set ASR_MODEL to small or medium for better accuracy and bigger downloads). It has no login page, so it stays internal for other services on this Box to use."
+category = "AI"
+base = "container"
+icon = "music"
+
+[params]
+image = "docker.io/onerahmet/openai-whisper-asr-webservice:latest"
+container_port = 9000
+expose = "internal"
+volumes = ["/var/lib/box/whisper-asr:/root/.cache"]
+
+[params.env]
+ASR_ENGINE = "faster_whisper"
+ASR_MODEL = "base"

@@ -145,3 +145,138 @@ expose = "internal"
         assert_eq!(params["env"]["POSTGRES_DB"], json!("app"));
     }
 }
+
+#[cfg(test)]
+mod lint {
+    //! The catalog's quality gate: every preset a stranger can click must
+    //! deploy something that can actually run. These rules are the distilled
+    //! findings of the 2026-08-19 fresh-eyes QA (wrong ports, unqualified
+    //! images, secrets in plain env, dead exposure defaults).
+    use super::*;
+
+    const CATEGORIES: &[&str] = &[
+        "AI",
+        "Databases",
+        "Dev Tools",
+        "Automation",
+        "Home",
+        "Media",
+        "Files & Sync",
+        "Web & Publishing",
+        "Monitoring",
+        "Security",
+        "Productivity",
+        "Storage",
+        "Networking",
+    ];
+    const REGISTRIES: &[&str] = &[
+        "docker.io/",
+        "ghcr.io/",
+        "quay.io/",
+        "lscr.io/",
+        "registry.gitlab.com/",
+        "codeberg.org/",
+        "public.ecr.aws/",
+        "gcr.io/",
+        "cgr.dev/",
+    ];
+
+    #[test]
+    fn every_shipped_preset_can_actually_run() {
+        let dir = std::path::Path::new("../catalog");
+        if !dir.is_dir() {
+            eprintln!("catalog/ not present in this build; lint runs in the repo checkout");
+            return;
+        }
+        let entries = load(&[dir.to_path_buf()]);
+        assert!(entries.len() >= 8, "catalog went missing?");
+        for (id, e) in &entries {
+            let ctx = format!("catalog/{id}.toml");
+            assert_eq!(&e.id, id, "{ctx}: id must match the filename");
+            assert!(!e.title.trim().is_empty(), "{ctx}: title required");
+            assert!(
+                e.description.len() >= 40,
+                "{ctx}: description must actually describe (got {:?})",
+                e.description
+            );
+            assert!(
+                !e.description.contains('\u{2014}'),
+                "{ctx}: no em-dashes in product copy"
+            );
+            assert!(
+                CATEGORIES.contains(&e.category.as_str()),
+                "{ctx}: unknown category {:?}",
+                e.category
+            );
+            assert_eq!(
+                e.base, "container",
+                "{ctx}: presets configure the container primitive"
+            );
+
+            let p = &e.params;
+            let image = p.get("image").and_then(Value::as_str).unwrap_or("");
+            assert!(
+                REGISTRIES.iter().any(|r| image.starts_with(r)),
+                "{ctx}: image {image:?} must be fully qualified (a registry prefix)"
+            );
+            assert!(
+                !image.ends_with(":latest") || image.contains("latest"),
+                "{ctx}: image tag"
+            );
+
+            let port = p.get("container_port").and_then(Value::as_u64).unwrap_or(0);
+            // container_port is inside the container's own namespace; the
+            // host port is allocated by the Box, so no collision rules apply.
+            assert!(
+                (1..=65535).contains(&port),
+                "{ctx}: container_port {port} out of range"
+            );
+
+            let expose = p.get("expose").and_then(Value::as_str).unwrap_or("");
+            assert!(
+                matches!(expose, "proxied" | "internal" | "exposed"),
+                "{ctx}: expose {expose:?} must be proxied | internal | exposed"
+            );
+
+            // A known database image must carry its real port and stay internal:
+            // the exact traps a stranger walked into on 8/19.
+            if let Some((engine, dbport)) = crate::dumps::db_default_port(image) {
+                assert_eq!(
+                    port,
+                    u64::from(dbport),
+                    "{ctx}: {engine} listens on {dbport}, not {port}"
+                );
+                assert_eq!(
+                    expose, "internal",
+                    "{ctx}: databases have no login page; expose must be internal"
+                );
+            }
+
+            if let Some(vols) = p.get("volumes").and_then(Value::as_array) {
+                for v in vols {
+                    let v = v.as_str().unwrap_or("");
+                    // The service's own root, including subdirectories and
+                    // suffixed siblings; mount options (:U, :ro) are fine.
+                    assert!(
+                        v.starts_with(&format!("/var/lib/box/{id}")),
+                        "{ctx}: volume {v:?} must live under /var/lib/box/{id}"
+                    );
+                }
+            }
+
+            // Secrets never ride plain env.
+            if let Some(env) = p.get("env").and_then(Value::as_object) {
+                for k in env.keys() {
+                    let upper = k.to_uppercase();
+                    assert!(
+                        !(upper.contains("PASSWORD")
+                            || upper.contains("SECRET")
+                            || upper.ends_with("_TOKEN")
+                            || upper.ends_with("_API_KEY")),
+                        "{ctx}: {k} belongs in [params.secret_env], not plain env"
+                    );
+                }
+            }
+        }
+    }
+}

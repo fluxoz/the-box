@@ -1,0 +1,17 @@
+id = "grafana"
+title = "Grafana dashboards"
+description = "Dashboards and alerts for any metrics you collect; pair it with the Prometheus preset as its data source. Log in as admin with the password set here, and change it from the default."
+category = "Monitoring"
+base = "container"
+icon = "chart"
+
+[params]
+# Grafana publishes no rolling major tag, only exact versions and latest.
+image = "docker.io/grafana/grafana:latest"
+container_port = 3000
+expose = "proxied"
+# :U hands the data dir to the container's non-root user on first start.
+volumes = ["/var/lib/box/grafana:/var/lib/grafana:U"]
+
+[params.secret_env]
+GF_SECURITY_ADMIN_PASSWORD = "change-me-please"

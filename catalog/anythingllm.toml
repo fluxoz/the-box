@@ -1,0 +1,15 @@
+id = "anythingllm"
+title = "AnythingLLM document chat"
+description = "Chat with your own documents: drop in files, it embeds them, and whichever model you connect answers with citations. Point it at an Ollama service on this Box (or a cloud API) in its settings on first run. The built-in embedder fetches a small model the first time you add documents."
+category = "AI"
+base = "container"
+icon = "book"
+
+[params]
+image = "docker.io/mintplexlabs/anythingllm:latest"
+container_port = 3001
+expose = "proxied"
+volumes = ["/var/lib/box/anythingllm:/app/server/storage"]
+
+[params.env]
+STORAGE_DIR = "/app/server/storage"

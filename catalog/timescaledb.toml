@@ -1,0 +1,17 @@
+id = "timescaledb"
+title = "TimescaleDB"
+description = "PostgreSQL with the TimescaleDB extension for time series data. Normal Postgres tools and drivers work unchanged. Nothing outside your Box can reach it."
+category = "Databases"
+base = "container"
+icon = "clock"
+
+[params]
+image = "docker.io/timescale/timescaledb:latest-pg17"
+container_port = 5432
+expose = "internal"
+volumes = ["/var/lib/box/timescaledb:/var/lib/postgresql/data"]
+
+[params.env]
+# Internal-only (loopback), so trust auth is safe out of the box; override with
+# POSTGRES_PASSWORD to require one.
+POSTGRES_HOST_AUTH_METHOD = "trust"

@@ -1,0 +1,15 @@
+id = "navidrome"
+title = "Navidrome music server"
+description = "A light music server that streams your own collection to the web player or any Subsonic app. Drop your music into /var/lib/box/navidrome/music on the Box; the first visit creates the admin account."
+category = "Media"
+base = "container"
+icon = "music"
+
+[params]
+image = "docker.io/deluan/navidrome:latest"
+container_port = 4533
+expose = "proxied"
+volumes = [
+  "/var/lib/box/navidrome/data:/data",
+  "/var/lib/box/navidrome/music:/music",
+]

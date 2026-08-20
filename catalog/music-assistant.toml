@@ -1,0 +1,12 @@
+id = "music-assistant"
+title = "Music Assistant music server"
+description = "One library for your local music files and streaming providers, made to send music to speakers around the house. Fair warning: finding and playing to network players (AirPlay, Chromecast, Sonos) depends on multicast discovery and stream ports that do not reach into a container yet, so treat this as a library manager until the Box supports host networking. First start pulls a large image, roughly 800 MB."
+category = "Home"
+base = "container"
+icon = "music"
+
+[params]
+image = "ghcr.io/music-assistant/server:stable"
+container_port = 8095
+expose = "proxied"
+volumes = ["/var/lib/box/music-assistant:/data"]

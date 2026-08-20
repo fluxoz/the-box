@@ -1,0 +1,14 @@
+id = "node-red"
+title = "Node-RED flow automation"
+description = "Drag together flows in the browser to wire devices, APIs, and services into automations; a natural partner for the Mosquitto and Home Assistant presets. Your flows live under /var/lib/box/node-red. The editor has no login by default and flows can run commands, so anyone on your home network can open it; keep that in mind."
+category = "Automation"
+base = "container"
+icon = "flow"
+
+[params]
+# Node-RED publishes no rolling major tag, only exact versions and latest.
+image = "docker.io/nodered/node-red:latest"
+container_port = 1880
+expose = "proxied"
+# :U because the image runs as its own unprivileged user, which must own /data.
+volumes = ["/var/lib/box/node-red:/data:U"]

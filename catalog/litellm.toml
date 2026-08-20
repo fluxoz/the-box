@@ -1,0 +1,18 @@
+id = "litellm"
+title = "LiteLLM (one API for every model)"
+description = "An OpenAI-compatible proxy that puts a single endpoint in front of many model backends, local or cloud. Out of the box it forwards to an Ollama service on this Box; edit cmd to change the model it fronts, and change the master key before anything depends on it. It keeps no data of its own."
+category = "AI"
+base = "container"
+icon = "flow"
+
+[params]
+image = "ghcr.io/berriai/litellm:main-stable"
+container_port = 4000
+expose = "internal"
+# Fronts Ollama on this Box by default; host.containers.internal reaches the
+# Box itself from inside a container. Change the model to one you have pulled.
+cmd = ["--model", "ollama/llama3", "--api_base", "http://host.containers.internal:11434"]
+
+[params.secret_env]
+# Clients authenticate with this as their API key.
+LITELLM_MASTER_KEY = "sk-change-me-please"

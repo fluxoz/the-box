@@ -1,0 +1,19 @@
+id = "typesense"
+title = "Typesense"
+description = "A fast, typo-tolerant search engine for your apps. Set your own API key at deploy; apps present it to use the API. Nothing outside your Box can reach it."
+category = "Databases"
+base = "container"
+icon = "search"
+
+[params]
+# Typesense ships no rolling major tag, so this pins the current stable release.
+image = "docker.io/typesense/typesense:28.0"
+container_port = 8108
+expose = "internal"
+volumes = ["/var/lib/box/typesense:/data"]
+
+[params.env]
+TYPESENSE_DATA_DIR = "/data"
+
+[params.secret_env]
+TYPESENSE_API_KEY = "change-me-please"

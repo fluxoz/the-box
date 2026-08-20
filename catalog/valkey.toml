@@ -1,0 +1,13 @@
+id = "valkey"
+title = "Valkey"
+description = "Fast temporary storage that makes other apps quicker, continuing where Redis left off under an open license. Nothing outside your Box can reach it."
+category = "Databases"
+base = "container"
+icon = "spark"
+
+[params]
+image = "docker.io/valkey/valkey:8"
+container_port = 6379
+expose = "internal"
+volumes = ["/var/lib/box/valkey:/data"]
+cmd = ["valkey-server", "--appendonly", "yes"]

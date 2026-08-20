@@ -1,0 +1,22 @@
+id = "speedtest-tracker"
+title = "Speedtest Tracker"
+description = "Runs internet speed tests on a schedule and charts the history, so you have receipts when your ISP underdelivers. Stores results in an embedded database. Log in as admin@example.com with password 'password' and change both, and change the app key from its default."
+category = "Networking"
+base = "container"
+icon = "chart"
+
+[params]
+# linuxserver publishes no rolling major tag, only exact versions and latest.
+image = "docker.io/linuxserver/speedtest-tracker:latest"
+container_port = 80
+expose = "proxied"
+volumes = ["/var/lib/box/speedtest-tracker:/config"]
+
+[params.env]
+# Embedded database keeps it a single container.
+DB_CONNECTION = "sqlite"
+
+[params.secret_env]
+# Laravel encryption key: "base64:" plus 32 random bytes, base64-encoded.
+# This default decodes to an obvious change-me string; generate your own.
+APP_KEY = "base64:Y2hhbmdlLW1lLXBsZWFzZS1jaGFuZ2UtbWUtMTIzNCE="

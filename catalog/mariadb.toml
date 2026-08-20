@@ -1,0 +1,17 @@
+id = "mariadb"
+title = "MariaDB"
+description = "A community-run database that speaks MySQL, for your other apps to use. Change the root password when you deploy it. Nothing outside your Box can reach it."
+category = "Databases"
+base = "container"
+icon = "db"
+
+[params]
+image = "docker.io/library/mariadb:11"
+container_port = 3306
+expose = "internal"
+volumes = ["/var/lib/box/mariadb:/var/lib/mysql"]
+
+# Automatic backups run mysqldump inside the container and read this value,
+# so keep the key name; set your own password at deploy.
+[params.secret_env]
+MARIADB_ROOT_PASSWORD = "change-me-please"

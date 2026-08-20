@@ -6,7 +6,7 @@ base = "container"
 icon = "bucket"
 
 [params]
-image = "minio/minio"
+image = "docker.io/minio/minio:latest"
 container_port = 9000
 expose = "proxied"
 volumes = ["/var/lib/box/minio:/data"]

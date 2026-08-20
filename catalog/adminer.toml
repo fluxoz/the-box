@@ -1,0 +1,11 @@
+id = "adminer"
+title = "Adminer database admin"
+description = "A one-page admin for MySQL, MariaDB, PostgreSQL and more. Sign in with the address and credentials of a database running on your Box. It keeps no data of its own."
+category = "Dev Tools"
+base = "container"
+icon = "wrench"
+
+[params]
+image = "docker.io/library/adminer:5"
+container_port = 8080
+expose = "proxied"

@@ -1,0 +1,18 @@
+id = "wallabag"
+title = "wallabag read-it-later"
+description = "Save articles from the web and read them later, clean and ad-free, on your own machine. It uses its built-in SQLite database and takes a minute to set itself up on first start. Log in as wallabag with password wallabag and change it right away. If pages or saved links point at the wrong address, set SYMFONY__ENV__DOMAIN_NAME to the address you use."
+category = "Productivity"
+base = "container"
+icon = "note"
+
+[params]
+image = "docker.io/wallabag/wallabag:latest"
+container_port = 80
+expose = "proxied"
+volumes = [
+  "/var/lib/box/wallabag/data:/var/www/wallabag/data",
+  "/var/lib/box/wallabag/images:/var/www/wallabag/web/assets/images",
+]
+
+[params.env]
+SYMFONY__ENV__DOMAIN_NAME = "http://wallabag"

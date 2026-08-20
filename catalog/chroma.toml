@@ -1,0 +1,12 @@
+id = "chroma"
+title = "Chroma vector database"
+description = "An embeddings database for RAG apps: store vectors, query by similarity. It is an API with no login page, so it stays internal for other services on this Box to use. Data lives in a single folder and there is nothing to configure."
+category = "Databases"
+base = "container"
+icon = "db"
+
+[params]
+image = "docker.io/chromadb/chroma:latest"
+container_port = 8000
+expose = "internal"
+volumes = ["/var/lib/box/chroma:/data"]

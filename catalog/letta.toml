@@ -1,0 +1,20 @@
+id = "letta"
+title = "Letta agent server"
+description = "A server for stateful agents that remember across conversations, from the project formerly known as MemGPT. It is an API you build against with the Letta SDK or the ADE, not a web page, so it stays internal to this Box. It points at an Ollama service on this Box by default; change the server password before use."
+category = "AI"
+base = "container"
+icon = "spark"
+
+[params]
+image = "docker.io/letta/letta:latest"
+container_port = 8283
+expose = "internal"
+volumes = ["/var/lib/box/letta:/var/lib/postgresql/data"]
+
+[params.env]
+# Use models from the Ollama service on this Box.
+OLLAMA_BASE_URL = "http://host.containers.internal:11434"
+SECURE = "true"
+
+[params.secret_env]
+LETTA_SERVER_PASSWORD = "change-me-please"

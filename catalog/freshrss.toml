@@ -1,0 +1,19 @@
+id = "freshrss"
+title = "FreshRSS feed reader"
+description = "Follow your favorite sites through RSS with a fast web reader that fetches feeds on a schedule. On the first visit a short wizard runs; choose SQLite as the database and create your account there."
+category = "Productivity"
+base = "container"
+icon = "rss"
+
+[params]
+image = "docker.io/freshrss/freshrss:1"
+container_port = 80
+expose = "proxied"
+volumes = [
+  "/var/lib/box/freshrss/data:/var/www/FreshRSS/data",
+  "/var/lib/box/freshrss/extensions:/var/www/FreshRSS/extensions",
+]
+
+[params.env]
+# Refresh feeds twice an hour.
+CRON_MIN = "13,43"

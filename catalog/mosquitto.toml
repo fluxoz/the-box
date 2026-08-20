@@ -1,0 +1,15 @@
+id = "mosquitto"
+title = "Mosquitto MQTT broker"
+description = "The little MQTT broker most smart home gear speaks: sensors publish, Home Assistant and Node-RED subscribe. The standard MQTT port (1883) is opened directly on your network rather than proxied, because MQTT is not a web protocol and devices need to reach it straight over TCP. It starts without a password, which is how most home setups begin; anyone on your network can connect, so add credentials once things are flowing."
+category = "Automation"
+base = "container"
+icon = "rss"
+
+[params]
+image = "docker.io/library/eclipse-mosquitto:2"
+container_port = 1883
+expose = "exposed"
+volumes = ["/var/lib/box/mosquitto:/mosquitto/data"]
+# The image's default config only accepts local connections. This alternative
+# config ships inside the image and listens on 1883 without authentication.
+cmd = ["/usr/sbin/mosquitto", "-c", "/mosquitto-no-auth.conf"]

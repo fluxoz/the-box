@@ -1,0 +1,15 @@
+id = "mongodb"
+title = "MongoDB"
+description = "A document database for your other apps to use. It starts without a password, which is fine here because nothing outside your Box can reach it."
+category = "Databases"
+base = "container"
+icon = "db"
+
+[params]
+image = "docker.io/library/mongo:8"
+container_port = 27017
+expose = "internal"
+volumes = ["/var/lib/box/mongodb:/data/db"]
+
+# No auth on purpose: the port is loopback-only, and automatic backups run
+# mongodump inside the container without credentials.

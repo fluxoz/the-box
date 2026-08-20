@@ -1,0 +1,12 @@
+id = "esphome"
+title = "ESPHome device dashboard"
+description = "Build and update firmware for DIY ESP32 and ESP8266 sensors from a web dashboard, with updates sent over WiFi to devices already on your network. The very first flash of a brand new board needs a USB cable to your own computer (web.esphome.io works well), because the Box does not pass USB through yet. Online status relies on discovery that may not reach into a container, so devices can look offline even when updates by hostname or IP go through fine."
+category = "Automation"
+base = "container"
+icon = "wrench"
+
+[params]
+image = "ghcr.io/esphome/esphome:stable"
+container_port = 6052
+expose = "proxied"
+volumes = ["/var/lib/box/esphome:/config"]

@@ -1,0 +1,12 @@
+id = "home-assistant"
+title = "Home Assistant smart home hub"
+description = "The hub that ties your smart home together: automations, dashboards, and integrations for thousands of devices. It works well with everything it can reach over the network (Hue, MQTT, ESPHome, and friends), but USB Zigbee and Z-Wave radios are not passed through yet, and automatic discovery can be limited from inside a container, so expect to add some devices by IP address. First start pulls a large image, roughly 600 MB."
+category = "Home"
+base = "container"
+icon = "house"
+
+[params]
+image = "ghcr.io/home-assistant/home-assistant:stable"
+container_port = 8123
+expose = "proxied"
+volumes = ["/var/lib/box/home-assistant:/config"]
