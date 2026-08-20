@@ -743,6 +743,20 @@ fn deploy_request_from_form(form: NewServiceForm) -> Result<ops::DeployRequest, 
     if let Some(image) = none_if_empty(form.image) {
         params.insert("image".into(), image.into());
     }
+    // A database image with the port left blank would fall to the template's
+    // web default (80) and deploy an engine that cannot answer — the redis
+    // trap fresh-eyes QA walked straight into. Default to the engine's port.
+    let container_port_missing = form
+        .container_port
+        .as_deref()
+        .is_none_or(|s| s.trim().is_empty());
+    if container_port_missing {
+        if let Some(image) = params.get("image").and_then(|v| v.as_str()) {
+            if let Some((_, port)) = crate::dumps::db_default_port(image) {
+                params.insert("container_port".into(), u64::from(port).into());
+            }
+        }
+    }
     if let Some(cp) = none_if_empty(form.container_port) {
         let cp: u64 = cp
             .parse()
@@ -3047,11 +3061,19 @@ pub async fn service_detail(
                             @if tunnel_running { a href={ "https://" (d) } target="_blank" { (d) } }
                             @else { span.muted { (d) } " " span.badge { "tunnel off" } }
                         },
-                        None => { span.muted { "your network only" } },
+                        None => {
+                            // "your network only" next to a 127.0.0.1 URL read
+                            // as a contradiction; say what Access says.
+                            @if mode_now == "private" { span.muted { "this Box only" } }
+                            @else { span.muted { "your network" } }
+                        },
                     }
                 }
                 p.muted {
-                    @if let Some(url) = &status.url { a href=(url) { (url) } }
+                    @if let Some(url) = &status.url {
+                        @if url.contains("127.0.0.1") { "on the Box: " }
+                        a href=(url) { (url) }
+                    }
                 }
             }
             @if let Some(link) = &svc.repo {
@@ -3802,6 +3824,12 @@ pub async fn key_signin_start(State(state): State<SharedState>, headers: HeaderM
         .iter()
         .filter_map(|k| k.passkey().ok())
         .collect();
+    // No keys enrolled is the NORMAL state of a fresh Box, not an error: the
+    // pair page probes this on every load for the ambient passkey prompt,
+    // and the old 404 put a red console line on every stranger's first visit.
+    if keys.is_empty() {
+        return axum::Json(serde_json::json!({ "none": true })).into_response();
+    }
     match state.ceremonies.start_authentication(&avail, &keys) {
         Ok((challenge, handle)) => {
             axum::Json(serde_json::json!({ "challenge": challenge, "handle": handle }))
