@@ -43,7 +43,7 @@
   target and takes it over. The machine's identity (hostname, keys, Wi-Fi, disk layout) arrives at first
   boot, so the same image serves every machine.</p>
 
-  <div class="warn"><b>It wipes every disk.</b> The installer only proceeds after you confirm, but there's
+  <div class="warn"><b>It wipes the disk(s) your storage choice claims</b> (all internal disks for Pool; USB sticks are never touched). The bare command shown here asks you to type ERASE first; the commands the Configurator emits embed that consent (BOX_YES=1) and wipe on paste. Either way, there's
   no dual-boot and no going back. Use a spare machine, a fresh VPS, or a VM.</div>
 
   <h2 id="linux">Linux &amp; VPS</h2>
