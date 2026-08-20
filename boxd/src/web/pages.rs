@@ -1445,6 +1445,33 @@ pub async fn backup(State(state): State<SharedState>, Query(flash): Query<Flash>
                     }
                 },
                 None => {
+                    // The one-click door: a token creates the private repo,
+                    // installs the Box's deploy key, and is never stored.
+                    div.card {
+                        h3 { "Create it on GitHub" }
+                        p.muted {
+                            "A private repo, made for you. The token is used twice "
+                            "(create the repo, install this Box's deploy key) and never kept."
+                        }
+                        form.stack method="post" action="/backup/config-repo/github" {
+                            div.row2 {
+                                label { "Repo name"
+                                    input type="text" name="name" value=(format!("box-{}-config", hostname_now()));
+                                }
+                                label { "GitHub token " span.muted { "(repo scope)" }
+                                    input type="password" name="token" placeholder="ghp_… / github_pat_…";
+                                }
+                            }
+                            button.btn type="submit" { "Create repo & push" }
+                        }
+                    }
+                    p.muted { "Or bring a repo from any provider: add the Box's key below as a write deploy key there, then paste the ssh URL." }
+                    @if let Ok(pubkey) = crate::history::ensure_deploy_key(&state.paths) {
+                        details {
+                            summary.muted { "This Box's deploy key (public)" }
+                            code.mono style="display:block;padding:.5rem;word-break:break-all" { (pubkey) }
+                        }
+                    }
                     form.stack method="post" action="/backup/config-remote" {
                         label {
                             "Remote URL"
@@ -1619,6 +1646,42 @@ pub struct ConfigRemoteForm {
     url: Option<String>,
 }
 
+fn hostname_now() -> String {
+    std::fs::read_to_string("/proc/sys/kernel/hostname")
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|_| "box".into())
+}
+
+#[derive(Deserialize)]
+pub struct GithubRepoForm {
+    name: String,
+    token: String,
+}
+
+pub async fn create_config_repo_github(
+    State(state): State<SharedState>,
+    Form(form): Form<GithubRepoForm>,
+) -> Redirect {
+    let redirect =
+        |key: &str, msg: &str| Redirect::to(&format!("/backup?{key}={}", urlencoding::encode(msg)));
+    let name = form.name.trim().to_string();
+    let token = form.token.trim().to_string();
+    if name.is_empty() || token.is_empty() {
+        return redirect("err", "a repo name and a GitHub token are both required");
+    }
+    let result = blocking(move || {
+        crate::history::create_github_config_repo(&state.paths, &token, &name)
+    })
+    .await;
+    match result {
+        Ok(html_url) => redirect(
+            "ok",
+            &format!("Config repo created and pushed — {html_url}. The token was not stored."),
+        ),
+        Err(e) => redirect("err", &format!("{e:#}")),
+    }
+}
+
 pub async fn set_config_remote(
     State(state): State<SharedState>,
     Form(form): Form<ConfigRemoteForm>,
@@ -1631,7 +1694,13 @@ pub async fn set_config_remote(
         let url = url.clone();
         blocking(move || -> anyhow::Result<()> {
             crate::history::set_remote(&state.paths, url.as_deref())?;
-            if url.is_some() {
+            if let Some(u) = &url {
+                // ssh remotes push with the Box's own deploy key, pinned to
+                // the host learned here — mint and pin before the first try.
+                if let Some(host) = crate::history::ssh_host(u) {
+                    crate::history::ensure_deploy_key(&state.paths)?;
+                    crate::history::pin_host(&state.paths, &host)?;
+                }
                 // Prove the remote works right away rather than on the next deploy.
                 crate::history::commit(&state.paths, "config push")?;
                 crate::history::push(&state.paths)?;

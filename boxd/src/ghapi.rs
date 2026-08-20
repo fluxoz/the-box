@@ -295,6 +295,62 @@ pub fn create_pull_request(
         .context("the created PR has no html_url")
 }
 
+/// Create a PRIVATE repository for the calling token's user and return
+/// (full_name, ssh_url, html_url). The token is used for this call and the
+/// deploy-key install, then discarded — pushes ride the deploy key.
+pub fn create_repo(token: &str, name: &str) -> Result<(String, String, String)> {
+    let payload = serde_json::json!({
+        "name": name,
+        "private": true,
+        "auto_init": false,
+        "description": "The Box: this machine's config and encrypted secrets (pushed by the Box itself)",
+    });
+    let value = gh_post(token, &format!("{API}/user/repos"), &payload)?;
+    let s = |k: &str| {
+        value
+            .get(k)
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .with_context(|| format!("created repo has no {k}"))
+    };
+    Ok((s("full_name")?, s("ssh_url")?, s("html_url")?))
+}
+
+/// Install a WRITE deploy key on a repo — the Box's own push credential, so
+/// the account token never has to live on the Box.
+pub fn add_deploy_key(token: &str, full_name: &str, title: &str, pubkey: &str) -> Result<()> {
+    let payload = serde_json::json!({ "title": title, "key": pubkey, "read_only": false });
+    gh_post(token, &format!("{API}/repos/{full_name}/keys"), &payload).map(|_| ())
+}
+
+fn gh_post(token: &str, url: &str, payload: &Value) -> Result<Value> {
+    let out = std::process::Command::new("curl")
+        .args(["-sS", "-m", "30", "-X", "POST"])
+        .args(["-H", &format!("Authorization: Bearer {token}")])
+        .args(["-H", "Accept: application/vnd.github+json"])
+        .args(["-H", "Content-Type: application/json"])
+        .args(["-d", &payload.to_string()])
+        .args(["-w", "\n%{http_code}"])
+        .arg(url)
+        .output()
+        .context("running curl against the GitHub API")?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let (body, status) = text.rsplit_once('\n').unwrap_or((text.as_ref(), ""));
+    let value: Value = serde_json::from_str(body.trim())
+        .context("GitHub returned something that is not JSON")?;
+    if !matches!(status.trim(), "200" | "201") {
+        bail!(
+            "GitHub said no (HTTP {}): {}",
+            status.trim(),
+            value
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or("no detail")
+        );
+    }
+    Ok(value)
+}
+
 /// Leave a comment on an issue or pull request (they share the endpoint).
 /// Best-effort by design at the call sites: the App may lack the permission,
 /// and a preview that deploys without its comment still deployed.

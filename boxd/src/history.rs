@@ -7,6 +7,7 @@
 //! All operations are best-effort: a Box without git still works, it just has
 //! no history. Callers log and continue rather than failing an apply.
 
+use std::path::PathBuf;
 use std::process::Command;
 
 use anyhow::{bail, Context, Result};
@@ -41,7 +42,13 @@ const GITIGNORE: &str = "\
 ";
 
 fn git(paths: &Paths, args: &[&str]) -> Result<std::process::Output> {
-    let out = Command::new("git")
+    let mut c = Command::new("git");
+    // When the Box holds a deploy key, every git network operation uses it,
+    // pinned to the host key learned at setup.
+    if let Some(ssh) = git_ssh_command(paths) {
+        c.env("GIT_SSH_COMMAND", ssh);
+    }
+    let out = c
         // The service runs with HOME set to the data dir, so a `.gitconfig`
         // that arrives IN a cloned repo would be read as git's global config —
         // and `core.hooksPath` plus a tracked executable hook is then arbitrary
@@ -116,8 +123,127 @@ pub fn commit_soft(paths: &Paths, message: &str) {
     push_soft(paths);
 }
 
-/// Set (or clear, with `None`) the git remote the config repo is pushed to as an
-/// offsite, user-owned backup.
+// ---- the Box's own push credential ----------------------------------------
+// A dedicated ed25519 deploy key, minted on the Box, installed on the remote
+// repo with write access. The provider account token that created the repo is
+// used twice (create repo, install key) and never stored — if it leaks later,
+// it was never here; if it expires, pushes keep working.
+
+/// (private key, public key) file paths, in the same 0700 secrets dir as the
+/// box identity key.
+pub fn deploy_key_paths(paths: &Paths) -> (PathBuf, PathBuf) {
+    let dir = paths.data_dir.join("secrets");
+    (dir.join("config-push.key"), dir.join("config-push.key.pub"))
+}
+
+/// Pinned host keys for the push target. Written when the repo is created
+/// (well-known constants for the big hosts, TOFU keyscan otherwise), so a
+/// later DNS hijack of the git host cannot swap the repo out from under us.
+pub fn known_hosts_path(paths: &Paths) -> PathBuf {
+    paths.data_dir.join("secrets").join("config-push.known-hosts")
+}
+
+/// Mint (or return) the Box's config-push deploy key; returns the public line.
+pub fn ensure_deploy_key(paths: &Paths) -> Result<String> {
+    let (key, pubkey) = deploy_key_paths(paths);
+    if !key.exists() {
+        std::fs::create_dir_all(key.parent().unwrap())?;
+        let out = Command::new("ssh-keygen")
+            .args(["-t", "ed25519", "-N", "", "-C", "box-config-push", "-f"])
+            .arg(&key)
+            .output()
+            .context("running ssh-keygen (is openssh installed?)")?;
+        if !out.status.success() {
+            bail!("ssh-keygen failed: {}", String::from_utf8_lossy(&out.stderr));
+        }
+        crate::util::chown_like(&paths.data_dir, &key);
+        crate::util::chown_like(&paths.data_dir, &pubkey);
+    }
+    Ok(std::fs::read_to_string(&pubkey)
+        .context("reading the deploy public key")?
+        .trim()
+        .to_string())
+}
+
+/// Record the host key for `host` in the pinned known_hosts. The two hosts
+/// people actually use ship as constants (their published ed25519 keys);
+/// anything else is trust-on-first-use via ssh-keyscan, which is still a pin
+/// against everything after first use.
+pub fn pin_host(paths: &Paths, host: &str) -> Result<()> {
+    let known = match host {
+        "github.com" => {
+            "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl\n".to_string()
+        }
+        "gitlab.com" => {
+            "gitlab.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAfuCHKVTjquxvt6CM6tdG4SLp1Btn/nOeHHE5UOzRdf\n".to_string()
+        }
+        other => {
+            let out = Command::new("ssh-keyscan")
+                .args(["-T", "10", other])
+                .output()
+                .context("running ssh-keyscan")?;
+            let scanned = String::from_utf8_lossy(&out.stdout).to_string();
+            if scanned.trim().is_empty() {
+                bail!("could not learn {other}'s SSH host key (ssh-keyscan returned nothing)");
+            }
+            scanned
+        }
+    };
+    let path = known_hosts_path(paths);
+    std::fs::create_dir_all(path.parent().unwrap())?;
+    std::fs::write(&path, known)?;
+    crate::util::chown_like(&paths.data_dir, &path);
+    Ok(())
+}
+
+/// The GIT_SSH_COMMAND that makes pushes use the deploy key and ONLY trust
+/// the pinned host. None until a deploy key exists (URL-carried auth then).
+fn git_ssh_command(paths: &Paths) -> Option<String> {
+    let (key, _) = deploy_key_paths(paths);
+    if !key.exists() {
+        return None;
+    }
+    Some(format!(
+        "ssh -i '{}' -o IdentitiesOnly=yes -o UserKnownHostsFile='{}' -o StrictHostKeyChecking=yes",
+        key.display(),
+        known_hosts_path(paths).display()
+    ))
+}
+
+/// Host of an ssh-style remote (`git@host:path` or `ssh://git@host/path`);
+/// None for anything else (https, local paths).
+pub fn ssh_host(url: &str) -> Option<String> {
+    let u = url.trim();
+    if let Some(rest) = u.strip_prefix("ssh://") {
+        let rest = rest.rsplit_once('@').map(|(_, h)| h).unwrap_or(rest);
+        return rest
+            .split(['/', ':'])
+            .next()
+            .map(str::to_string)
+            .filter(|s| !s.is_empty());
+    }
+    u.strip_prefix("git@")
+        .and_then(|rest| rest.split(':').next())
+        .map(str::to_string)
+        .filter(|s| !s.is_empty())
+}
+
+/// One click on GitHub: mint the Box's deploy key, create the PRIVATE repo,
+/// install the key, pin the host, set the remote, push. The token makes two
+/// API calls and is never stored. Returns the repo's web URL.
+pub fn create_github_config_repo(paths: &Paths, token: &str, name: &str) -> Result<String> {
+    let pubkey = ensure_deploy_key(paths)?;
+    let (full, ssh_url, html_url) = crate::ghapi::create_repo(token, name)?;
+    crate::ghapi::add_deploy_key(token, &full, "The Box config push", &pubkey)?;
+    pin_host(paths, "github.com")?;
+    set_remote(paths, Some(&ssh_url))?;
+    commit(paths, "config push")?;
+    push(paths)?;
+    Ok(html_url)
+}
+
+/// Set (or clear, with `None`) the git remote the config repo is pushed to as
+/// an offsite, user-owned backup.
 pub fn set_remote(paths: &Paths, url: Option<&str>) -> Result<()> {
     match url {
         Some(u) => std::fs::write(paths.config_remote_file(), u.trim())?,

@@ -185,6 +185,7 @@ pub fn router(state: SharedState) -> Router {
         .route("/backup/run", post(pages::run_backup_now))
         .route("/backup/restore", post(pages::restore_backup))
         .route("/backup/config-remote", post(pages::set_config_remote))
+        .route("/backup/config-repo/github", post(pages::create_config_repo_github))
         .route("/backup/config-push", post(pages::push_config_now))
         .route(
             "/recreate",
