@@ -1,0 +1,162 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Service catalog · The Box</title>
+<link rel="stylesheet" href="../docs.css"></head><body>
+<main>
+<h1>Service catalog</h1>
+<p class="lead">100 services your Box can run, each one a single container the
+Box configures for you: the right port, its own storage, sane exposure, and
+generated credentials where the app needs them. Deploy any of them from
+<b>+ Deploy</b> in the console, or over MCP with
+<code>deploy name=&lt;yours&gt; template=&lt;id&gt;</code>.</p>
+<p class="muted">Every entry here was deployed on a real Box and checked the way
+you would check it: the app's own page answering through the Box's front door,
+or the engine answering its own protocol. Where something needs hardware the Box
+cannot pass through yet, or a config file it cannot write for you, the entry
+says so rather than half-working.</p>
+<p class="muted"><b>Reach:</b> <code>proxied</code> is served on your network by
+the Box (and can be published to the internet through your tunnel);
+<code>internal</code> is reachable only by your other services on this Box;
+<code>exposed</code> opens its own port on your network for protocols that are
+not the web.</p>
+<h2>AI <span class="muted">(19)</span></h2>
+<table><thead><tr><th>Template</th><th>What it is</th><th>Reach</th></tr></thead><tbody>
+<tr><td><code>anythingllm</code><br><b>AnythingLLM document chat</b></td><td>Chat with your own documents: drop in files, it embeds them, and whichever model you connect answers with citations.</td><td><code>proxied</code></td></tr>
+<tr><td><code>comfyui</code><br><b>ComfyUI image generation</b></td><td>The node-based workbench for Stable Diffusion and other image models.</td><td><code>proxied</code></td></tr>
+<tr><td><code>infinity</code><br><b>Infinity embeddings server</b></td><td>Serves text embedding and reranking models over an OpenAI-compatible API, the piece a RAG setup needs next to its vector database.</td><td><code>internal</code></td></tr>
+<tr><td><code>kokoro</code><br><b>Kokoro text to speech</b></td><td>A fast local text-to-speech server with natural voices and an OpenAI-compatible speech endpoint, so apps like Open WebUI can use it as their voice.</td><td><code>internal</code></td></tr>
+<tr><td><code>langflow</code><br><b>Langflow visual AI builder</b></td><td>A visual builder for LLM pipelines and agents: drag components onto a canvas, wire them up, and publish the result as an API.</td><td><code>proxied</code></td></tr>
+<tr><td><code>letta</code><br><b>Letta agent server</b></td><td>A server for stateful agents that remember across conversations, from the project formerly known as MemGPT.</td><td><code>internal</code></td></tr>
+<tr><td><code>libretranslate</code><br><b>LibreTranslate</b></td><td>A self-hosted translation service with a plain web page and an API, powered by Argos Translate models.</td><td><code>proxied</code></td></tr>
+<tr><td><code>litellm</code><br><b>LiteLLM (one API for every model)</b></td><td>An OpenAI-compatible proxy that puts a single endpoint in front of many model backends, local or cloud.</td><td><code>internal</code></td></tr>
+<tr><td><code>llamacpp</code><br><b>llama.cpp server (fast Vulkan inference)</b></td><td>The reference llama.cpp server with Vulkan acceleration.</td><td><code>proxied</code></td></tr>
+<tr><td><code>localai</code><br><b>LocalAI (models on your own hardware)</b></td><td>An OpenAI-compatible server that runs chat, audio, and image models locally, with a web page for browsing and installing models from its gallery.</td><td><code>proxied</code></td></tr>
+<tr><td><code>n8n</code><br><b>n8n workflow automation</b></td><td>Connect your apps and AI into automated workflows - the glue for agent pipelines, webhooks and schedules, running on your own machine instead of someone&#x27;s metered cloud.</td><td><code>proxied</code></td></tr>
+<tr><td><code>ollama</code><br><b>Ollama (local AI models)</b></td><td>Run AI models on your own hardware - nothing you say to them leaves your Box.</td><td><code>proxied</code></td></tr>
+<tr><td><code>open-webui</code><br><b>Open WebUI (chat with your models)</b></td><td>A polished chat interface for the models your Box runs.</td><td><code>proxied</code></td></tr>
+<tr><td><code>piper-tts</code><br><b>Piper voice (Wyoming protocol)</b></td><td>A lightweight neural text-to-speech engine speaking the Wyoming protocol that Home Assistant&#x27;s voice pipeline expects.</td><td><code>exposed</code></td></tr>
+<tr><td><code>qdrant</code><br><b>Qdrant vector database</b></td><td>Memory for AI apps: stores embeddings so your agents and RAG apps can search by meaning.</td><td><code>internal</code></td></tr>
+<tr><td><code>sillytavern</code><br><b>SillyTavern chat frontend</b></td><td>A heavily customizable chat frontend for character and roleplay conversations, built for local backends like Ollama and llama.cpp as well as cloud APIs.</td><td><code>proxied</code></td></tr>
+<tr><td><code>tabby</code><br><b>Tabby code assistant</b></td><td>A self-hosted code completion server with editor extensions for VS Code, JetBrains, and Vim.</td><td><code>proxied</code></td></tr>
+<tr><td><code>vllm</code><br><b>vLLM (GPU model serving)</b></td><td>High-throughput LLM serving with an OpenAI-compatible API, the engine to reach for when Ollama is not fast enough and you have real GPU memory to spend.</td><td><code>internal</code></td></tr>
+<tr><td><code>whisper-asr</code><br><b>Whisper speech to text</b></td><td>A speech recognition API built on OpenAI&#x27;s Whisper: send it audio, get back text or subtitles.</td><td><code>internal</code></td></tr>
+</tbody></table>
+<h2>Automation <span class="muted">(3)</span></h2>
+<table><thead><tr><th>Template</th><th>What it is</th><th>Reach</th></tr></thead><tbody>
+<tr><td><code>esphome</code><br><b>ESPHome device dashboard</b></td><td>Build and update firmware for DIY ESP32 and ESP8266 sensors from a web dashboard, with updates sent over WiFi to devices already on your network.</td><td><code>proxied</code></td></tr>
+<tr><td><code>mosquitto</code><br><b>Mosquitto MQTT broker</b></td><td>The little MQTT broker most smart home gear speaks: sensors publish, Home Assistant and Node-RED subscribe.</td><td><code>exposed</code></td></tr>
+<tr><td><code>node-red</code><br><b>Node-RED flow automation</b></td><td>Drag together flows in the browser to wire devices, APIs, and services into automations; a natural partner for the Mosquitto and Home Assistant presets.</td><td><code>proxied</code></td></tr>
+</tbody></table>
+<h2>Databases <span class="muted">(17)</span></h2>
+<table><thead><tr><th>Template</th><th>What it is</th><th>Reach</th></tr></thead><tbody>
+<tr><td><code>chroma</code><br><b>Chroma vector database</b></td><td>An embeddings database for RAG apps: store vectors, query by similarity.</td><td><code>internal</code></td></tr>
+<tr><td><code>clickhouse</code><br><b>ClickHouse</b></td><td>A column store built for fast analytics over very large tables.</td><td><code>internal</code></td></tr>
+<tr><td><code>couchdb</code><br><b>CouchDB</b></td><td>A document database that replicates well with offline-first apps, for your other services to use.</td><td><code>internal</code></td></tr>
+<tr><td><code>influxdb</code><br><b>InfluxDB</b></td><td>A time series database for metrics and sensor readings.</td><td><code>internal</code></td></tr>
+<tr><td><code>mariadb</code><br><b>MariaDB</b></td><td>A community-run database that speaks MySQL, for your other apps to use.</td><td><code>internal</code></td></tr>
+<tr><td><code>meilisearch</code><br><b>Meilisearch</b></td><td>A friendly search engine that gives your apps instant, typo-tolerant search.</td><td><code>internal</code></td></tr>
+<tr><td><code>mongodb</code><br><b>MongoDB</b></td><td>A document database for your other apps to use.</td><td><code>internal</code></td></tr>
+<tr><td><code>mysql</code><br><b>MySQL</b></td><td>The classic MySQL database for your other apps to use.</td><td><code>internal</code></td></tr>
+<tr><td><code>neo4j</code><br><b>Neo4j graph database</b></td><td>A graph database for richly connected data.</td><td><code>internal</code></td></tr>
+<tr><td><code>pgvector</code><br><b>PostgreSQL with pgvector</b></td><td>PostgreSQL with the pgvector extension, so your apps can store and search embeddings next to their ordinary tables.</td><td><code>internal</code></td></tr>
+<tr><td><code>postgres</code><br><b>PostgreSQL</b></td><td>A database for your other apps to use.</td><td><code>internal</code></td></tr>
+<tr><td><code>questdb</code><br><b>QuestDB</b></td><td>A fast time series database that speaks SQL.</td><td><code>internal</code></td></tr>
+<tr><td><code>redis</code><br><b>Redis</b></td><td>Fast temporary storage that makes other apps quicker.</td><td><code>internal</code></td></tr>
+<tr><td><code>rethinkdb</code><br><b>RethinkDB</b></td><td>A document database that pushes live changefeeds to your apps as data changes.</td><td><code>internal</code></td></tr>
+<tr><td><code>timescaledb</code><br><b>TimescaleDB</b></td><td>PostgreSQL with the TimescaleDB extension for time series data.</td><td><code>internal</code></td></tr>
+<tr><td><code>typesense</code><br><b>Typesense</b></td><td>A fast, typo-tolerant search engine for your apps.</td><td><code>internal</code></td></tr>
+<tr><td><code>valkey</code><br><b>Valkey</b></td><td>Fast temporary storage that makes other apps quicker, continuing where Redis left off under an open license.</td><td><code>internal</code></td></tr>
+</tbody></table>
+<h2>Dev Tools <span class="muted">(16)</span></h2>
+<table><thead><tr><th>Template</th><th>What it is</th><th>Reach</th></tr></thead><tbody>
+<tr><td><code>adminer</code><br><b>Adminer database admin</b></td><td>A one-page admin for MySQL, MariaDB, PostgreSQL and more.</td><td><code>proxied</code></td></tr>
+<tr><td><code>code-server</code><br><b>code-server (VS Code in the browser)</b></td><td>The full VS Code editor served from your Box, so any laptop or tablet on your network becomes a dev machine.</td><td><code>proxied</code></td></tr>
+<tr><td><code>cyberchef</code><br><b>CyberChef</b></td><td>The cyber swiss army knife: encode, decode, hash, parse and convert data in the browser.</td><td><code>proxied</code></td></tr>
+<tr><td><code>forgejo</code><br><b>Forgejo git hosting</b></td><td>The community-run fork of Gitea, from the people behind Codeberg: git hosting with issues, pull requests and a built-in database.</td><td><code>proxied</code></td></tr>
+<tr><td><code>gitea</code><br><b>Gitea git hosting</b></td><td>Your own git server with a web UI, issues, pull requests and CI hooks, storing everything in a built-in database.</td><td><code>proxied</code></td></tr>
+<tr><td><code>httpbin</code><br><b>httpbin request inspector</b></td><td>A little HTTP service that echoes back whatever you send it: headers, methods, status codes, delays.</td><td><code>internal</code></td></tr>
+<tr><td><code>jenkins</code><br><b>Jenkins CI</b></td><td>The veteran CI server, running builds on its built-in node.</td><td><code>proxied</code></td></tr>
+<tr><td><code>jupyter</code><br><b>Jupyter notebook</b></td><td>The standard notebook environment for Python, data work, and experiments, running on your own hardware.</td><td><code>proxied</code></td></tr>
+<tr><td><code>mailpit</code><br><b>Mailpit email testing</b></td><td>A pretend mail server for development.</td><td><code>proxied</code></td></tr>
+<tr><td><code>nats</code><br><b>NATS</b></td><td>A small, fast message bus for your apps, with JetStream persistence switched on.</td><td><code>internal</code></td></tr>
+<tr><td><code>phpmyadmin</code><br><b>phpMyAdmin</b></td><td>The classic web admin for MySQL and MariaDB.</td><td><code>proxied</code></td></tr>
+<tr><td><code>rabbitmq</code><br><b>RabbitMQ</b></td><td>The RabbitMQ message broker with its management console.</td><td><code>proxied</code></td></tr>
+<tr><td><code>registry</code><br><b>Container image registry</b></td><td>A private registry for container images, so builds on your Box can push and pull without going out to Docker Hub.</td><td><code>internal</code></td></tr>
+<tr><td><code>sonarqube</code><br><b>SonarQube code analysis</b></td><td>Static analysis for your projects: bugs, code smells and coverage, with an embedded database that suits a single team.</td><td><code>proxied</code></td></tr>
+<tr><td><code>verdaccio</code><br><b>Verdaccio npm registry</b></td><td>A lightweight private npm registry that also caches packages from npmjs.org, so installs keep working when the internet does not.</td><td><code>proxied</code></td></tr>
+<tr><td><code>wiremock</code><br><b>WireMock API mocking</b></td><td>Serves canned API responses so you can develop against services that do not exist yet, or are unpleasant to hit for real.</td><td><code>internal</code></td></tr>
+</tbody></table>
+<h2>Files &amp; Sync <span class="muted">(2)</span></h2>
+<table><thead><tr><th>Template</th><th>What it is</th><th>Reach</th></tr></thead><tbody>
+<tr><td><code>nextcloud</code><br><b>Nextcloud files &amp; calendar</b></td><td>Your own file cloud with sharing, contacts, calendar and mobile sync.</td><td><code>proxied</code></td></tr>
+<tr><td><code>syncthing</code><br><b>Syncthing file sync</b></td><td>Keeps folders in sync between your devices without any cloud in the middle.</td><td><code>proxied</code></td></tr>
+</tbody></table>
+<h2>Home <span class="muted">(11)</span></h2>
+<table><thead><tr><th>Template</th><th>What it is</th><th>Reach</th></tr></thead><tbody>
+<tr><td><code>actualbudget</code><br><b>Actual Budget budgeting</b></td><td>Envelope style budgeting with a fast, private ledger that stays on your Box.</td><td><code>proxied</code></td></tr>
+<tr><td><code>babybuddy</code><br><b>Baby Buddy baby tracker</b></td><td>Track a newborn&#x27;s feeds, sleep, nappies, and tummy time, so tired parents can hand over without guesswork.</td><td><code>proxied</code></td></tr>
+<tr><td><code>firefly-iii</code><br><b>Firefly III personal finance</b></td><td>Personal finance with accounts, budgets, bills, and proper reports; more structure than Actual, and a little more work.</td><td><code>proxied</code></td></tr>
+<tr><td><code>grocy</code><br><b>Grocy pantry and chore tracker</b></td><td>Keeps track of what is in the pantry and freezer, with best before dates, shopping lists, chores, and batteries.</td><td><code>proxied</code></td></tr>
+<tr><td><code>home-assistant</code><br><b>Home Assistant smart home hub</b></td><td>The hub that ties your smart home together: automations, dashboards, and integrations for thousands of devices.</td><td><code>proxied</code></td></tr>
+<tr><td><code>homebox</code><br><b>HomeBox home inventory</b></td><td>An inventory for the things you own: where they are, what they cost, serial numbers, warranties, and manuals.</td><td><code>proxied</code></td></tr>
+<tr><td><code>homebridge</code><br><b>Homebridge HomeKit bridge</b></td><td>Brings non HomeKit accessories into Apple&#x27;s Home app through community plugins.</td><td><code>proxied</code></td></tr>
+<tr><td><code>homepage</code><br><b>Homepage service dashboard</b></td><td>A tidy start page for everything running on your Box, driven by a few YAML files in /var/lib/box/homepage; it writes starter files on first run and reloads as you edit.</td><td><code>proxied</code></td></tr>
+<tr><td><code>mealie</code><br><b>Mealie recipe manager</b></td><td>A recipe box, meal planner, and shopping list for the household.</td><td><code>proxied</code></td></tr>
+<tr><td><code>music-assistant</code><br><b>Music Assistant music server</b></td><td>One library for your local music files and streaming providers, made to send music to speakers around the house.</td><td><code>proxied</code></td></tr>
+<tr><td><code>tandoor</code><br><b>Tandoor recipes</b></td><td>Recipe manager with meal planning, shopping lists, and shared cookbooks.</td><td><code>proxied</code></td></tr>
+</tbody></table>
+<h2>Media <span class="muted">(8)</span></h2>
+<table><thead><tr><th>Template</th><th>What it is</th><th>Reach</th></tr></thead><tbody>
+<tr><td><code>audiobookshelf</code><br><b>Audiobookshelf audiobooks &amp; podcasts</b></td><td>Your audiobook and podcast library with progress sync and mobile apps.</td><td><code>proxied</code></td></tr>
+<tr><td><code>gonic</code><br><b>gonic music server (Subsonic)</b></td><td>A tiny Subsonic-compatible music server for your own collection, great with apps like Symfonium or play:Sub.</td><td><code>proxied</code></td></tr>
+<tr><td><code>jellyfin</code><br><b>Jellyfin media server</b></td><td>Stream your movies, shows and music to any device on your network, with apps for TVs, phones and browsers.</td><td><code>proxied</code></td></tr>
+<tr><td><code>kavita</code><br><b>Kavita book &amp; comic reader</b></td><td>A fast reader for ebooks, comics and manga with a built-in library and reading progress.</td><td><code>proxied</code></td></tr>
+<tr><td><code>komga</code><br><b>Komga comics &amp; manga server</b></td><td>A media server for comics, manga and PDFs with a clean web reader and per-user progress.</td><td><code>proxied</code></td></tr>
+<tr><td><code>metube</code><br><b>MeTube video downloader</b></td><td>Paste a video link, get the file: a web front end for yt-dlp that saves into /var/lib/box/metube on the Box.</td><td><code>proxied</code></td></tr>
+<tr><td><code>navidrome</code><br><b>Navidrome music server</b></td><td>A light music server that streams your own collection to the web player or any Subsonic app.</td><td><code>proxied</code></td></tr>
+<tr><td><code>photoprism</code><br><b>PhotoPrism photo library</b></td><td>Browse, search and organize your photo collection with on-device AI tagging, no cloud involved.</td><td><code>proxied</code></td></tr>
+</tbody></table>
+<h2>Monitoring <span class="muted">(7)</span></h2>
+<table><thead><tr><th>Template</th><th>What it is</th><th>Reach</th></tr></thead><tbody>
+<tr><td><code>dashdot</code><br><b>dash. server dashboard</b></td><td>A clean live readout of this machine: CPU, memory, storage, network and uptime, in a page you can leave open on a spare screen.</td><td><code>proxied</code></td></tr>
+<tr><td><code>gotify</code><br><b>Gotify push notifications</b></td><td>A small self-hosted push server with a web UI and Android app: create an application token, then anything on your Box can send you messages with one HTTP call.</td><td><code>proxied</code></td></tr>
+<tr><td><code>grafana</code><br><b>Grafana dashboards</b></td><td>Dashboards and alerts for any metrics you collect; pair it with the Prometheus preset as its data source.</td><td><code>proxied</code></td></tr>
+<tr><td><code>healthchecks</code><br><b>Healthchecks cron monitoring</b></td><td>Watches your cron jobs and backups: each job pings a URL when it runs, and Healthchecks alerts you when a ping goes quiet.</td><td><code>proxied</code></td></tr>
+<tr><td><code>ntfy</code><br><b>ntfy push notifications</b></td><td>Send push notifications to your phone with a plain HTTP request; scripts, cron jobs and monitors on the Box can all use it.</td><td><code>proxied</code></td></tr>
+<tr><td><code>prometheus</code><br><b>Prometheus metrics</b></td><td>The standard time-series database for metrics: services expose numbers, Prometheus scrapes and stores them.</td><td><code>internal</code></td></tr>
+<tr><td><code>uptime-kuma</code><br><b>Uptime Kuma monitoring</b></td><td>Watches your sites and services and tells you when they go down, with a clean status dashboard and lots of notification channels.</td><td><code>proxied</code></td></tr>
+</tbody></table>
+<h2>Networking <span class="muted">(2)</span></h2>
+<table><thead><tr><th>Template</th><th>What it is</th><th>Reach</th></tr></thead><tbody>
+<tr><td><code>librespeed</code><br><b>LibreSpeed speed test</b></td><td>A speed test page served by your Box, for measuring your local network instead of your internet plan: open it from any device and see what your wiring and Wi-Fi actually deliver.</td><td><code>proxied</code></td></tr>
+<tr><td><code>speedtest-tracker</code><br><b>Speedtest Tracker</b></td><td>Runs internet speed tests on a schedule and charts the history, so you have receipts when your ISP underdelivers.</td><td><code>proxied</code></td></tr>
+</tbody></table>
+<h2>Productivity <span class="muted">(13)</span></h2>
+<table><thead><tr><th>Template</th><th>What it is</th><th>Reach</th></tr></thead><tbody>
+<tr><td><code>dokuwiki</code><br><b>DokuWiki plain-file wiki</b></td><td>A dependable wiki that stores every page as a plain text file, with no database to tend.</td><td><code>proxied</code></td></tr>
+<tr><td><code>drawio</code><br><b>draw.io diagrams</b></td><td>The full draw.io diagram editor for flowcharts, network maps and architecture drawings, served from your own machine.</td><td><code>proxied</code></td></tr>
+<tr><td><code>excalidraw</code><br><b>Excalidraw whiteboard</b></td><td>A hand-drawn style whiteboard for sketches and diagrams.</td><td><code>proxied</code></td></tr>
+<tr><td><code>focalboard</code><br><b>Focalboard project boards</b></td><td>Trello style boards for projects and planning, running as a single container with its own database.</td><td><code>proxied</code></td></tr>
+<tr><td><code>freshrss</code><br><b>FreshRSS feed reader</b></td><td>Follow your favorite sites through RSS with a fast web reader that fetches feeds on a schedule.</td><td><code>proxied</code></td></tr>
+<tr><td><code>it-tools</code><br><b>IT-Tools handy toolbox</b></td><td>A page full of small utilities: converters, generators, hashes, QR codes, network helpers and more, all running locally.</td><td><code>proxied</code></td></tr>
+<tr><td><code>linkding</code><br><b>linkding bookmarks</b></td><td>A tidy self-hosted bookmark manager with tags, search and browser extensions.</td><td><code>proxied</code></td></tr>
+<tr><td><code>memos</code><br><b>Memos notes</b></td><td>A quick self-hosted place for notes and daily logs, in the shape of a private microblog.</td><td><code>proxied</code></td></tr>
+<tr><td><code>searxng</code><br><b>SearXNG private search</b></td><td>A metasearch engine that queries the big search providers for you and returns combined results with no tracking and no ads.</td><td><code>proxied</code></td></tr>
+<tr><td><code>shiori</code><br><b>Shiori bookmark archive</b></td><td>Bookmarks that keep a readable copy of each page, so links still work when the original disappears.</td><td><code>proxied</code></td></tr>
+<tr><td><code>stirling-pdf</code><br><b>Stirling PDF toolbox</b></td><td>Merge, split, compress, convert and OCR PDFs in your browser; files never leave the Box.</td><td><code>proxied</code></td></tr>
+<tr><td><code>vikunja</code><br><b>Vikunja to-do lists</b></td><td>Shared to do lists, kanban boards, and projects for the household, backed by its built in sqlite database.</td><td><code>proxied</code></td></tr>
+<tr><td><code>wallabag</code><br><b>wallabag read-it-later</b></td><td>Save articles from the web and read them later, clean and ad-free, on your own machine.</td><td><code>proxied</code></td></tr>
+</tbody></table>
+<h2>Security <span class="muted">(1)</span></h2>
+<table><thead><tr><th>Template</th><th>What it is</th><th>Reach</th></tr></thead><tbody>
+<tr><td><code>vaultwarden</code><br><b>Vaultwarden password manager</b></td><td>A lightweight server for the Bitwarden apps and browser extensions, holding your passwords on your own machine.</td><td><code>proxied</code></td></tr>
+</tbody></table>
+<h2>Storage <span class="muted">(1)</span></h2>
+<table><thead><tr><th>Template</th><th>What it is</th><th>Reach</th></tr></thead><tbody>
+<tr><td><code>minio</code><br><b>MinIO object storage</b></td><td>Your own file storage, like a private S3.</td><td><code>proxied</code></td></tr>
+</tbody></table>
+<p class="muted">Missing something? A preset is a small TOML file;
+drop your own into <code>/var/lib/boxd/catalog/</code> on the Box and it appears
+in the list. Anything not here can still run: <b>+ Deploy → Run an app from an
+image</b> takes any container image directly.</p>
+</main></body></html>
