@@ -1319,10 +1319,10 @@ pub async fn backup(State(state): State<SharedState>, Query(flash): Query<Flash>
     let body = html! {
         h2 { "Backup" }
         p.muted {
-            "Two halves make a recreatable Box. Your services' DATA (volumes, "
-            "database dumps) goes to the storage below, encrypted on this Box "
-            "first. Your CONFIG and secrets go to the git remote at the bottom. "
-            "With both, a lost Box is rebuilt with Recreate."
+            "Backups cover your services' data (volumes and database dumps), "
+            "encrypted on this Box before upload. Your config and secrets are "
+            "covered separately by the config repo below. Recreate uses both "
+            "to rebuild a lost Box."
         }
 
         @if ready {
@@ -1411,9 +1411,8 @@ pub async fn backup(State(state): State<SharedState>, Query(flash): Query<Flash>
         @let remote = crate::history::remote(&state.paths);
         @if ready && remote.is_none() {
             div.flash.err {
-                "Data without config is half a Box: backups are running, but your "
-                "config has no git remote, so this Box cannot be recreated from "
-                "them. Set the remote below."
+                "Backups are running, but your config has no git remote yet. "
+                "Recreating this Box needs both — set the config remote below."
             }
         }
         section {
