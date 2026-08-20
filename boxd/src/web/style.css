@@ -487,3 +487,32 @@ pre.copyable code {
   pre.copyable code { font-size: 11.5px; }
   .joblog, pre.logs { max-height: 12rem; }
 }
+
+/* ---- catalog search ----
+   A hundred services need a way in. The field carries the console's own
+   type and focus treatment, with a live count beside it, so it reads as
+   part of the instrument rather than a browser default. */
+.searchbar {
+  display: flex; align-items: center; gap: .6rem; max-width: 30rem;
+  padding: .5rem .8rem; margin: .2rem 0 1rem;
+  background: var(--panel); border: 1px solid var(--line-strong); border-radius: 3px;
+}
+.searchbar:focus-within { border-color: var(--brass); box-shadow: 0 0 0 1px var(--brass-wash); }
+.searchbar .ico { color: var(--faint); flex: none; width: 15px; height: 15px; }
+.searchbar:focus-within .ico { color: var(--brass); }
+.searchbar input[type=search] {
+  flex: 1; min-width: 0; border: none; background: transparent; padding: 0;
+  color: var(--ink); font-family: var(--mono); font-size: 13.5px; letter-spacing: .02em;
+}
+.searchbar input[type=search]:focus { outline: none; }
+.searchbar input[type=search]::placeholder { color: var(--faint); }
+.searchbar input[type=search]::-webkit-search-cancel-button { filter: grayscale(1) opacity(.6); cursor: pointer; }
+.searchbar .count {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--faint); white-space: nowrap;
+}
+.empty-filter {
+  display: none; color: var(--dim); font-size: 14px;
+  border: 1px dashed var(--line-strong); border-radius: 3px; padding: 1rem 1.1rem;
+}
+.empty-filter.on { display: block; }

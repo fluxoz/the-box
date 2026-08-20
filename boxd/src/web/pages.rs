@@ -439,13 +439,25 @@ pub async fn new_service(
                 h3 { "Ready to run" }
                 span.muted { (catalog.len()) " services" }
             }
-            input type="search" id="catalog-filter" placeholder="Filter: postgres, photos, mqtt…"
-                  autocomplete="off" style="max-width:26rem";
+            div.searchbar {
+                svg.ico viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" {
+                    circle cx="7" cy="7" r="4.5" {}
+                    path d="M10.5 10.5L14 14" {}
+                }
+                input type="search" id="catalog-filter" autocomplete="off" spellcheck="false"
+                      placeholder=(format!("Search {} services", catalog.len()))
+                      aria-describedby="catalog-count";
+                span.count id="catalog-count" {}
+            }
+            p.empty-filter id="catalog-empty" { "Nothing matches that. Anything not listed can still run: " a href="/services/new/container" { "run any container image" } "." }
             @for (cat, entries) in &by_cat {
                 div.section-head.cat-head { h3 { (cat) } span.muted { (entries.len()) } }
                 section.cards.pick data-cat=(cat) {
                     @for entry in entries {
-                        a.card data-filter=(format!("{} {} {}", entry.id, entry.title.to_lowercase(), entry.category.to_lowercase())) href={ "/services/new/" (entry.id) } {
+                        a.card data-filter=(format!("{} {} {} {}", entry.id, entry.title.to_lowercase(),
+                                                   entry.category.to_lowercase(),
+                                                   entry.description.to_lowercase()))
+                               href={ "/services/new/" (entry.id) } {
                             // entry.icon stays unrendered: the design system
                             // allows inline SVG only; the name is schema for a
                             // future mapping.
