@@ -1,6 +1,6 @@
 id = "tabby"
 title = "Tabby code assistant"
-description = "A self-hosted code completion server with editor extensions for VS Code, JetBrains, and Vim. First start downloads the completion model (about 1GB) and then asks you to create an admin account in the browser. It runs on CPU with a small model by default; completions get snappier on stronger hardware."
+description = "Needs an NVIDIA GPU: the published image is the CUDA build and will not start without one. A self-hosted code completion server with editor extensions for VS Code, JetBrains, and Vim. First start downloads the completion model (about 1GB) and then asks you to create an admin account in the browser. It runs on CPU with a small model by default; completions get snappier on stronger hardware."
 category = "AI"
 base = "container"
 icon = "code"
@@ -9,5 +9,8 @@ icon = "code"
 image = "docker.io/tabbyml/tabby:latest"
 container_port = 8080
 expose = "proxied"
-cmd = ["serve", "--model", "StarCoder-1B", "--device", "cpu"]
+# The published image is the CUDA build (its own labels say so): it needs an
+# NVIDIA GPU and exits without one.
+gpu = true
+cmd = ["serve", "--model", "StarCoder-1B", "--device", "cuda"]
 volumes = ["/var/lib/box/tabby:/data"]
