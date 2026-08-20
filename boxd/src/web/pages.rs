@@ -186,7 +186,7 @@ pub async fn index(
                 p.muted {
                     "est. electricity · cloud equivalent ~$"
                     (format!("{:.0}", m.cloud_monthly_usd))
-                    "/mo — " a href="/system#meter" { "how it's counted →" }
+                    "/mo - " a href="/system#meter" { "how it's counted →" }
                 }
             }
         }
@@ -208,7 +208,7 @@ pub async fn index(
             @if config.services.is_empty() {
                 div.empty {
                     p { "No services yet." }
-                    p { a href="/services/new" { "Deploy your first service" } " — a static site takes about ten seconds." }
+                    p { a href="/services/new" { "Deploy your first service" } " - a static site takes about ten seconds." }
                 }
             } @else {
                 table {
@@ -453,7 +453,7 @@ fn common_fields(domain_hint: &str) -> Markup {
             "Web address"
             span.hint {
                 "A domain you own, if you want to reach this from a browser"
-                @if !domain_hint.is_empty() { " — " (domain_hint) }
+                @if !domain_hint.is_empty() { " - " (domain_hint) }
                 ". Leave blank to keep it on your Box only."
             }
             input type="text" name="domain" placeholder="app.example.com";
@@ -582,7 +582,7 @@ pub async fn new_service_form(
                 }
                 label {
                     "Image"
-                    span.hint { "The app to run, from a container registry — for example nginx:1.27." }
+                    span.hint { "The app to run, from a container registry - for example nginx:1.27." }
                     input type="text" name="image" required placeholder="nginx:1.27";
                 }
                 label {
@@ -865,7 +865,7 @@ pub async fn service_access(
             let d = form.domain.unwrap_or_default().trim().to_string();
             if d.is_empty() {
                 return err_redirect(&anyhow::anyhow!(
-                    "a public service needs a domain — type one under Public"
+                    "a public service needs a domain - type one under Public"
                 ));
             }
             if is_container {
@@ -895,7 +895,7 @@ pub async fn service_access(
         p.phase(format!("rebuilding with the new access for {name}"));
         let info = ops::deploy(&state.paths, state.builder.as_ref(), request)?;
         p.phase("applied");
-        Ok(format!("Access updated — now at generation #{}", info.number))
+        Ok(format!("Access updated - now at generation #{}", info.number))
     });
     Redirect::to(&format!("/jobs/{id}"))
 }
@@ -919,7 +919,7 @@ pub async fn create_service(
         let info = ops::deploy(&state.paths, state.builder.as_ref(), request)?;
         p.phase("activated");
         Ok(format!(
-            "Deployed {name} — now at generation #{}",
+            "Deployed {name} - now at generation #{}",
             info.number
         ))
     });
@@ -942,7 +942,7 @@ pub async fn delete_service(
                 p.phase(format!("rebuilding without {name}"));
                 let info = ops::delete_service(&state.paths, state.builder.as_ref(), &name)?;
                 Ok(format!(
-                    "Deleted {name} — now at generation #{}",
+                    "Deleted {name} - now at generation #{}",
                     info.number
                 ))
             })
@@ -962,7 +962,7 @@ pub async fn generations(
         h2 { "Generations" }
         p.muted { "Every apply produces an immutable generation. Rolling back switches the profile atomically and restores that generation's configuration." }
         @if gens.is_empty() {
-            div.empty { p { "No generations yet — deploy a service to create the first one." } }
+            div.empty { p { "No generations yet - deploy a service to create the first one." } }
         } @else {
             table {
                 thead {
@@ -1004,7 +1004,7 @@ pub async fn generations(
         }
         section {
             h2 { "Change log" }
-            p.muted { "Every apply, rollback and delete is committed to this Box's config history — newest first." }
+            p.muted { "Every apply, rollback and delete is committed to this Box's config history - newest first." }
             @if history.is_empty() {
                 div.empty { p { "No history yet." } }
             } @else {
@@ -1036,7 +1036,7 @@ pub async fn network(State(state): State<SharedState>, Query(flash): Query<Flash
         h2 { "Networking" }
         p.muted {
             "The Box is local-first: the dashboard stays private. To make services public without opening ports, "
-            "bring your own tunnel — traffic flows Internet → Cloudflare → tunnel → this Box, which routes "
+            "bring your own tunnel - traffic flows Internet → Cloudflare → tunnel → this Box, which routes "
             "requests to the service whose domain matches the request's Host header."
         }
         section.cards {
@@ -1072,7 +1072,7 @@ pub async fn network(State(state): State<SharedState>, Query(flash): Query<Flash
                 // container — where the console only ever served files, so
                 // anything else 404'd through the tunnel. It also means this
                 // console is not on the far end of your public hostname.
-                li { "Point the tunnel's public hostname(s) at " code { "http://localhost:2694" } " — the Box's public entrance. Only services you have published are reachable there, so a tunnel cannot expose anything by accident." }
+                li { "Point the tunnel's public hostname(s) at " code { "http://localhost:2694" } " - the Box's public entrance. Only services you have published are reachable there, so a tunnel cannot expose anything by accident." }
                 li { "Paste the token below and enable the tunnel." }
                 li { "Give each service the matching domain, and tick “let people outside your home reach it”." }
             }
@@ -1355,7 +1355,7 @@ pub async fn backup(State(state): State<SharedState>, Query(flash): Query<Flash>
 
             section {
                 h2 { "Snapshots" }
-                @if snaps.is_empty() { p.muted { "No snapshots yet — run a backup." } }
+                @if snaps.is_empty() { p.muted { "No snapshots yet - run a backup." } }
                 @else {
                     table.gen {
                         thead { tr { th { "id" } th { "time" } th { "paths" } } }
@@ -1370,7 +1370,7 @@ pub async fn backup(State(state): State<SharedState>, Query(flash): Query<Flash>
 
             section {
                 h2 { "Restore" }
-                p.field-note { "Writes files back in place. Restoring the whole snapshot on a live Box overwrites its config — usually you restore a single service, or restore everything onto a fresh Box." }
+                p.field-note { "Writes files back in place. Restoring the whole snapshot on a live Box overwrites its config - usually you restore a single service, or restore everything onto a fresh Box." }
                 form.stack method="post" action="/backup/restore" {
                     div.row2 {
                         label { "Snapshot"
@@ -1393,7 +1393,7 @@ pub async fn backup(State(state): State<SharedState>, Query(flash): Query<Flash>
 
             details style="margin-top:1.5rem" {
                 summary { "Reveal recovery key" }
-                p.field-note { "Save this off the Box. Without it your backups cannot be restored — we cannot recover it for you." }
+                p.field-note { "Save this off the Box. Without it your backups cannot be restored - we cannot recover it for you." }
                 @match crate::secrets::get(&state.paths, crate::backup::PW_SECRET) {
                     Ok(Some(key)) => code.mono { (key) },
                     _ => p.muted { "no key" },
@@ -1417,7 +1417,7 @@ pub async fn backup(State(state): State<SharedState>, Query(flash): Query<Flash>
             }
             section {
                 h2 { "Or bring your own destination" }
-                p.muted { "An S3 bucket, a USB disk, an SFTP server. Free forever. A recovery key is generated on save — write it down." }
+                p.muted { "An S3 bucket, a USB disk, an SFTP server. Free forever. A recovery key is generated on save - write it down." }
                 (backup_form(&config, "Save & enable"))
             }
         }
@@ -1426,7 +1426,7 @@ pub async fn backup(State(state): State<SharedState>, Query(flash): Query<Flash>
         @if ready && remote.is_none() {
             div.flash.err {
                 "Backups are running, but your config has no git remote yet. "
-                "Recreating this Box needs both — set the config remote below."
+                "Recreating this Box needs both - set the config remote below."
             }
         }
         section {
@@ -1442,7 +1442,7 @@ pub async fn backup(State(state): State<SharedState>, Query(flash): Query<Flash>
                 "Your declarative config and encrypted secrets, pushed to a git repo you own "
                 "(GitHub, Gitea, anywhere). With it, a lost or wiped Box is recreated from "
                 a href="/recreate" { "Recreate" }
-                " — config, services and secrets included. Plaintext never leaves the Box."
+                " - config, services and secrets included. Plaintext never leaves the Box."
             }
             @match &remote {
                 Some(url) => {
@@ -1540,7 +1540,7 @@ pub async fn recreate_page(
             "Rebuild this Box from a config repo: its services, its declarative "
             "config, and its encrypted secrets, which are re-keyed to this Box as "
             "part of the restore. This is the second half of destroy-and-recreate "
-            "— the machine that made the backup does not have to be the machine "
+            "- the machine that made the backup does not have to be the machine "
             "that comes back."
         }
 
@@ -1646,7 +1646,7 @@ pub async fn recreate_run(
                 p.phase("cloning config and secrets");
                 let info = ops::restore(&state.paths, state.builder.as_ref(), &repo, key.path())?;
                 p.phase("re-keyed secrets, generation built");
-                Ok(format!("Restored — now at generation #{}", info.number))
+                Ok(format!("Restored - now at generation #{}", info.number))
                 // `key` drops here: overwritten and unlinked, however this ended.
             },
         )
@@ -1690,7 +1690,7 @@ pub async fn create_config_repo_github(
     match result {
         Ok(html_url) => redirect(
             "ok",
-            &format!("Config repo created and pushed — {html_url}. The token was not stored."),
+            &format!("Config repo created and pushed - {html_url}. The token was not stored."),
         ),
         Err(e) => redirect("err", &format!("{e:#}")),
     }
@@ -1724,7 +1724,7 @@ pub async fn set_config_remote(
         .await
     };
     match (result, url) {
-        (Ok(()), Some(u)) => redirect("ok", &format!("Config repo remote set — pushed to {u}")),
+        (Ok(()), Some(u)) => redirect("ok", &format!("Config repo remote set - pushed to {u}")),
         (Ok(()), None) => redirect("ok", "Config repo remote removed"),
         (Err(e), _) => redirect("err", &format!("{e:#}")),
     }
@@ -1820,7 +1820,7 @@ pub async fn configure_backup(
     })();
     backup_redirect(
         result,
-        "Backup destination saved — reveal and save your recovery key below",
+        "Backup destination saved - reveal and save your recovery key below",
     )
 }
 
@@ -1908,7 +1908,7 @@ pub async fn system(
         h2 { "System" }
         p.muted {
             "What this Box is running, and where its platform updates come from. A "
-            "platform update is just another atomic generation — a failed one rolls the "
+            "platform update is just another atomic generation - a failed one rolls the "
             "whole system back on its own."
         }
         section.cards {
@@ -2054,7 +2054,7 @@ pub async fn system(
                     tr {
                         td { "Electricity, per month" }
                         td { b { "$" (format!("{:.2}", m.electricity_monthly_usd)) } }
-                        td { span.muted { (m.power.watts) " W — " (m.power.basis) ", at $" (format!("{:.2}", m.rate_per_kwh)) "/kWh" } }
+                        td { span.muted { (m.power.watts) " W - " (m.power.basis) ", at $" (format!("{:.2}", m.rate_per_kwh)) "/kWh" } }
                     }
                     @for line in &m.cloud_lines {
                         tr {
@@ -2154,7 +2154,7 @@ pub async fn system_set_channel(
         Ok(cfg) => redirect(
             "ok",
             &format!(
-                "Channel bound — {} tracking {} ({})",
+                "Channel bound - {} tracking {} ({})",
                 cfg.host_id,
                 short_ref(&cfg.platform_ref),
                 cfg.board.as_deref().unwrap_or("generic")
@@ -2191,7 +2191,7 @@ pub async fn cloud_enroll(
     match result {
         Ok(()) => redirect(
             "ok",
-            "Linked — managed backup is on. Reveal your recovery key on the Backup page.",
+            "Linked - managed backup is on. Reveal your recovery key on the Backup page.",
         ),
         Err(e) => redirect("err", &format!("{e:#}")),
     }
@@ -2225,7 +2225,7 @@ pub async fn system_check(State(state): State<SharedState>) -> Redirect {
     match result {
         Ok(status) if status.update_available => redirect(
             "ok",
-            &format!("Update available — latest {}", short_rev(&status.latest)),
+            &format!("Update available - latest {}", short_rev(&status.latest)),
         ),
         Ok(status) => redirect(
             "ok",
@@ -2310,7 +2310,7 @@ pub async fn system_update(State(_state): State<SharedState>) -> Redirect {
     match out {
         Ok(o) if o.status.success() => redirect(
             "ok",
-            "Platform update started — the Box rebuilds, switches, and rolls back automatically if it doesn't come up healthy.",
+            "Platform update started - the Box rebuilds, switches, and rolls back automatically if it doesn't come up healthy.",
         ),
         Ok(o) => redirect(
             "err",
@@ -2392,18 +2392,18 @@ pub async fn pair(
                             }
                             p.muted style="text-align:center;margin-top:0" {
                                 "Box OS " (platform_release().unwrap_or_else(|| env!("CARGO_PKG_VERSION").into()))
-                                " · the mark above is this machine's own — no two Boxes draw the same one"
+                                " · the mark above is this machine's own - no two Boxes draw the same one"
                             }
                             p.muted {
                                 "It wiped its old life and is ready for its new one. Claim it to "
-                                "become its operator — after that, every other device needs a "
+                                "become its operator - after that, every other device needs a "
                                 "one-time code from you. Do this now, from your own network."
                             }
                             form.stack method="post" action="/pair/claim" {
                                 button.btn type="submit" { "Claim this Box" }
                             }
                             p.muted style="margin-top:1.2rem" {
-                                "Then, on your laptop — this wires your coding agent to it:"
+                                "Then, on your laptop - this wires your coding agent to it:"
                             }
                             pre.copyable { code { "curl -fsSL https://thebox.build/connect | sh" } }
                             details style="margin-top:1.5rem" {
@@ -2672,7 +2672,7 @@ pub async fn create_agent_connection(
     match crate::auth::mint_session_as(&state.paths, "agent", crate::auth::Provenance::Agent) {
         Ok(token) => {
             let flash = Flash {
-                ok: Some("Agent connection created — copy it now, it is shown once.".into()),
+                ok: Some("Agent connection created - copy it now, it is shown once.".into()),
                 err: None,
                 ..Default::default()
             };
@@ -2716,7 +2716,7 @@ fn devices_page_full(
     let body = html! {
         h2 { "Paired devices" }
         p.muted {
-            "Every browser or agent with management access holds a session here — including one "
+            "Every browser or agent with management access holds a session here - including one "
             "opened on the Box itself. Add a device by handing it a one-time code; revoke any "
             "device without affecting the others. Being able to reach this console is not "
             "authority on its own: every service the Box runs can reach it too."
@@ -2753,7 +2753,7 @@ fn devices_page_full(
                                     form method="post" action={ "/devices/" (s.id) "/autonomy" } {
                                         input type="hidden" name="on" value="false";
                                         button type="submit" title="This session may run destructive operations without asking. Click to require approval again." {
-                                            "Autonomous — revoke"
+                                            "Autonomous - revoke"
                                         }
                                     }
                                 } @else {
@@ -2883,7 +2883,7 @@ fn devices_page_full(
             }
             @if let Some(k) = &minted_ai_key {
                 div.flash.ok {
-                    "Key minted — copy it now, it is shown once: " code { (k) }
+                    "Key minted - copy it now, it is shown once: " code { (k) }
                 }
             }
         }
@@ -2891,7 +2891,7 @@ fn devices_page_full(
         section {
             div.section-head { h2 { "Connect an agent" } }
             p.muted {
-                "Give a coding agent — Claude Code, or anything else that speaks MCP — its own "
+                "Give a coding agent - Claude Code, or anything else that speaks MCP - its own "
                 "access to this Box, so it can deploy what it builds for you, check whether it "
                 "worked, and read the logs when it didn't. It gets its own credential, listed "
                 "above like any other device, and you can revoke it on its own."
@@ -2908,7 +2908,7 @@ fn devices_page_full(
                         (PreEscaped(mcp_json(&mcp_url, token)))
                     } }
                     p.field-note {
-                        "This is shown once. If you lose it, make another — they are independent, "
+                        "This is shown once. If you lose it, make another - they are independent, "
                         "and revoking one leaves the rest working."
                     }
                 }
@@ -2961,7 +2961,7 @@ pub async fn add_device(
         Ok(code) => Redirect::to(&format!(
             "/devices?ok={}",
             urlencoding::encode(&format!(
-                "Pairing code (15 min, single use): {code} — enter it at /pair on the new device"
+                "Pairing code (15 min, single use): {code} - enter it at /pair on the new device"
             ))
         )),
         Err(err) => Redirect::to(&format!(
@@ -3130,7 +3130,7 @@ pub async fn service_detail(
                         value=(svc.domain.clone().unwrap_or_default());
                 } @else {
                     p.field-note {
-                        "No Public option: this speaks a raw protocol, not the web — a tunnel "
+                        "No Public option: this speaks a raw protocol, not the web - a tunnel "
                         "cannot front it. For remote access, use Box Connect (private mesh)."
                     }
                 }
@@ -3151,7 +3151,7 @@ pub async fn service_detail(
                         p {
                             span.badge.on { "in step" } " "
                             @if let Some(c) = &s.commit { code { (c.chars().take(10).collect::<String>()) } " " }
-                            span.muted { "last checked " (when(s.at)) " — pushing deploys within a minute; Sync now skips the wait" }
+                            span.muted { "last checked " (when(s.at)) " - pushing deploys within a minute; Sync now skips the wait" }
                         }
                     }
                     Some(s) => {
@@ -3181,7 +3181,7 @@ pub async fn service_detail(
                         // ("declared but not running") would contradict the
                         // ACTIVE badge two sections up, and the badge is right.
                         p.muted {
-                            "Static content — served directly, no process to log. "
+                            "Static content - served directly, no process to log. "
                             "Once the OS tier's web server fronts it, its logs appear here."
                         }
                     } @else if lines.is_empty() {
@@ -3193,7 +3193,7 @@ pub async fn service_detail(
                         }
                     } @else {
                         @if let Some(unit) = l.get("unit").and_then(|u| u.as_str()) {
-                            p.muted { "from " code { (unit) } " — refreshes live" }
+                            p.muted { "from " code { (unit) } " - refreshes live" }
                         }
                         pre.logs {
                             @for line in &lines {
@@ -3457,8 +3457,8 @@ pub async fn approvals(
     let body = html! {
         h2 { "Approvals" }
         p.muted {
-            "Agents run this Box, but destructive operations — erasing a machine, deleting a "
-            "service, restoring over live data — wait here for you unless you have granted a "
+            "Agents run this Box, but destructive operations - erasing a machine, deleting a "
+            "service, restoring over live data - wait here for you unless you have granted a "
             "session autonomy in the device list. Approving runs exactly what was asked; "
             "denying tells the agent no."
         }
@@ -3610,7 +3610,7 @@ pub async fn fleet(
         h2 { "Fleet" }
         p.muted {
             "Boxes on this network announce themselves over mDNS. This view is "
-            "peer-federated — your Box discovers the others directly and reads each "
+            "peer-federated - your Box discovers the others directly and reads each "
             "one's coarse health. Seeing a Box here doesn't grant control; open a "
             "peer to manage it, and pair with it there (Boxes trust you, not each other)."
         }
@@ -3683,7 +3683,7 @@ pub async fn fleet(
             @if peers.is_empty() {
                 div.empty {
                     p { "No other Boxes found on this network." }
-                    p.muted { "Boxes discover each other over mDNS on the same LAN — check that any peers are on the same subnet and advertising." }
+                    p.muted { "Boxes discover each other over mDNS on the same LAN - check that any peers are on the same subnet and advertising." }
                 }
             }
         }
