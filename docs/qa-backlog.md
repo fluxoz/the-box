@@ -62,3 +62,8 @@ Full agent reports: the 8/19 session transcript.
 - Host-port pinning: presets cannot pin a host port, which breaks
   advertised-listener protocols (kafka) and makes raw-protocol services
   (mqtt) land on unpredictable ports.
+
+## Catalog UX gaps (2026-08-20)
+- A user preset that fails to parse is skipped with only a journal warning;
+  the console shows nothing, so an edited preset silently keeps using the
+  platform copy. Surface parse errors on the deploy chooser.

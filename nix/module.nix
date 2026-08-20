@@ -110,7 +110,9 @@ let
 
   proxyVhost = name: c: {
     serverName = if c.domain != null then c.domain else name;
-    locations."/" = proxyTo c.port;
+    locations."/" = (proxyTo c.port) // lib.optionalAttrs (!c.proxyForwarded) {
+      recommendedProxySettings = false;
+    };
     domain = c.domain;
   };
 
@@ -309,6 +311,19 @@ in
             default = [ ];
             description = ''Volume mounts, "host:container" (host side backed up when absolute).'';
           };
+          proxyForwarded = lib.mkOption {
+            type = lib.types.bool;
+            default = true;
+            description = ''
+              Send the standard forwarded headers (Host, X-Forwarded-For,
+              X-Forwarded-Proto) to this container. True is right for almost
+              everything - Django-style CSRF checks need it. A few apps refuse
+              requests carrying those headers until they are told which proxies
+              to trust, and answer 400 to every page instead; Home Assistant is
+              the common one. Those set this false and get a plain proxy.
+            '';
+          };
+
           gpu = lib.mkOption {
             type = lib.types.bool;
             default = false;
