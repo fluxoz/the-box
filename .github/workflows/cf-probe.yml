@@ -49,14 +49,15 @@ jobs:
           echo "ingress set"
 
           # DNS: proxied CNAME to the tunnel.
-          HAVE=$(api "$B/zones/$ZONE/dns_records?name=cloud.thebox.build" \
-            | python3 -c 'import json,sys; r=json.load(sys.stdin)["result"] or []; print(r[0]["id"] if r else "")')
+          HAVE=$(api "$B/zones/$ZONE/dns_records?name=cloud.thebox.build" 2>/dev/null \
+            | python3 -c 'import json,sys; r=json.load(sys.stdin)["result"] or []; print(r[0]["id"] if r else "")' || echo "")
           BODY="{\"type\":\"CNAME\",\"name\":\"cloud\",\"content\":\"$TID.cfargotunnel.com\",\"proxied\":true}"
           if [ -z "$HAVE" ]; then
-            api -X POST "$B/zones/$ZONE/dns_records" --data "$BODY" >/dev/null && echo "dns created"
+            api -X POST "$B/zones/$ZONE/dns_records" --data "$BODY" >/dev/null && echo "dns created" || echo "dns DENIED (make the CNAME by hand)"
           else
-            api -X PUT "$B/zones/$ZONE/dns_records/$HAVE" --data "$BODY" >/dev/null && echo "dns updated"
+            api -X PUT "$B/zones/$ZONE/dns_records/$HAVE" --data "$BODY" >/dev/null && echo "dns updated" || echo "dns DENIED (make the CNAME by hand)"
           fi
+          echo "cname target: $TID.cfargotunnel.com"
 
           echo "----- encrypted tunnel credential -----"
           printf '%s' "$TOKEN" | age -r "$RECIPIENT" -a
