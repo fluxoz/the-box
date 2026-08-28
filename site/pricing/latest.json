@@ -1,5 +1,5 @@
 {
-  "generated_at": 1787832170,
+  "generated_at": 1787920227,
   "skus": {
     "hp-z2-128": {
       "live": false,
@@ -31,11 +31,11 @@
     "gmktec-evo-x2-64": {
       "live": true,
       "in_stock": true,
-      "hardware": 2000,
-      "fee": 300,
-      "total": 2300,
-      "total_str": "from $2,300",
-      "hw_str": "hardware $2,000 at the maker right now"
+      "hardware": 2200,
+      "fee": 330,
+      "total": 2530,
+      "total_str": "from $2,530",
+      "hw_str": "hardware $2,200 at the maker right now"
     },
     "gmktec-g2-starter": {
       "live": true,
