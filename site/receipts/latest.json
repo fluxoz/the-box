@@ -1,12 +1,12 @@
 {
-  "verified_at": 1788946242,
+  "verified_at": 1789032640,
   "ok": true,
   "release": "0.3.56",
-  "total_seconds": 259,
+  "total_seconds": 297,
   "stages": {
-    "boot_blank_machine": 6,
-    "takeover_kexec": 83,
-    "install_to_first_health": 115,
+    "boot_blank_machine": 8,
+    "takeover_kexec": 120,
+    "install_to_first_health": 114,
     "pair_and_first_deploy": 55
   }
 }
