@@ -1,5 +1,5 @@
 {
-  "generated_at": 1789030039,
+  "generated_at": 1789116455,
   "skus": {
     "hp-z2-128": {
       "live": false,
@@ -76,12 +76,14 @@
     "beelink-me-mini": {
       "live": true,
       "in_stock": true,
-      "hardware": 409,
+      "hardware": 509,
       "fee": 99,
-      "total": 508,
-      "total_str": "from $508",
-      "hw_str": "hardware $409 at the maker right now"
+      "total": 608,
+      "total_str": "from $608",
+      "hw_str": "hardware $509 at the maker right now"
     }
   },
-  "drift": []
+  "drift": [
+    "beelink-me-mini: hardware $509 vs baked $409 (+24%) \u2014 update baked_hardware"
+  ]
 }
